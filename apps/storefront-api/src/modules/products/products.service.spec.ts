@@ -1,33 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { makeDb } from 'test-support';
 import { ProductsService } from './products.service';
 import { DRIZZLE } from '../../database/database.constants';
-
-// mimics drizzle's query builder: awaitable at any point in the chain
-// (select().from().where() and select().from().where().groupBy()....offset()
-// both resolve), each await consuming the next entry in `results` in the
-// order the service issues its queries. The db object itself is not
-// thenable — only the chain is — so Nest's injector doesn't unwrap the
-// `useValue` when it resolves the provider.
-function makeDb(results: unknown[][]) {
-  let call = 0;
-  const chain: Record<string, unknown> = {
-    then: (resolve: (value: unknown) => void) => resolve(results[call++]),
-  };
-  const chainMethods = [
-    'from',
-    'leftJoin',
-    'innerJoin',
-    'where',
-    'groupBy',
-    'orderBy',
-    'limit',
-    'offset',
-  ];
-  for (const method of chainMethods) {
-    chain[method] = jest.fn(() => chain);
-  }
-  return { select: jest.fn(() => chain) };
-}
 
 describe('ProductsService', () => {
   let service: ProductsService;

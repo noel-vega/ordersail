@@ -14,7 +14,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "test": "jest --passWithNoTests",
+    "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
@@ -57,6 +57,7 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "test-support": "*",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
   },
@@ -95,6 +96,7 @@
       "^logging$": "<rootDir>/../../../packages/logging/src/index.ts",
       "^db$": "<rootDir>/../../../packages/db/src/index.ts",
       "^db/(.*)$": "<rootDir>/../../../packages/db/src/$1",
+      "^test-support$": "<rootDir>/../../../packages/test-support/src/index.ts",
       "^email$": "<rootDir>/../../../packages/email/src/index.ts",
       "^email-templates$": "<rootDir>/../../../packages/email-templates/src/index.ts"
     }

@@ -2,36 +2,12 @@ import { BadRequestException, Logger } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
 import { Test, TestingModule } from '@nestjs/testing';
 import { QUEUE_NAMES } from 'queue';
+import { makeDb, firstCall } from 'test-support';
 import { DRIZZLE } from '../../database/database.constants';
 import { CartService } from '../cart/cart.service';
 import { CheckoutService } from './checkout.service';
 import { SHIPPO, STRIPE } from './checkout.constants';
 import type Stripe from 'stripe';
-
-// mimics drizzle's query builder: awaitable at any point in the chain, each
-// await consuming the next entry in `results` in the order the service issues
-// its queries. The db object itself is not thenable — only the chain is — so
-// Nest's injector doesn't unwrap the `useValue` when it resolves the provider.
-// (same shape as products.service.spec.ts)
-function makeDb(results: unknown[][]) {
-  let call = 0;
-  const chain: Record<string, unknown> = {
-    then: (resolve: (value: unknown) => void) => resolve(results[call++]),
-  };
-  for (const method of [
-    'from',
-    'leftJoin',
-    'innerJoin',
-    'where',
-    'groupBy',
-    'orderBy',
-    'limit',
-    'offset',
-  ]) {
-    chain[method] = jest.fn(() => chain);
-  }
-  return { select: jest.fn(() => chain) };
-}
 
 interface StripeMock {
   checkout: {
@@ -128,12 +104,6 @@ async function build(opts: {
     cartService,
     ordersQueue,
   };
-}
-
-// jest records call args as `any[]`; hand back the first call's args as a
-// typed tuple so the assertions below stay under no-unsafe-* lint rules
-function firstCall(mock: jest.Mock): unknown[] {
-  return (mock.mock.calls[0] ?? []) as unknown[];
 }
 
 describe('CheckoutService.createSession', () => {

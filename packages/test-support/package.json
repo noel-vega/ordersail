@@ -1,0 +1,21 @@
+{
+  "name": "test-support",
+  "version": "1.0.0",
+  "description": "Shared Jest helpers (fake drizzle clients, mock-call utils) — consumed as source by workspace specs, never built or shipped.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "drizzle-orm": "^1.0.0-rc.4"
+  }
+}
