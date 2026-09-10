@@ -1,17 +1,45 @@
-import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
+import {
+  keepPreviousData,
+  queryOptions,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query"
+import { z } from "zod"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client";
-import type { GetImageUploadUrlDto } from "merchant-sdk";
+import { PAGE_SIZE, pageOffset, listSearchSchema } from "../../lib/list-search"
+import type { GetImageUploadUrlDto, Product } from "merchant-sdk";
 
-export function getListProductsQueryOptions() {
-    return queryOptions({
-        queryKey: ['products'],
-        queryFn: () => merchantApi.products.list()
-    })
+export const PRODUCT_STATUSES: Product["status"][] = [
+  "draft",
+  "active",
+  "archived",
+]
+
+export const productListSearchSchema = listSearchSchema.extend({
+  status: z.enum(PRODUCT_STATUSES).optional().catch(undefined),
+})
+
+export type ProductListSearch = z.infer<typeof productListSearchSchema>
+
+export function getListProductsQueryOptions(
+  search: ProductListSearch = { page: 1, q: "" },
+) {
+  return queryOptions({
+    queryKey: ["products", search],
+    queryFn: () =>
+      merchantApi.products.list({
+        limit: PAGE_SIZE,
+        offset: pageOffset(search.page),
+        q: search.q || undefined,
+        status: search.status,
+      }),
+    placeholderData: keepPreviousData,
+  })
 }
 
-export function useListProductsQuery() {
-    return useQuery(getListProductsQueryOptions())
+export function useListProductsQuery(search: ProductListSearch) {
+  return useQuery(getListProductsQueryOptions(search))
 }
 
 
@@ -19,7 +47,7 @@ export function useCreateProductMutation() {
   return useMutation({
     mutationFn: merchantApi.products.create,
     onSuccess: () => {
-      queryClient.invalidateQueries(getListProductsQueryOptions());
+      queryClient.invalidateQueries({ queryKey: ["products"] });
     },
   });
 }
@@ -111,7 +139,7 @@ export function useDeleteProductMutation() {
   return useMutation({
     mutationFn: merchantApi.products.remove,
     onSuccess: () => {
-      queryClient.invalidateQueries(getListProductsQueryOptions());
+      queryClient.invalidateQueries({ queryKey: ["products"] });
     },
   });
 }
@@ -122,7 +150,7 @@ export function useUpdateProductMutation(id: number) {
       merchantApi.products.update(id, params),
     onSuccess: () => {
       queryClient.invalidateQueries(getProductQueryOptions(id));
-      queryClient.invalidateQueries(getListProductsQueryOptions());
+      queryClient.invalidateQueries({ queryKey: ["products"] });
     },
   });
 }

@@ -1,12 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
-import { getListCustomersQueryOptions } from "../customers.hooks";
-import { DataTable } from "../../../components/data-table";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "ui/input-group";
-import { SearchIcon } from "lucide-react";
+import { getRouteApi } from "@tanstack/react-router";
 import { type ColumnDef } from "@tanstack/react-table";
 import type { Customer } from "merchant-sdk";
-import { Field, FieldLabel } from "ui/field";
 import { format } from "date-fns";
+import { DataTable } from "../../../components/data-table";
+import { DataTablePagination } from "../../../components/data-table-pagination";
+import { ListSearchInput } from "../../../components/list-search-input";
+import { PAGE_SIZE } from "../../../lib/list-search";
+import { useListCustomersQuery } from "../customers.hooks";
+
+const route = getRouteApi("/app/customers/");
 
 const columns: ColumnDef<Customer>[] = [
   {
@@ -27,22 +29,30 @@ const columns: ColumnDef<Customer>[] = [
 ];
 
 export function ListCustomersView() {
-  const customers = useQuery(getListCustomersQueryOptions());
+  const search = route.useSearch();
+  const navigate = route.useNavigate();
+  const customers = useListCustomersQuery(search);
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-4 items-end justify-between">
-        <Field className="max-w-xs">
-          <FieldLabel>Search</FieldLabel>
-          <InputGroup>
-            <InputGroupInput placeholder="Search customers..." />
-            <InputGroupAddon>
-              <SearchIcon />
-            </InputGroupAddon>
-          </InputGroup>
-        </Field>
+      <div className="flex items-end justify-between gap-4">
+        <ListSearchInput
+          initialValue={search.q}
+          placeholder="Search customers..."
+          onDebouncedChange={(q) =>
+            navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
+          }
+        />
       </div>
       <DataTable data={customers.data?.items ?? []} columns={columns} />
+      <DataTablePagination
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        total={customers.data?.total ?? 0}
+        onPageChange={(page) =>
+          navigate({ search: (prev) => ({ ...prev, page }) })
+        }
+      />
     </div>
   );
 }

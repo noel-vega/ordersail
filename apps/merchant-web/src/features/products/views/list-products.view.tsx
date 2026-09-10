@@ -1,14 +1,21 @@
-import { useQuery } from "@tanstack/react-query";
-import { getListProductsQueryOptions } from "../products.hooks";
-import { DataTable } from "../../../components/data-table";
-import { Button } from "ui/button";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "ui/input-group";
-import { PlusIcon, SearchIcon } from "lucide-react";
+import { Link, getRouteApi } from "@tanstack/react-router";
+import { PlusIcon } from "lucide-react";
 import { type ColumnDef, type Row } from "@tanstack/react-table";
 import type { Product } from "merchant-sdk";
-import { Field, FieldLabel } from "ui/field";
 import { format } from "date-fns";
+import { Button } from "ui/button";
+import { cn } from "ui/utils";
+import { DataTable } from "../../../components/data-table";
+import { DataTablePagination } from "../../../components/data-table-pagination";
+import { ListSearchInput } from "../../../components/list-search-input";
+import { PAGE_SIZE } from "../../../lib/list-search";
+import {
+  PRODUCT_STATUSES,
+  useListProductsQuery,
+  type ProductListSearch,
+} from "../products.hooks";
+
+const route = getRouteApi("/app/products/");
 
 const columns: ColumnDef<Product>[] = [
   {
@@ -40,38 +47,82 @@ const columns: ColumnDef<Product>[] = [
   {
     accessorKey: "createdAt",
     header: "Created At",
-    cell: ({row}) => format(new Date(row.original.createdAt), "MM/dd/yyyy hh:mm a")
+    cell: ({ row }) =>
+      format(new Date(row.original.createdAt), "MM/dd/yyyy hh:mm a"),
   },
 ];
 
 export function ProductListView() {
-  const products = useQuery(getListProductsQueryOptions());
-  const navigate = useNavigate()
+  const search = route.useSearch();
+  const navigate = route.useNavigate();
+  const products = useListProductsQuery(search);
+
+  const setStatus = (status: ProductListSearch["status"]) =>
+    navigate({ search: (prev) => ({ ...prev, status, page: 1 }) });
 
   const handleRowClick = (row: Row<Product>) => {
-    const {id} = row.original
-    navigate({to: "/app/products/$id", params: {id}})
-  }
+    navigate({ to: "/app/products/$id", params: { id: row.original.id } });
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-4 items-end justify-between">
-        <Field className="max-w-xs">
-          <FieldLabel>Search</FieldLabel>
-          <InputGroup>
-            <InputGroupInput placeholder="Search products..." />
-            <InputGroupAddon>
-              <SearchIcon />
-            </InputGroupAddon>
-          </InputGroup>
-        </Field>
+      <div className="flex items-end justify-between gap-4">
+        <ListSearchInput
+          initialValue={search.q}
+          placeholder="Search products..."
+          onDebouncedChange={(q) =>
+            navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
+          }
+        />
         <Link to="/app/products/create">
           <Button>
             <PlusIcon /> Product
           </Button>
         </Link>
       </div>
-      <DataTable onRowClick={handleRowClick} data={products.data?.items ?? []} columns={columns} />
+
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={cn(
+            !search.status && "border-primary bg-primary/5 text-primary",
+          )}
+          onClick={() => setStatus(undefined)}
+        >
+          All
+        </Button>
+        {PRODUCT_STATUSES.map((s) => (
+          <Button
+            key={s}
+            type="button"
+            variant="outline"
+            size="sm"
+            className={cn(
+              "capitalize",
+              search.status === s && "border-primary bg-primary/5 text-primary",
+            )}
+            onClick={() => setStatus(s)}
+          >
+            {s}
+          </Button>
+        ))}
+      </div>
+
+      <DataTable
+        onRowClick={handleRowClick}
+        data={products.data?.items ?? []}
+        columns={columns}
+      />
+      <DataTablePagination
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        total={products.data?.total ?? 0}
+        onPageChange={(page) =>
+          navigate({ search: (prev) => ({ ...prev, page }) })
+        }
+      />
     </div>
   );
 }
