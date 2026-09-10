@@ -1303,6 +1303,12 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        PaginatedCustomers: {
+            items: components["schemas"]["Customer"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
         DashboardSummary: {
             orderCount: number;
             revenueCents: number;
@@ -2658,7 +2664,12 @@ export interface operations {
     };
     CustomersController_findAll: {
         parameters: {
-            query?: never;
+            query: {
+                limit: number;
+                offset: number;
+                /** @description name or email match */
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2670,7 +2681,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Customer"][];
+                    "application/json": components["schemas"]["PaginatedCustomers"];
                 };
             };
         };

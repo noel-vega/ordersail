@@ -65,6 +65,7 @@ export type Account = components["schemas"]["Account"];
 export type User = components["schemas"]["User"];
 export type CreateUserDto = components["schemas"]["CreateUserDto"];
 export type Customer = components["schemas"]["Customer"];
+export type PaginatedCustomers = components["schemas"]["PaginatedCustomers"];
 export type AcceptInviteDto = components["schemas"]["AcceptInviteDto"];
 export type DashboardSummary = components["schemas"]["DashboardSummary"];
 export type Permission = components["schemas"]["Permission"];

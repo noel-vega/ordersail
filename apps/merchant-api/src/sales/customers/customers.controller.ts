@@ -1,7 +1,13 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  DefaultValuePipe,
+  Get,
+  ParseIntPipe,
+  Query,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOkResponse, ApiQuery } from '@nestjs/swagger';
 import { CustomersService } from './customers.service';
-import { Customer } from './entities/customer.entity';
+import { PaginatedCustomers } from './entities/paginated-customers.entity';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -13,8 +19,14 @@ export class CustomersController {
 
   @Get()
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse({ type: [Customer] })
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.customersService.findAll(user.accountId);
+  @ApiOkResponse({ type: PaginatedCustomers })
+  @ApiQuery({ name: 'q', required: false, description: 'name or email match' })
+  findAll(
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('q') q?: string,
+  ) {
+    return this.customersService.findAll(limit, offset, user.accountId, q);
   }
 }

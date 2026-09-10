@@ -7,6 +7,7 @@ import {
   cartItemsTable,
   cartsTable,
   categoriesTable,
+  customersTable,
   inventoryTable,
   locationsTable,
   orderItemsTable,
@@ -71,6 +72,29 @@ export async function insertUser(
         firstname: opts.firstname ?? 'Staff',
         lastname: opts.lastname ?? `Member ${uniq()}`,
         email: opts.email ?? `staff-${uniq()}@store.test`,
+      })
+      .returning(),
+  );
+}
+
+export async function insertCustomer(
+  db: TestDb,
+  opts: {
+    accountId: number;
+    firstname?: string;
+    lastname?: string;
+    email?: string;
+  },
+): Promise<Row<typeof customersTable>> {
+  return one(
+    await db
+      .insert(customersTable)
+      .values({
+        accountId: opts.accountId,
+        firstname: opts.firstname ?? 'Shopper',
+        lastname: opts.lastname ?? `Buyer ${uniq()}`,
+        email: opts.email ?? `shopper-${uniq()}@buyer.test`,
+        password: 'x',
       })
       .returning(),
   );
