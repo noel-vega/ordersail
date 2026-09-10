@@ -8,12 +8,14 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/react-query-client";
 import { TooltipProvider } from "ui/tooltip";
 import { RouteError } from "./components/route-error";
+import { NotFound } from "./components/not-found";
 import { TableSkeleton } from "./components/skeletons";
 
 // Create a new router instance
 export const router = createRouter({
   routeTree,
   defaultErrorComponent: RouteError,
+  defaultNotFoundComponent: NotFound,
   // most /app screens are lists; detail/form routes override pendingComponent.
   // 200ms delay + 300ms min so a warm-cache navigation never flashes a skeleton.
   defaultPendingComponent: TableSkeleton,
