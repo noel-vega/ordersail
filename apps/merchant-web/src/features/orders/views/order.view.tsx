@@ -3,10 +3,22 @@ import { Link } from "@tanstack/react-router";
 import { format, formatDistanceToNow } from "date-fns";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { OrderDetail, ShippingRate } from "merchant-sdk";
-import { ArrowLeftIcon, LoaderCircleIcon, TruckIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  BanIcon,
+  LoaderCircleIcon,
+  MoreVerticalIcon,
+  TruckIcon,
+} from "lucide-react";
 import { Button } from "ui/button";
 import { Badge } from "ui/badge";
 import { Separator } from "ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "ui/dropdown-menu";
 import { cn } from "ui/utils";
 import {
   Select,
@@ -29,6 +41,7 @@ import { FulfillmentStatusBadge } from "../components/fulfillment-status-badge";
 import { OrderStatusBadge } from "../components/order-status-badge";
 import { OrderEventIcon } from "../components/order-event-icon";
 import { RefundOrderSheet } from "../components/refund-order-sheet";
+import { CancelOrderDialog } from "../components/cancel-order-dialog";
 
 type OrderItem = OrderDetail["items"][number];
 type OrderFulfillment = OrderDetail["fulfillments"][number];
@@ -378,6 +391,7 @@ function CreateFulfillmentFlow({ order }: { order: OrderDetail }) {
 export function OrderView({ id }: { id: number }) {
   const { data } = useOrderQuery(id);
   const [refundOpen, setRefundOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   if (!data) {
     return null;
@@ -386,6 +400,12 @@ export function OrderView({ id }: { id: number }) {
   const canRefund =
     (data.status === "paid" || data.status === "partially_refunded") &&
     data.payments.some((p) => p.method === "stripe" && p.amountCents > 0);
+
+  // cancel is pre-fulfillment only, and pointless once the order is terminal
+  const canCancel =
+    data.fulfillmentStatus === "unfulfilled" &&
+    data.status !== "canceled" &&
+    data.status !== "refunded";
 
   return (
     <div>
@@ -411,6 +431,30 @@ export function OrderView({ id }: { id: number }) {
               Placed {format(new Date(data.createdAt), "MM/dd/yyyy hh:mm a")}
             </p>
           </div>
+          {canCancel && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Order actions"
+                  />
+                }
+              >
+                <MoreVerticalIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => setCancelOpen(true)}
+                >
+                  <BanIcon /> Cancel order
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </header>
 
@@ -540,6 +584,12 @@ export function OrderView({ id }: { id: number }) {
         order={data}
         open={refundOpen}
         onOpenChange={setRefundOpen}
+      />
+
+      <CancelOrderDialog
+        order={data}
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
       />
     </div>
   );
