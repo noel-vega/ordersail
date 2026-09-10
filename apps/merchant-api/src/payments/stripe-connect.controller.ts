@@ -5,6 +5,7 @@ import { StripeConnectStatus } from './entities/stripe-connect-status.entity';
 import { AccountSessionResponse } from './entities/account-session.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -16,6 +17,7 @@ export class StripeConnectController {
   constructor(private readonly stripeConnectService: StripeConnectService) {}
 
   @Post('account-session')
+  @RequirePermissions('payments:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: AccountSessionResponse })
   createAccountSession(@CurrentUser() user: AuthenticatedUser) {
@@ -23,6 +25,7 @@ export class StripeConnectController {
   }
 
   @Get('status')
+  @RequirePermissions('payments:read')
   @ApiBearerAuth('JWT-auth')
   @ApiQuery({ name: 'refresh', required: false, type: Boolean })
   @ApiOkResponse({ type: StripeConnectStatus })

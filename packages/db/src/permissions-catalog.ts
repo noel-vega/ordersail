@@ -38,6 +38,12 @@ export const PERMISSIONS_CATALOG: PermissionDef[] = [
   { key: "api_keys:read", resource: "api_keys", action: "read", description: "View API keys" },
   { key: "api_keys:write", resource: "api_keys", action: "write", description: "Create and revoke API keys" },
 
+  { key: "pos_devices:read", resource: "pos_devices", action: "read", description: "View POS devices" },
+  { key: "pos_devices:write", resource: "pos_devices", action: "write", description: "Pair, rename, and revoke POS devices" },
+
+  { key: "payments:read", resource: "payments", action: "read", description: "View payment / payout status" },
+  { key: "payments:write", resource: "payments", action: "write", description: "Connect and manage the Stripe account" },
+
   { key: "account:read", resource: "account", action: "read", description: "View account settings" },
   { key: "account:write", resource: "account", action: "write", description: "Edit account settings" },
 ];

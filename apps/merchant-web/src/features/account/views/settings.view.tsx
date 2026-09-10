@@ -7,6 +7,7 @@ import { Input } from "ui/input";
 import { Button } from "ui/button";
 import { LoaderCircleIcon } from "lucide-react";
 import { useAccountQuery, useUpdateAccountMutation } from "../account.hooks";
+import { usePermissions } from "../../auth/permission-context";
 
 const ShippingContactFormSchema = z.object({
   phone: z.string().min(1, "Required"),
@@ -17,18 +18,29 @@ type ShippingContactForm = z.infer<typeof ShippingContactFormSchema>;
 
 export function SettingsView() {
   const account = useAccountQuery();
+  const canWrite = usePermissions().has("account:write");
 
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Settings</h1>
-      {account.data && <ShippingContactForm phone={account.data.phone} email={account.data.email} />}
+      {account.data && (
+        <ShippingContactForm
+          phone={account.data.phone}
+          email={account.data.email}
+          canWrite={canWrite}
+        />
+      )}
     </div>
   );
 }
 
 // remounted (via key, see below) whenever the loaded account changes, so
 // defaultValues are always a fresh snapshot
-function ShippingContactForm(props: { phone: string; email: string }) {
+function ShippingContactForm(props: {
+  phone: string;
+  email: string;
+  canWrite: boolean;
+}) {
   const updateAccount = useUpdateAccountMutation();
   const form = useForm<ShippingContactForm>({
     resolver: zodResolver(ShippingContactFormSchema),
@@ -60,7 +72,12 @@ function ShippingContactForm(props: { phone: string; email: string }) {
         render={({ field, fieldState }) => (
           <Field data-invalid={!!fieldState.error}>
             <FieldLabel>Phone</FieldLabel>
-            <Input type="tel" placeholder="(555) 555-5555" {...field} />
+            <Input
+              type="tel"
+              placeholder="(555) 555-5555"
+              disabled={!props.canWrite}
+              {...field}
+            />
             {fieldState.error && (
               <p className="text-sm text-destructive">{fieldState.error.message}</p>
             )}
@@ -74,7 +91,12 @@ function ShippingContactForm(props: { phone: string; email: string }) {
         render={({ field, fieldState }) => (
           <Field data-invalid={!!fieldState.error}>
             <FieldLabel>Email</FieldLabel>
-            <Input type="email" placeholder="shipping@example.com" {...field} />
+            <Input
+              type="email"
+              placeholder="shipping@example.com"
+              disabled={!props.canWrite}
+              {...field}
+            />
             {fieldState.error && (
               <p className="text-sm text-destructive">{fieldState.error.message}</p>
             )}
@@ -82,15 +104,17 @@ function ShippingContactForm(props: { phone: string; email: string }) {
         )}
       />
 
-      <Button type="submit" disabled={updateAccount.isPending}>
-        {updateAccount.isPending ? (
-          <>
-            <LoaderCircleIcon className="animate-spin" /> Saving...
-          </>
-        ) : (
-          "Save"
-        )}
-      </Button>
+      {props.canWrite && (
+        <Button type="submit" disabled={updateAccount.isPending}>
+          {updateAccount.isPending ? (
+            <>
+              <LoaderCircleIcon className="animate-spin" /> Saving...
+            </>
+          ) : (
+            "Save"
+          )}
+        </Button>
+      )}
     </form>
   );
 }

@@ -38,6 +38,8 @@ import {
 import { MintDeviceSheet } from "./mint-device-sheet";
 import { EditDeviceSheet } from "./edit-device-sheet";
 import { PairingCodeReveal } from "../components/pairing-code-reveal";
+import { Can } from "../../../components/can";
+import { usePermissions } from "../../auth/permission-context";
 
 const STATUS_BADGE: Record<
   PosDevice["status"],
@@ -52,6 +54,7 @@ function getColumns(handlers: {
   onEdit: (device: PosDevice) => void;
   onRevoke: (device: PosDevice) => void;
   onShowCode: (device: PosDevice) => void;
+  canWrite: boolean;
 }): ColumnDef<PosDevice>[] {
   return [
     { accessorKey: "name", header: "Name" },
@@ -88,7 +91,7 @@ function getColumns(handlers: {
       id: "actions",
       cell: ({ row }) => {
         const device = row.original;
-        if (device.status === "revoked") return null;
+        if (device.status === "revoked" || !handlers.canWrite) return null;
         return (
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -130,6 +133,7 @@ export function ListPosDevicesView() {
   const devices = useQuery(getListPosDevicesQueryOptions());
   const revoke = useRevokePosDeviceMutation();
   const rotate = useRotatePairingMutation();
+  const canWrite = usePermissions().has("pos_devices:write");
 
   const [mintOpen, setMintOpen] = useState(false);
   const [editing, setEditing] = useState<PosDevice | null>(null);
@@ -177,6 +181,7 @@ export function ListPosDevicesView() {
       setRevoking(device);
     },
     onShowCode: handleShowCode,
+    canWrite,
   });
 
   return (
@@ -188,9 +193,11 @@ export function ListPosDevicesView() {
             Tablets and phones running the POS app, each paired to one location.
           </p>
         </div>
-        <Button onClick={() => setMintOpen(true)}>
-          <PlusIcon /> New device
-        </Button>
+        <Can permission="pos_devices:write">
+          <Button onClick={() => setMintOpen(true)}>
+            <PlusIcon /> New device
+          </Button>
+        </Can>
       </div>
 
       {showCodeError && (

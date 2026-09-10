@@ -4,6 +4,7 @@ import type { LinkProps } from "@tanstack/react-router"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "ui/card"
 import { Button } from "ui/button"
 import { cn } from "ui/utils"
+import { Can } from "../../../components/can"
 import { useOnboardingStatusQuery } from "../onboarding.hooks"
 
 type ChecklistItem = {
@@ -12,6 +13,8 @@ type ChecklistItem = {
   cta: string
   to: LinkProps["to"]
   search?: LinkProps["search"]
+  // the CTA only shows for a user who can actually do the step
+  permission: string
 }
 
 export function OnboardingChecklist() {
@@ -29,18 +32,21 @@ export function OnboardingChecklist() {
       to: "/app/payments",
       // auto-open the embedded Stripe onboarding flow on arrival (OS-167)
       search: { onboarding: true },
+      permission: "payments:write",
     },
     {
       label: "Add your location's address so shipping can be quoted",
       done: status.data.hasCompleteLocation,
       cta: "Add address",
       to: "/app/locations",
+      permission: "locations:write",
     },
     {
       label: "Add your first product and set it active",
       done: status.data.hasActiveProduct,
       cta: "Add a product",
       to: "/app/products/create",
+      permission: "products:write",
     },
   ]
 
@@ -69,11 +75,13 @@ export function OnboardingChecklist() {
               {item.label}
             </span>
             {!item.done && (
-              <Link to={item.to} search={item.search}>
-                <Button variant="outline" size="sm">
-                  {item.cta}
-                </Button>
-              </Link>
+              <Can permission={item.permission}>
+                <Link to={item.to} search={item.search}>
+                  <Button variant="outline" size="sm">
+                    {item.cta}
+                  </Button>
+                </Link>
+              </Can>
             )}
           </div>
         ))}

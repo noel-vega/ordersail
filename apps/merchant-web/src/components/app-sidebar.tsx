@@ -34,10 +34,8 @@ import {
 import { NavUser } from "./nav-user";
 import { navItemVisible, useVisibleNavItems } from "./use-visible-nav-items";
 
-// `permission` hides the item unless the current user holds that key (or any
-// key, if an array). undefined = always visible. Keys that don't exist in the
-// catalog yet (customers / pos_devices / payments) stay undefined here and get
-// their gate in the domain PR that adds the key (OS-178 / OS-179).
+// `permission` hides the item unless the current user holds that key.
+// undefined = always visible (Dashboard only).
 export const NAV_ITEMS = [
   {
     key: "home",
@@ -111,7 +109,7 @@ export const NAV_ITEMS = [
     label: "POS Devices",
     icon: TabletSmartphoneIcon,
     to: "/app/pos-devices",
-    permission: undefined,
+    permission: "pos_devices:read",
     children: undefined,
   },
   {
@@ -151,7 +149,7 @@ export const NAV_ITEMS = [
     label: "Payments",
     icon: CreditCardIcon,
     to: "/app/payments",
-    permission: undefined,
+    permission: "payments:read",
     children: undefined,
   },
   {
