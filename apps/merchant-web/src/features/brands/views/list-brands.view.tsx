@@ -4,6 +4,7 @@ import { type ColumnDef } from "@tanstack/react-table";
 import type { Brand } from "merchant-sdk";
 import { format } from "date-fns";
 import { Button } from "ui/button";
+import { Can } from "../../../components/can";
 import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
@@ -44,11 +45,13 @@ export function ListBrandsView() {
             navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
           }
         />
-        <Link to="/app/products/brands/create">
-          <Button>
-            <PlusIcon /> Brand
-          </Button>
-        </Link>
+        <Can permission="products:write">
+          <Link to="/app/products/brands/create">
+            <Button>
+              <PlusIcon /> Brand
+            </Button>
+          </Link>
+        </Can>
       </div>
       <DataTable data={brands.data?.items ?? []} columns={columns} />
       <DataTablePagination

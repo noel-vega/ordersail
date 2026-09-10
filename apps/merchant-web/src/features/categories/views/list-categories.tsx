@@ -4,6 +4,7 @@ import { type ColumnDef } from "@tanstack/react-table";
 import type { Category } from "merchant-sdk";
 import { format } from "date-fns";
 import { Button } from "ui/button";
+import { Can } from "../../../components/can";
 import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
@@ -44,11 +45,13 @@ export function ListCategoriesView() {
             navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
           }
         />
-        <Link to="/app/products/categories/create">
-          <Button>
-            <PlusIcon /> Category
-          </Button>
-        </Link>
+        <Can permission="products:write">
+          <Link to="/app/products/categories/create">
+            <Button>
+              <PlusIcon /> Category
+            </Button>
+          </Link>
+        </Can>
       </div>
       <DataTable data={categories.data?.items ?? []} columns={columns} />
       <DataTablePagination

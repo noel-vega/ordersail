@@ -38,6 +38,7 @@ import { ProductImage } from './entities/product-image.entity';
 import { ImageUploadUrl } from './entities/image-upload-url.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -46,6 +47,7 @@ export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Post()
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiCreatedResponse({ type: Product })
   create(
@@ -56,6 +58,7 @@ export class ProductsController {
   }
 
   @Get()
+  @RequirePermissions('products:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedProducts })
   @ApiQuery({
@@ -86,6 +89,7 @@ export class ProductsController {
   }
 
   @Get(':id')
+  @RequirePermissions('products:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: ProductDetail })
   findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
@@ -93,6 +97,7 @@ export class ProductsController {
   }
 
   @Get(':id/variants')
+  @RequirePermissions('products:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: [ProductVariant] })
   findVariants(
@@ -103,6 +108,7 @@ export class ProductsController {
   }
 
   @Get(':id/options')
+  @RequirePermissions('products:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: [ProductOption] })
   findOptions(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
@@ -110,6 +116,7 @@ export class ProductsController {
   }
 
   @Patch(':id/options/:optionId')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: ProductOption })
   updateOption(
@@ -127,6 +134,7 @@ export class ProductsController {
   }
 
   @Delete(':id/options/:optionId')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: ProductOption })
   removeOption(
@@ -138,6 +146,7 @@ export class ProductsController {
   }
 
   @Delete(':id/options/:optionId/values/:valueId')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: ProductOption })
   removeOptionValue(
@@ -155,6 +164,7 @@ export class ProductsController {
   }
 
   @Post(':id/variants')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiCreatedResponse({ type: [ProductVariant] })
   createVariants(
@@ -170,6 +180,7 @@ export class ProductsController {
   }
 
   @Patch(':id')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: Product })
   update(
@@ -181,6 +192,7 @@ export class ProductsController {
   }
 
   @Patch(':id/variants/:variantId')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: ProductVariant })
   updateVariant(
@@ -198,6 +210,7 @@ export class ProductsController {
   }
 
   @Delete(':id')
+  @RequirePermissions('products:delete')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: Product })
   remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
@@ -205,6 +218,7 @@ export class ProductsController {
   }
 
   @Post(':id/images/upload-url')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: ImageUploadUrl })
   async getImageUploadUrl(
@@ -222,6 +236,7 @@ export class ProductsController {
   }
 
   @Post(':id/images')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiCreatedResponse({ type: ProductImage })
   async createImage(
@@ -239,6 +254,7 @@ export class ProductsController {
   }
 
   @Patch(':id/images/order')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: [ProductImage] })
   async reorderImages(
@@ -256,6 +272,7 @@ export class ProductsController {
   }
 
   @Delete(':id/images/:imageId')
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: ProductImage })
   async removeImage(
