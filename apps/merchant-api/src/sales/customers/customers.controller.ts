@@ -10,6 +10,7 @@ import { CustomersService } from './customers.service';
 import { PaginatedCustomers } from './entities/paginated-customers.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -18,6 +19,7 @@ export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
   @Get()
+  @RequirePermissions('customers:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedCustomers })
   @ApiQuery({ name: 'q', required: false, description: 'name or email match' })

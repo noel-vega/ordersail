@@ -119,7 +119,7 @@ export const NAV_ITEMS = [
     label: "Customers",
     icon: BookUserIcon,
     to: "/app/customers",
-    permission: undefined,
+    permission: "customers:read",
     children: undefined,
   },
   {
