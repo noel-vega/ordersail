@@ -3,12 +3,11 @@ import { Link, useRouter, type ErrorComponentProps } from "@tanstack/react-route
 import { TriangleAlertIcon } from "lucide-react";
 import { ApiError } from "merchant-sdk";
 import { Button } from "ui/button";
+import { AccessDenied } from "../features/errors/access-denied.view";
 
 function friendlyMessage(error: Error): string {
   if (error instanceof ApiError) {
     if (error.status === 401) return "Your session expired. Please sign in again.";
-    if (error.status === 403)
-      return "You don't have permission to view this.";
     if (error.status >= 500)
       return "The server had a problem. Try again in a moment.";
     return error.message;
@@ -28,6 +27,12 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
       void router.navigate({ to: "/signin" });
     }
   }, [error, router]);
+
+  // a 403 that reached here (e.g. a query for a section whose permission was
+  // revoked mid-session) — show the access-denied view, not a scary error card
+  if (error instanceof ApiError && error.status === 403) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6 text-center">
