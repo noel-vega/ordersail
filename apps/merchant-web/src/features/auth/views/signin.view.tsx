@@ -28,20 +28,17 @@ export function SignInView() {
     },
   });
 
-  async function handleSubmit(formData: SignInRequestBody) {
-    console.log(formData)
-    try {
-      signInMutation.mutate(formData, {
-        onError: (err) => {
-          if (err instanceof AuthenticationError) {
-            setErrorMessage("Invalid email or password.");
-          }
-        },
-        onSuccess: () => {
-          navigate({ to: appConfig.homeRoute });
-        },
-      });
-    } catch (err) {}
+  function handleSubmit(formData: SignInRequestBody) {
+    signInMutation.mutate(formData, {
+      onError: (err) => {
+        if (err instanceof AuthenticationError) {
+          setErrorMessage("Invalid email or password.");
+        }
+      },
+      onSuccess: () => {
+        navigate({ to: appConfig.homeRoute });
+      },
+    });
   }
 
   function ErrorMessage() {

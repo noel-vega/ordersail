@@ -20,11 +20,10 @@ export const Route = createFileRoute('/app/products/$id')({
     },
   },
   beforeLoad: async ({params}) => {
-    const data = await Promise.all([
+    await Promise.all([
       queryClient.ensureQueryData(getProductQueryOptions(params.id)),
       queryClient.ensureQueryData(getProductVariantsQueryOptions(params.id)),
     ]);
-    console.log(data)
   },
   component: RouteComponent,
 })

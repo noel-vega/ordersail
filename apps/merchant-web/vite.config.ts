@@ -14,7 +14,8 @@ export default defineConfig({
     react()
   ],
   server: {
-    // matches the `dev` script's `--port 5000`; 3001 collided with storefront-api
+    // fixed port so the merchant-api CORS allowlist + README stay accurate;
+    // 3001 collided with storefront-api
     port: 5000
   }
 })

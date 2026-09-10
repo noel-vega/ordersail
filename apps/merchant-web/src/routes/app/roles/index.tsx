@@ -4,6 +4,7 @@ import { getListRolesQueryOptions } from '../../../features/roles/roles.hooks'
 import { queryClient } from '../../../lib/react-query-client'
 
 export const Route = createFileRoute('/app/roles/')({
+  staticData: { breadcrumb: 'Roles' },
   beforeLoad: async () => {
     await queryClient.ensureQueryData(getListRolesQueryOptions())
   },
