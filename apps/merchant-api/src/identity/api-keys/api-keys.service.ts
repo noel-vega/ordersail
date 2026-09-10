@@ -42,4 +42,24 @@ export class ApiKeysService {
 
     return created;
   }
+
+  // soft-delete: GET /api-keys and storefront-api's AppKeyGuard both filter
+  // `isNull(revokedAt)`, so stamping it disables the key everywhere. Scoped to
+  // the account and to still-active keys, so a cross-account or double revoke
+  // returns nothing (→ 404 at the controller).
+  async revokeForAccount(id: number, accountId: number) {
+    const [revoked] = await this.db
+      .update(accountApiKeysTable)
+      .set({ revokedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(accountApiKeysTable.id, id),
+          eq(accountApiKeysTable.accountId, accountId),
+          isNull(accountApiKeysTable.revokedAt),
+        ),
+      )
+      .returning(API_KEY_COLUMNS);
+
+    return revoked ?? null;
+  }
 }

@@ -61,3 +61,44 @@ describe('ApiKeysService.createForAccount (OS-169)', () => {
     expect(listB.map((k) => k.id)).not.toContain(created.id);
   });
 });
+
+describe('ApiKeysService.revokeForAccount (OS-170)', () => {
+  it('revokes an owned key and removes it from listForAccount', async () => {
+    const account = await insertAccount(db);
+    const key = await insertApiKey(db, { accountId: account.id });
+    const service = await build();
+
+    const revoked = await service.revokeForAccount(key.id, account.id);
+
+    expect(revoked).toMatchObject({ id: key.id, key: key.key });
+    expect(await service.listForAccount(account.id)).toEqual([]);
+  });
+
+  it('returns null for another account key and leaves it active', async () => {
+    const a = await insertAccount(db);
+    const b = await insertAccount(db);
+    const bKey = await insertApiKey(db, { accountId: b.id });
+    const service = await build();
+
+    expect(await service.revokeForAccount(bKey.id, a.id)).toBeNull();
+    expect(await service.listForAccount(b.id)).toEqual([
+      expect.objectContaining({ id: bKey.id }),
+    ]);
+  });
+
+  it('returns null for a missing id', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    expect(await service.revokeForAccount(999999, account.id)).toBeNull();
+  });
+
+  it('returns null when the key is already revoked', async () => {
+    const account = await insertAccount(db);
+    const key = await insertApiKey(db, { accountId: account.id });
+    const service = await build();
+
+    await service.revokeForAccount(key.id, account.id);
+    expect(await service.revokeForAccount(key.id, account.id)).toBeNull();
+  });
+});
