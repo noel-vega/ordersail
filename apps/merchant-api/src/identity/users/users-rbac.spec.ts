@@ -29,6 +29,15 @@ describe('users RBAC (OS-184)', () => {
     ]);
   });
 
+  it('gates the invite lifecycle routes with users:write (OS-185)', () => {
+    expect(perm(UsersController.prototype, 'resendInvite')).toEqual([
+      'users:write',
+    ]);
+    expect(perm(UsersController.prototype, 'revokeInvite')).toEqual([
+      'users:write',
+    ]);
+  });
+
   it('leaves PATCH /users/:id ungated (self-edit handled in the handler)', () => {
     expect(perm(UsersController.prototype, 'update')).toBeUndefined();
   });

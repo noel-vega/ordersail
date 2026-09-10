@@ -26,6 +26,7 @@ import {
   rolePermissionsTable,
   rolesTable,
   stripeAccountsTable,
+  userInvitesTable,
   userRolesTable,
   usersTable,
   variantOptionValuesTable,
@@ -85,6 +86,26 @@ export async function insertUser(
         email: opts.email ?? `staff-${uniq()}@store.test`,
         password: opts.password ?? null,
         deactivatedAt: opts.deactivatedAt ?? null,
+      })
+      .returning(),
+  );
+}
+
+// a pending staff invite — one row exists only while the invite is
+// outstanding (consumed on join). `expiresAt` defaults 7 days out; pass a
+// past Date to simulate an expired link.
+export async function insertUserInvite(
+  db: TestDb,
+  opts: { userId: number; token?: string; expiresAt?: Date },
+): Promise<Row<typeof userInvitesTable>> {
+  return one(
+    await db
+      .insert(userInvitesTable)
+      .values({
+        userId: opts.userId,
+        token: opts.token ?? `invite-${uniq()}`,
+        expiresAt:
+          opts.expiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       })
       .returning(),
   );

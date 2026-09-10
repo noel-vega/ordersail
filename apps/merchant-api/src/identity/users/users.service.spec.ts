@@ -5,9 +5,11 @@ import {
   insertAccount,
   insertRole,
   insertUser,
+  insertUserInvite,
   seedPermissionsCatalog,
   useTestDb,
 } from 'test-support';
+import { eq, userInvitesTable, usersTable } from 'db/identity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -15,12 +17,15 @@ import { UsersService } from './users.service';
 
 const db = useTestDb();
 
+const emailMock = { sendInviteEmail: jest.fn() };
+beforeEach(() => emailMock.sendInviteEmail.mockClear());
+
 async function build() {
   const ref = await Test.createTestingModule({
     providers: [
       UsersService,
       { provide: DRIZZLE, useValue: db },
-      { provide: EmailService, useValue: {} },
+      { provide: EmailService, useValue: emailMock },
       { provide: PermissionsService, useValue: {} },
     ],
   }).compile();
@@ -283,5 +288,120 @@ describe('UsersService.getByEmail (OS-184)', () => {
 
     await service.setDeactivated(user.id, account.id, false);
     expect((await service.getByEmail('gone@store.test'))?.id).toBe(user.id);
+  });
+});
+
+describe('UsersService.resendInvite (OS-185)', () => {
+  it('rotates the token + expiry and re-sends the email', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id });
+    const invite = await insertUserInvite(db, {
+      userId: user.id,
+      token: 'old-token',
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const service = await build();
+
+    const result = await service.resendInvite(user.id, account.id);
+    expect(result?.status).toBe('invited');
+
+    const [fresh] = await db
+      .select()
+      .from(userInvitesTable)
+      .where(eq(userInvitesTable.userId, user.id));
+    expect(fresh.token).not.toBe('old-token');
+    expect(fresh.token).not.toBe(invite.token);
+    expect(fresh.expiresAt.getTime()).toBeGreaterThan(Date.now());
+
+    expect(emailMock.sendInviteEmail).toHaveBeenCalledTimes(1);
+    const [to, params] = emailMock.sendInviteEmail.mock.calls[0] as [
+      string,
+      { firstName: string; inviteUrl: string },
+    ];
+    expect(to).toBe(user.email);
+    expect(params.inviteUrl).toContain(`token=${fresh.token}`);
+  });
+
+  it('is undefined for a user who has already joined', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      password: 'x',
+    });
+    const service = await build();
+
+    expect(await service.resendInvite(user.id, account.id)).toBeUndefined();
+    expect(emailMock.sendInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('is undefined for a user with no pending invite row', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id });
+    const service = await build();
+
+    expect(await service.resendInvite(user.id, account.id)).toBeUndefined();
+  });
+
+  it('is undefined for a user outside the account', async () => {
+    const account = await insertAccount(db);
+    const other = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id });
+    await insertUserInvite(db, { userId: user.id });
+    const service = await build();
+
+    expect(await service.resendInvite(user.id, other.id)).toBeUndefined();
+  });
+});
+
+describe('UsersService.revokeInvite (OS-185)', () => {
+  it('deletes the never-joined user and their invite', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id });
+    await insertUserInvite(db, { userId: user.id });
+    const service = await build();
+
+    expect((await service.revokeInvite(user.id, account.id))?.status).toBe(
+      'invited',
+    );
+
+    const users = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id));
+    expect(users).toHaveLength(0);
+    const invites = await db
+      .select()
+      .from(userInvitesTable)
+      .where(eq(userInvitesTable.userId, user.id));
+    expect(invites).toHaveLength(0);
+  });
+
+  it('refuses to revoke a user who has already joined', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      password: 'x',
+    });
+    const service = await build();
+
+    await expect(
+      service.revokeInvite(user.id, account.id),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    const users = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id));
+    expect(users).toHaveLength(1);
+  });
+
+  it('is undefined for a user outside the account', async () => {
+    const account = await insertAccount(db);
+    const other = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id });
+    await insertUserInvite(db, { userId: user.id });
+    const service = await build();
+
+    expect(await service.revokeInvite(user.id, other.id)).toBeUndefined();
   });
 });
