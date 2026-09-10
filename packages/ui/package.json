@@ -35,6 +35,7 @@
     "./alert-dialog": "./src/components/ui/alert-dialog.tsx",
     "./dropdown-menu": "./src/components/ui/dropdown-menu.tsx",
     "./collapsible": "./src/components/ui/collapsible.tsx",
+    "./sonner": "./src/components/ui/sonner.tsx",
     "./item": "./src/components/ui/item.tsx",
     "./badge": "./src/components/ui/badge.tsx",
     "./breadcrumb": "./src/components/ui/breadcrumb.tsx",
@@ -53,6 +54,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "shadcn": "^4.13.0",
+    "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.4.0"

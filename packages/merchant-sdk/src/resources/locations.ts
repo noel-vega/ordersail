@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { paths, components } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import { unwrap, type DoFn } from "../http.js";
 
 export function createLocationsResource(client: Client<paths>, doRequest: DoFn) {
   return {
@@ -18,21 +18,23 @@ export function createLocationsResource(client: Client<paths>, doRequest: DoFn) 
       return data;
     },
 
-    create: async (params: components["schemas"]["CreateLocationDto"]) => {
-      const { data } = await doRequest(() =>
-        client.POST("/locations", { body: params }),
-      );
-      return data;
-    },
+    create: async (params: components["schemas"]["CreateLocationDto"]) =>
+      unwrap(
+        await doRequest(() => client.POST("/locations", { body: params })),
+      ),
 
-    update: async (id: number, params: components["schemas"]["UpdateLocationDto"]) => {
+    update: async (
+      id: number,
+      params: components["schemas"]["UpdateLocationDto"],
+    ) => {
       const path: paths["/locations/{id}"]["patch"]["parameters"]["path"] = {
         id: String(id),
       };
-      const { data } = await doRequest(() =>
-        client.PATCH("/locations/{id}", { params: { path }, body: params }),
+      return unwrap(
+        await doRequest(() =>
+          client.PATCH("/locations/{id}", { params: { path }, body: params }),
+        ),
       );
-      return data;
     },
   };
 }

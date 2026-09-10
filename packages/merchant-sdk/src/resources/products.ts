@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { paths, components } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import { unwrap, type DoFn } from "../http.js";
 
 export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
   return {
@@ -24,12 +24,8 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
       return data;
     },
 
-    create: async (params: components["schemas"]["CreateProductDto"]) => {
-      const { data } = await doRequest(() =>
-        client.POST("/products", { body: params }),
-      );
-      return data;
-    },
+    create: async (params: components["schemas"]["CreateProductDto"]) =>
+      unwrap(await doRequest(() => client.POST("/products", { body: params }))),
 
     getById: async (id: number) => {
       const path: paths["/products/{id}"]["get"]["parameters"]["path"] = {
@@ -48,20 +44,22 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
       const path: paths["/products/{id}"]["patch"]["parameters"]["path"] = {
         id: String(id),
       };
-      const { data } = await doRequest(() =>
-        client.PATCH("/products/{id}", { params: { path }, body: params }),
+      return unwrap(
+        await doRequest(() =>
+          client.PATCH("/products/{id}", { params: { path }, body: params }),
+        ),
       );
-      return data;
     },
 
     remove: async (id: number) => {
       const path: paths["/products/{id}"]["delete"]["parameters"]["path"] = {
         id: String(id),
       };
-      const { data } = await doRequest(() =>
-        client.DELETE("/products/{id}", { params: { path } }),
+      return unwrap(
+        await doRequest(() =>
+          client.DELETE("/products/{id}", { params: { path } }),
+        ),
       );
-      return data;
     },
 
     variants: {
@@ -84,13 +82,14 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
           {
             id: String(productId),
           };
-        const { data } = await doRequest(() =>
-          client.POST("/products/{id}/variants", {
-            params: { path },
-            body: params,
-          }),
+        return unwrap(
+          await doRequest(() =>
+            client.POST("/products/{id}/variants", {
+              params: { path },
+              body: params,
+            }),
+          ),
         );
-        return data;
       },
 
       update: async (
@@ -103,13 +102,14 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
             id: String(productId),
             variantId: String(variantId),
           };
-        const { data } = await doRequest(() =>
-          client.PATCH("/products/{id}/variants/{variantId}", {
-            params: { path },
-            body: params,
-          }),
+        return unwrap(
+          await doRequest(() =>
+            client.PATCH("/products/{id}/variants/{variantId}", {
+              params: { path },
+              body: params,
+            }),
+          ),
         );
-        return data;
       },
     },
 
@@ -135,13 +135,14 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
             id: String(productId),
             optionId: String(optionId),
           };
-        const { data } = await doRequest(() =>
-          client.PATCH("/products/{id}/options/{optionId}", {
-            params: { path },
-            body: params,
-          }),
+        return unwrap(
+          await doRequest(() =>
+            client.PATCH("/products/{id}/options/{optionId}", {
+              params: { path },
+              body: params,
+            }),
+          ),
         );
-        return data;
       },
 
       remove: async (productId: number, optionId: number) => {
@@ -150,12 +151,13 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
             id: String(productId),
             optionId: String(optionId),
           };
-        const { data } = await doRequest(() =>
-          client.DELETE("/products/{id}/options/{optionId}", {
-            params: { path },
-          }),
+        return unwrap(
+          await doRequest(() =>
+            client.DELETE("/products/{id}/options/{optionId}", {
+              params: { path },
+            }),
+          ),
         );
-        return data;
       },
 
       values: {
@@ -166,13 +168,14 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
               optionId: String(optionId),
               valueId: String(valueId),
             };
-          const { data } = await doRequest(() =>
-            client.DELETE(
-              "/products/{id}/options/{optionId}/values/{valueId}",
-              { params: { path } },
+          return unwrap(
+            await doRequest(() =>
+              client.DELETE(
+                "/products/{id}/options/{optionId}/values/{valueId}",
+                { params: { path } },
+              ),
             ),
           );
-          return data;
         },
       },
     },
@@ -186,13 +189,14 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
       ) => {
         const path: paths["/products/{id}/images/upload-url"]["post"]["parameters"]["path"] =
           { id: String(productId) };
-        const { data } = await doRequest(() =>
-          client.POST("/products/{id}/images/upload-url", {
-            params: { path },
-            body: params,
-          }),
+        return unwrap(
+          await doRequest(() =>
+            client.POST("/products/{id}/images/upload-url", {
+              params: { path },
+              body: params,
+            }),
+          ),
         );
-        return data;
       },
 
       create: async (
@@ -201,13 +205,14 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
       ) => {
         const path: paths["/products/{id}/images"]["post"]["parameters"]["path"] =
           { id: String(productId) };
-        const { data } = await doRequest(() =>
-          client.POST("/products/{id}/images", {
-            params: { path },
-            body: params,
-          }),
+        return unwrap(
+          await doRequest(() =>
+            client.POST("/products/{id}/images", {
+              params: { path },
+              body: params,
+            }),
+          ),
         );
-        return data;
       },
 
       reorder: async (
@@ -216,22 +221,26 @@ export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
       ) => {
         const path: paths["/products/{id}/images/order"]["patch"]["parameters"]["path"] =
           { id: String(productId) };
-        const { data } = await doRequest(() =>
-          client.PATCH("/products/{id}/images/order", {
-            params: { path },
-            body: params,
-          }),
+        return unwrap(
+          await doRequest(() =>
+            client.PATCH("/products/{id}/images/order", {
+              params: { path },
+              body: params,
+            }),
+          ),
         );
-        return data;
       },
 
       remove: async (productId: number, imageId: number) => {
         const path: paths["/products/{id}/images/{imageId}"]["delete"]["parameters"]["path"] =
           { id: String(productId), imageId: String(imageId) };
-        const { data } = await doRequest(() =>
-          client.DELETE("/products/{id}/images/{imageId}", { params: { path } }),
+        return unwrap(
+          await doRequest(() =>
+            client.DELETE("/products/{id}/images/{imageId}", {
+              params: { path },
+            }),
+          ),
         );
-        return data;
       },
     },
   };

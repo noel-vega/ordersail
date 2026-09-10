@@ -68,17 +68,20 @@ function EditLocationForm(props: { location: Location; onDone: () => void }) {
     },
   });
 
-  const handleSubmit = form.handleSubmit(async (data) => {
-    await updateLocation.mutateAsync({
-      id: props.location.id,
-      addressLine1: data.addressLine1?.trim() || null,
-      addressLine2: data.addressLine2?.trim() || null,
-      addressCity: data.addressCity?.trim() || null,
-      addressState: data.addressState?.trim() || null,
-      addressPostalCode: data.addressPostalCode?.trim() || null,
-      addressCountry: data.addressCountry?.trim() || null,
-    });
-    props.onDone();
+  const handleSubmit = form.handleSubmit((data) => {
+    updateLocation.mutate(
+      {
+        id: props.location.id,
+        addressLine1: data.addressLine1?.trim() || null,
+        addressLine2: data.addressLine2?.trim() || null,
+        addressCity: data.addressCity?.trim() || null,
+        addressState: data.addressState?.trim() || null,
+        addressPostalCode: data.addressPostalCode?.trim() || null,
+        addressCountry: data.addressCountry?.trim() || null,
+      },
+      // errors surface as a toast; only close the sheet on success
+      { onSuccess: () => props.onDone() },
+    );
   });
 
   return (

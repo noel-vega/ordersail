@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { paths, components } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import { unwrap, type DoFn } from "../http.js";
 
 type MovementReason =
   components["schemas"]["InventoryMovementRecord"]["reason"];
@@ -63,12 +63,12 @@ export function createInventoryResource(
 
       create: async (
         params: components["schemas"]["CreateInventoryMovementDto"],
-      ) => {
-        const { data } = await doRequest(() =>
-          client.POST("/inventory/movements", { body: params }),
-        );
-        return data;
-      },
+      ) =>
+        unwrap(
+          await doRequest(() =>
+            client.POST("/inventory/movements", { body: params }),
+          ),
+        ),
     },
   };
 }

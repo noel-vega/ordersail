@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { paths } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import { unwrap, type DoFn } from "../http.js";
 
 export function createStripeConnectResource(client: Client<paths>, doRequest: DoFn) {
   return {
@@ -13,11 +13,11 @@ export function createStripeConnectResource(client: Client<paths>, doRequest: Do
       return data;
     },
 
-    createAccountSession: async () => {
-      const { data } = await doRequest(() =>
-        client.POST("/stripe-connect/account-session"),
-      );
-      return data;
-    },
+    createAccountSession: async () =>
+      unwrap(
+        await doRequest(() =>
+          client.POST("/stripe-connect/account-session"),
+        ),
+      ),
   };
 }

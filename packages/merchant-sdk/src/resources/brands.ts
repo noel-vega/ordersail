@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { paths, components } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import { unwrap, type DoFn } from "../http.js";
 
 export function createBrandsResource(client: Client<paths>, doRequest: DoFn) {
   return {
@@ -18,11 +18,7 @@ export function createBrandsResource(client: Client<paths>, doRequest: DoFn) {
       return data;
     },
 
-    create: async (params: components["schemas"]["CreateBrandDto"]) => {
-      const { data } = await doRequest(() =>
-        client.POST("/brands", { body: params }),
-      );
-      return data;
-    },
+    create: async (params: components["schemas"]["CreateBrandDto"]) =>
+      unwrap(await doRequest(() => client.POST("/brands", { body: params }))),
   };
 }
