@@ -84,8 +84,8 @@ function MintDeviceForm(props: {
         return;
       }
       const locationName =
-        locations.data?.find((l) => l.id === Number(data.locationId))?.name ??
-        null;
+        locations.data?.items?.find((l) => l.id === Number(data.locationId))
+          ?.name ?? null;
       props.onMinted(result, locationName);
     } catch {
       setError("Couldn't create the device — try again.");
@@ -145,7 +145,9 @@ function MintDeviceForm(props: {
         <SheetFooter className="flex-row justify-end">
           <Button
             type="submit"
-            disabled={createDevice.isPending || locations.data?.length === 0}
+            disabled={
+              createDevice.isPending || locations.data?.items.length === 0
+            }
           >
             {createDevice.isPending ? (
               <>

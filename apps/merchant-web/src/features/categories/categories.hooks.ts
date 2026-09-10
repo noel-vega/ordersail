@@ -5,7 +5,7 @@ import { queryClient } from "../../lib/react-query-client"
 export function getListCategoriesQueryOptions() {
   return queryOptions({
     queryKey: ["categories"],
-    queryFn: merchantApi.categories.list,
+    queryFn: () => merchantApi.categories.list({ limit: 100 }),
   })
 }
 

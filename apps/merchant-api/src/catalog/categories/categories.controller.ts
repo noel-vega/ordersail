@@ -1,12 +1,22 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Get,
+  ParseIntPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { Category } from './entities/category.entity';
+import { PaginatedCategories } from './entities/paginated-categories.entity';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -28,8 +38,14 @@ export class CategoriesController {
 
   @Get()
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse({ type: [Category] })
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.categoriesService.findAll(user.accountId);
+  @ApiOkResponse({ type: PaginatedCategories })
+  @ApiQuery({ name: 'q', required: false, description: 'name match' })
+  findAll(
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('q') q?: string,
+  ) {
+    return this.categoriesService.findAll(limit, offset, user.accountId, q);
   }
 }

@@ -1,9 +1,12 @@
 import {
   Controller,
+  DefaultValuePipe,
   Get,
   Post,
   Patch,
   Param,
+  ParseIntPipe,
+  Query,
   Body,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,8 +17,10 @@ import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { Location } from './entities/location.entity';
+import { PaginatedLocations } from './entities/paginated-locations.entity';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -37,9 +42,15 @@ export class LocationsController {
 
   @Get()
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse({ type: [Location] })
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.locationsService.findAll(user.accountId);
+  @ApiOkResponse({ type: PaginatedLocations })
+  @ApiQuery({ name: 'q', required: false, description: 'name match' })
+  findAll(
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('q') q?: string,
+  ) {
+    return this.locationsService.findAll(limit, offset, user.accountId, q);
   }
 
   @Patch(':id')

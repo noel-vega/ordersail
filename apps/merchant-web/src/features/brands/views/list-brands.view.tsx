@@ -48,7 +48,7 @@ export function ListBrandsView() {
           </Button>
         </Link>
       </div>
-      <DataTable data={brands.data ?? []} columns={columns} />
+      <DataTable data={brands.data?.items ?? []} columns={columns} />
     </div>
   );
 }

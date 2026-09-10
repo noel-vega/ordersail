@@ -35,8 +35,11 @@ export type GetImageUploadUrlDto =
   components["schemas"]["GetImageUploadUrlDto"];
 export type CreateVariantsDto = components["schemas"]["CreateVariantsDto"];
 export type Brand = components["schemas"]["Brand"];
+export type PaginatedBrands = components["schemas"]["PaginatedBrands"];
 export type Category = components["schemas"]["Category"];
+export type PaginatedCategories = components["schemas"]["PaginatedCategories"];
 export type Location = components["schemas"]["Location"];
+export type PaginatedLocations = components["schemas"]["PaginatedLocations"];
 export type InventoryRecord = components["schemas"]["InventoryRecord"];
 export type PaginatedInventory = components["schemas"]["PaginatedInventory"];
 export type InventoryMovementRecord =

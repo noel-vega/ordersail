@@ -1,12 +1,22 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Get,
+  ParseIntPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { BrandsService } from './brands.service';
 import { CreateBrandDto } from './dto/create-brand.dto';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { Brand } from './entities/brand.entity';
+import { PaginatedBrands } from './entities/paginated-brands.entity';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -28,8 +38,14 @@ export class BrandsController {
 
   @Get()
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse({ type: [Brand] })
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.brandsService.findAll(user.accountId);
+  @ApiOkResponse({ type: PaginatedBrands })
+  @ApiQuery({ name: 'q', required: false, description: 'name match' })
+  findAll(
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('q') q?: string,
+  ) {
+    return this.brandsService.findAll(limit, offset, user.accountId, q);
   }
 }

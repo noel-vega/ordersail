@@ -945,6 +945,12 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        PaginatedBrands: {
+            items: components["schemas"]["Brand"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
         ProductImage: {
             id: number;
             url: string;
@@ -1052,6 +1058,12 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        PaginatedCategories: {
+            items: components["schemas"]["Category"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
         CreateLocationDto: {
             name: string;
         };
@@ -1069,6 +1081,12 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        PaginatedLocations: {
+            items: components["schemas"]["Location"][];
+            total: number;
+            limit: number;
+            offset: number;
         };
         UpdateLocationDto: {
             addressLine1?: string | null;
@@ -2179,7 +2197,12 @@ export interface operations {
     };
     BrandsController_findAll: {
         parameters: {
-            query?: never;
+            query: {
+                limit: number;
+                offset: number;
+                /** @description name match */
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2191,7 +2214,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Brand"][];
+                    "application/json": components["schemas"]["PaginatedBrands"];
                 };
             };
         };
@@ -2221,7 +2244,12 @@ export interface operations {
     };
     CategoriesController_findAll: {
         parameters: {
-            query?: never;
+            query: {
+                limit: number;
+                offset: number;
+                /** @description name match */
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2233,7 +2261,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Category"][];
+                    "application/json": components["schemas"]["PaginatedCategories"];
                 };
             };
         };
@@ -2263,7 +2291,12 @@ export interface operations {
     };
     LocationsController_findAll: {
         parameters: {
-            query?: never;
+            query: {
+                limit: number;
+                offset: number;
+                /** @description name match */
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2275,7 +2308,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Location"][];
+                    "application/json": components["schemas"]["PaginatedLocations"];
                 };
             };
         };

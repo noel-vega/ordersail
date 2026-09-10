@@ -2,7 +2,18 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { DRIZZLE } from 'src/shared/database/database.constants';
-import { and, type db as Db, eq, locationsTable } from 'db/stock';
+import { resolvePageParams } from 'src/shared/pagination';
+import {
+  and,
+  asc,
+  type db as Db,
+  eq,
+  ilike,
+  locationsTable,
+  type SQL,
+  sql,
+} from 'db/stock';
+import { PaginatedLocations } from './entities/paginated-locations.entity';
 
 @Injectable()
 export class LocationsService {
@@ -16,11 +27,36 @@ export class LocationsService {
     return location;
   }
 
-  async findAll(accountId: number) {
-    return await this.db
-      .select()
-      .from(locationsTable)
-      .where(eq(locationsTable.accountId, accountId));
+  async findAll(
+    limit: number,
+    offset: number,
+    accountId: number,
+    q?: string,
+  ): Promise<PaginatedLocations> {
+    const { limit: take, offset: skip } = resolvePageParams(limit, offset);
+    const where = this.listFilter(accountId, q);
+
+    const [items, [{ total }]] = await Promise.all([
+      this.db
+        .select()
+        .from(locationsTable)
+        .where(where)
+        .orderBy(asc(locationsTable.name), asc(locationsTable.id))
+        .limit(take)
+        .offset(skip),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(locationsTable)
+        .where(where),
+    ]);
+
+    return { items, total, limit: take, offset: skip };
+  }
+
+  private listFilter(accountId: number, q?: string): SQL | undefined {
+    const scope = eq(locationsTable.accountId, accountId);
+    const term = q?.trim();
+    return term ? and(scope, ilike(locationsTable.name, `%${term}%`)) : scope;
   }
 
   async update(

@@ -48,7 +48,7 @@ export function ListCategoriesView() {
           </Button>
         </Link>
       </div>
-      <DataTable data={categories.data ?? []} columns={columns} />
+      <DataTable data={categories.data?.items ?? []} columns={columns} />
     </div>
   );
 }

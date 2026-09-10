@@ -22,7 +22,7 @@ export function BrandCombobox({
   const createBrand = useCreateBrandMutation()
   const [inputValue, setInputValue] = useState("")
 
-  const options: BrandOption[] = (brandsQuery.data ?? []).map((brand) => ({
+  const options: BrandOption[] = (brandsQuery.data?.items ?? []).map((brand) => ({
     value: brand.id,
     label: brand.name,
   }))

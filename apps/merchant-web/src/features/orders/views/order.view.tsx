@@ -171,7 +171,7 @@ function CreateFulfillmentFlow({ order }: { order: OrderDetail }) {
           }
           return options;
         }, [])
-    : (locations ?? [])
+    : (locations?.items ?? [])
         .filter((location) => location.addressLine1)
         .map((location) => ({ id: location.id, name: location.name }));
 

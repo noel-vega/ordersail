@@ -35,7 +35,7 @@ export function VariantSection({
   const { data: locations } = useListLocationsQuery();
   // single-location for now — once there's more than one, adjusting stock
   // from here will need a location picker instead of a silent default
-  const defaultLocation = locations?.[0];
+  const defaultLocation = locations?.items?.[0];
 
   const adjustingRecord: InventoryRecord | null =
     adjustingVariant && defaultLocation
