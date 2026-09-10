@@ -1,7 +1,6 @@
 import { queryOptions, useMutation, useQuery, useSuspenseQuery } from "@tanstack/react-query"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
-import { getListUsersQueryOptions } from "../users/users.hooks"
 
 // no pagination — an account's role list is small and bounded, always
 // fetched in full
@@ -66,7 +65,7 @@ export function useUpdateRoleMutation() {
       queryClient.invalidateQueries(getListRolesQueryOptions())
       // the Users list embeds each user's role name as a denormalized
       // snapshot — a rename needs to refresh it too, not just the roles list
-      queryClient.invalidateQueries(getListUsersQueryOptions())
+      queryClient.invalidateQueries({ queryKey: ["users"] })
     },
   })
 }

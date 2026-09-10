@@ -1,17 +1,19 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getListUsersQueryOptions } from "../users.hooks";
-import { DataTable } from "../../../components/data-table";
+import { Link, getRouteApi } from "@tanstack/react-router";
 import { Button } from "ui/button";
 import { Badge } from "ui/badge";
-import { Link } from "@tanstack/react-router";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "ui/input-group";
-import { PlusIcon, SearchIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import type { User } from "merchant-sdk";
-import { Field, FieldLabel } from "ui/field";
 import { format } from "date-fns";
+import { DataTable } from "../../../components/data-table";
+import { DataTablePagination } from "../../../components/data-table-pagination";
+import { ListSearchInput } from "../../../components/list-search-input";
+import { PAGE_SIZE } from "../../../lib/list-search";
+import { useListUsersQuery } from "../users.hooks";
 import { EditUserRolesSheet } from "./edit-user-roles-sheet";
+
+const route = getRouteApi("/app/users/");
 
 const columns: ColumnDef<User>[] = [
   {
@@ -53,21 +55,21 @@ const columns: ColumnDef<User>[] = [
 ];
 
 export function ListUsersView() {
-  const users = useQuery(getListUsersQueryOptions());
+  const search = route.useSearch();
+  const navigate = route.useNavigate();
+  const users = useListUsersQuery(search);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-4 items-end justify-between">
-        <Field className="max-w-xs">
-          <FieldLabel>Search</FieldLabel>
-          <InputGroup>
-            <InputGroupInput placeholder="Search users..." />
-            <InputGroupAddon>
-              <SearchIcon />
-            </InputGroupAddon>
-          </InputGroup>
-        </Field>
+      <div className="flex items-end justify-between gap-4">
+        <ListSearchInput
+          initialValue={search.q}
+          placeholder="Search users..."
+          onDebouncedChange={(q) =>
+            navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
+          }
+        />
         <Link to="/app/users/create">
           <Button>
             <PlusIcon /> Add user
@@ -78,6 +80,14 @@ export function ListUsersView() {
         data={users.data?.items ?? []}
         columns={columns}
         onRowClick={(row) => setEditingUser(row.original)}
+      />
+      <DataTablePagination
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        total={users.data?.total ?? 0}
+        onPageChange={(page) =>
+          navigate({ search: (prev) => ({ ...prev, page }) })
+        }
       />
 
       <EditUserRolesSheet
