@@ -64,6 +64,7 @@ export type FailedOrder = components["schemas"]["FailedOrder"];
 export type FailedOrdersList = components["schemas"]["FailedOrdersList"];
 export type Account = components["schemas"]["Account"];
 export type User = components["schemas"]["User"];
+export type PaginatedUsers = components["schemas"]["PaginatedUsers"];
 export type CreateUserDto = components["schemas"]["CreateUserDto"];
 export type Customer = components["schemas"]["Customer"];
 export type PaginatedCustomers = components["schemas"]["PaginatedCustomers"];

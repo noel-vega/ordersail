@@ -851,6 +851,12 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        PaginatedUsers: {
+            items: components["schemas"]["User"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
         AssignRolesDto: {
             roleIds: number[];
         };
@@ -1585,7 +1591,12 @@ export interface operations {
     };
     UsersController_findAll: {
         parameters: {
-            query?: never;
+            query: {
+                limit: number;
+                offset: number;
+                /** @description name or email match */
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1597,7 +1608,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["User"][];
+                    "application/json": components["schemas"]["PaginatedUsers"];
                 };
             };
         };

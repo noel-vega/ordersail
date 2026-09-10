@@ -5,7 +5,7 @@ import { queryClient } from "../../lib/react-query-client"
 export function getListUsersQueryOptions() {
   return queryOptions({
     queryKey: ["users"],
-    queryFn: merchantApi.users.list,
+    queryFn: () => merchantApi.users.list(),
   })
 }
 
