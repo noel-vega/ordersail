@@ -5,6 +5,7 @@ import {
 } from "../../../features/roles/roles.hooks";
 import { queryClient } from "../../../lib/react-query-client";
 import { RoleView } from "../../../features/roles/views/role.view";
+import { DetailSkeleton } from "../../../components/skeletons";
 
 export const Route = createFileRoute("/app/roles/$id")({
   params: {
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/app/roles/$id")({
       queryClient.ensureQueryData(getRoleQueryOptions(params.id)),
     ]);
   },
+  pendingComponent: DetailSkeleton,
   component: RouteComponent,
 });
 

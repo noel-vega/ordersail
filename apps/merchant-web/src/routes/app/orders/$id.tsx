@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { getOrderQueryOptions } from '../../../features/orders/orders.hooks'
 import { queryClient } from '../../../lib/react-query-client'
 import { OrderView } from '../../../features/orders/views/order.view'
+import { DetailSkeleton } from '../../../components/skeletons'
 
 export const Route = createFileRoute('/app/orders/$id')({
   params: {
@@ -14,6 +15,7 @@ export const Route = createFileRoute('/app/orders/$id')({
   beforeLoad: async ({ params }) => {
     await queryClient.ensureQueryData(getOrderQueryOptions(params.id))
   },
+  pendingComponent: DetailSkeleton,
   component: RouteComponent,
 })
 

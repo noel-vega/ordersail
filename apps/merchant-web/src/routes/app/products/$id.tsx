@@ -6,6 +6,7 @@ import {
 } from '../../../features/products/products.hooks'
 import { queryClient } from '../../../lib/react-query-client'
 import { ProductView } from '../../../features/products/views/product.view'
+import { DetailSkeleton } from '../../../components/skeletons'
 
 export const Route = createFileRoute('/app/products/$id')({
   params: {
@@ -25,6 +26,7 @@ export const Route = createFileRoute('/app/products/$id')({
       queryClient.ensureQueryData(getProductVariantsQueryOptions(params.id)),
     ]);
   },
+  pendingComponent: DetailSkeleton,
   component: RouteComponent,
 })
 
