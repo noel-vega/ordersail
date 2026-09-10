@@ -36,6 +36,8 @@ function invalidateOrder(orderId: number) {
 
 export function useRefundOrderMutation(orderId: number) {
   return useMutation({
+    // the refund sheet shows the error inline next to the form
+    meta: { skipGlobalErrorToast: true },
     mutationFn: (body: RefundOrderDto) => merchantApi.orders.refund(orderId, body),
     onSuccess: () => invalidateOrder(orderId),
   })
@@ -43,6 +45,8 @@ export function useRefundOrderMutation(orderId: number) {
 
 export function useCancelOrderMutation(orderId: number) {
   return useMutation({
+    // the cancel dialog shows the error inline
+    meta: { skipGlobalErrorToast: true },
     mutationFn: (body: CancelOrderDto) => merchantApi.orders.cancel(orderId, body),
     onSuccess: () => invalidateOrder(orderId),
   })

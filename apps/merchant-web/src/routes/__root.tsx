@@ -1,10 +1,12 @@
 import { createRootRoute, Outlet, redirect } from "@tanstack/react-router";
+import { Toaster } from "ui/sonner";
 import { merchantApi } from "../lib/merchant-api-client";
 import { appConfig } from "../config";
 
 const RootLayout = () => (
   <div className="h-dvh">
     <Outlet />
+    <Toaster />
   </div>
 );
 

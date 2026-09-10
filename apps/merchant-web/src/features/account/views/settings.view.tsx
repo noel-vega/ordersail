@@ -39,8 +39,9 @@ function ShippingContactForm(props: { phone: string; email: string }) {
     form.reset({ phone: props.phone, email: props.email });
   }, [props.phone, props.email]);
 
-  const handleSubmit = form.handleSubmit(async (data) => {
-    await updateAccount.mutateAsync(data);
+  const handleSubmit = form.handleSubmit((data) => {
+    // errors surface as a toast (react-query-client MutationCache.onError)
+    updateAccount.mutate(data);
   });
 
   return (

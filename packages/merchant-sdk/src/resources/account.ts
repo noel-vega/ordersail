@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { paths, components } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import { unwrap, type DoFn } from "../http.js";
 
 export function createAccountResource(client: Client<paths>, doRequest: DoFn) {
   return {
@@ -9,11 +9,7 @@ export function createAccountResource(client: Client<paths>, doRequest: DoFn) {
       return data;
     },
 
-    update: async (params: components["schemas"]["UpdateAccountDto"]) => {
-      const { data } = await doRequest(() =>
-        client.PATCH("/account", { body: params }),
-      );
-      return data;
-    },
+    update: async (params: components["schemas"]["UpdateAccountDto"]) =>
+      unwrap(await doRequest(() => client.PATCH("/account", { body: params }))),
   };
 }

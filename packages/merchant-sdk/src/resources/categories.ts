@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { paths, components } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import { unwrap, type DoFn } from "../http.js";
 
 export function createCategoriesResource(client: Client<paths>, doRequest: DoFn) {
   return {
@@ -18,11 +18,9 @@ export function createCategoriesResource(client: Client<paths>, doRequest: DoFn)
       return data;
     },
 
-    create: async (params: components["schemas"]["CreateCategoryDto"]) => {
-      const { data } = await doRequest(() =>
-        client.POST("/categories", { body: params }),
-      );
-      return data;
-    },
+    create: async (params: components["schemas"]["CreateCategoryDto"]) =>
+      unwrap(
+        await doRequest(() => client.POST("/categories", { body: params })),
+      ),
   };
 }
