@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getRouteApi } from "@tanstack/react-router";
 import { loadConnectAndInitialize } from "@stripe/connect-js";
 import {
   ConnectAccountManagement,
@@ -28,11 +29,24 @@ function StatusBadge({
   return <Badge variant="outline">Not connected</Badge>;
 }
 
+const route = getRouteApi("/app/payments/");
+
 export function PaymentsView() {
   const status = useStripeConnectStatusQuery();
   const createAccountSession = useCreateAccountSessionMutation();
   const refreshStatus = useRefreshStripeConnectStatus();
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const { onboarding } = route.useSearch();
+  const navigate = route.useNavigate();
+  // deep-linked from the dashboard checklist — jump straight into the
+  // embedded onboarding flow, but only if it isn't already done
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => (onboarding ?? false) && !status.data?.chargesEnabled,
+  );
+
+  // drop the ?onboarding param once consumed so a refresh doesn't re-trigger
+  useEffect(() => {
+    if (onboarding) navigate({ search: {}, replace: true });
+  }, [onboarding, navigate]);
 
   // needed both while onboarding and afterward (to show account info), so
   // it's created as soon as there's a connected account to talk to, not
