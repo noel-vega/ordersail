@@ -39,6 +39,7 @@ import { Route as AppRolesIdRouteImport } from './routes/app/roles/$id'
 import { Route as AppRolesCreateRouteImport } from './routes/app/roles/create'
 import { Route as AppSettingsIndexRouteImport } from './routes/app/settings/index'
 import { Route as AppUsersIndexRouteImport } from './routes/app/users/index'
+import { Route as AppUsersIdRouteImport } from './routes/app/users/$id'
 import { Route as AppUsersCreateRouteImport } from './routes/app/users/create'
 import { Route as AppProductsBrandsIndexRouteImport } from './routes/app/products/brands/index'
 import { Route as AppProductsBrandsCreateRouteImport } from './routes/app/products/brands/create'
@@ -195,6 +196,11 @@ const AppUsersIndexRoute = AppUsersIndexRouteImport.update({
   path: '/users/',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppUsersIdRoute = AppUsersIdRouteImport.update({
+  id: '/users/$id',
+  path: '/users/$id',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 const AppUsersCreateRoute = AppUsersCreateRouteImport.update({
   id: '/users/create',
   path: '/users/create',
@@ -241,6 +247,7 @@ export interface FileRoutesByFullPath {
   '/app/products/create': typeof AppProductsCreateRoute
   '/app/roles/$id': typeof AppRolesIdRoute
   '/app/roles/create': typeof AppRolesCreateRoute
+  '/app/users/$id': typeof AppUsersIdRoute
   '/app/users/create': typeof AppUsersCreateRoute
   '/app/carts/': typeof AppCartsIndexRoute
   '/app/customers/': typeof AppCustomersIndexRoute
@@ -275,6 +282,7 @@ export interface FileRoutesByTo {
   '/app/products/create': typeof AppProductsCreateRoute
   '/app/roles/$id': typeof AppRolesIdRoute
   '/app/roles/create': typeof AppRolesCreateRoute
+  '/app/users/$id': typeof AppUsersIdRoute
   '/app/users/create': typeof AppUsersCreateRoute
   '/app/carts': typeof AppCartsIndexRoute
   '/app/customers': typeof AppCustomersIndexRoute
@@ -313,6 +321,7 @@ export interface FileRoutesById {
   '/app/products/create': typeof AppProductsCreateRoute
   '/app/roles/$id': typeof AppRolesIdRoute
   '/app/roles/create': typeof AppRolesCreateRoute
+  '/app/users/$id': typeof AppUsersIdRoute
   '/app/users/create': typeof AppUsersCreateRoute
   '/app/carts/': typeof AppCartsIndexRoute
   '/app/customers/': typeof AppCustomersIndexRoute
@@ -352,6 +361,7 @@ export interface FileRouteTypes {
     | '/app/products/create'
     | '/app/roles/$id'
     | '/app/roles/create'
+    | '/app/users/$id'
     | '/app/users/create'
     | '/app/carts/'
     | '/app/customers/'
@@ -386,6 +396,7 @@ export interface FileRouteTypes {
     | '/app/products/create'
     | '/app/roles/$id'
     | '/app/roles/create'
+    | '/app/users/$id'
     | '/app/users/create'
     | '/app/carts'
     | '/app/customers'
@@ -423,6 +434,7 @@ export interface FileRouteTypes {
     | '/app/products/create'
     | '/app/roles/$id'
     | '/app/roles/create'
+    | '/app/users/$id'
     | '/app/users/create'
     | '/app/carts/'
     | '/app/customers/'
@@ -663,6 +675,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppUsersIndexRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/users/$id': {
+      id: '/app/users/$id'
+      path: '/users/$id'
+      fullPath: '/app/users/$id'
+      preLoaderRoute: typeof AppUsersIdRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/app/users/create': {
       id: '/app/users/create'
       path: '/users/create'
@@ -749,6 +768,7 @@ interface AppRouteRouteChildren {
   AppInventoryMovementsRoute: typeof AppInventoryMovementsRoute
   AppLocationsCreateRoute: typeof AppLocationsCreateRoute
   AppOrdersIdRoute: typeof AppOrdersIdRoute
+  AppUsersIdRoute: typeof AppUsersIdRoute
   AppUsersCreateRoute: typeof AppUsersCreateRoute
   AppCartsIndexRoute: typeof AppCartsIndexRoute
   AppCustomersIndexRoute: typeof AppCustomersIndexRoute
@@ -772,6 +792,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppInventoryMovementsRoute: AppInventoryMovementsRoute,
   AppLocationsCreateRoute: AppLocationsCreateRoute,
   AppOrdersIdRoute: AppOrdersIdRoute,
+  AppUsersIdRoute: AppUsersIdRoute,
   AppUsersCreateRoute: AppUsersCreateRoute,
   AppCartsIndexRoute: AppCartsIndexRoute,
   AppCustomersIndexRoute: AppCustomersIndexRoute,

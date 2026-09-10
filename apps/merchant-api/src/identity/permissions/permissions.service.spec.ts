@@ -88,4 +88,20 @@ describe('PermissionsService.getEffectivePermissionKeys (OS-180)', () => {
     const user = await insertUser(db, { accountId: account.id });
     expect((await service().getEffectivePermissionKeys(user.id)).size).toBe(0);
   });
+
+  it('is empty for a deactivated user even with roles (OS-184)', async () => {
+    const account = await insertAccount(db);
+    await seedPermissionsCatalog(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      deactivatedAt: new Date(),
+    });
+    const role = await insertRole(db, {
+      accountId: account.id,
+      permissionKeys: ['orders:read', 'orders:write'],
+    });
+    await assignRole(db, { userId: user.id, roleId: role.id });
+
+    expect((await service().getEffectivePermissionKeys(user.id)).size).toBe(0);
+  });
 });

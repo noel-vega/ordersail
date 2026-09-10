@@ -1,14 +1,17 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import {
+  and,
   type db as Db,
   eq,
+  isNull,
   PERMISSIONS_CATALOG,
   permissionsTable,
   rolePermissionsTable,
   rolesTable,
   sql,
   userRolesTable,
+  usersTable,
 } from 'db/identity';
 
 @Injectable()
@@ -86,7 +89,15 @@ export class PermissionsService implements OnModuleInit {
         permissionsTable,
         eq(permissionsTable.id, rolePermissionsTable.permissionId),
       )
-      .where(eq(userRolesTable.userId, userId));
+      // a deactivated staff member keeps their role rows but loses every
+      // effective permission, so any @RequirePermissions route 403s for them
+      .innerJoin(usersTable, eq(usersTable.id, userRolesTable.userId))
+      .where(
+        and(
+          eq(userRolesTable.userId, userId),
+          isNull(usersTable.deactivatedAt),
+        ),
+      );
 
     return new Set(rows.map((row) => row.key));
   }

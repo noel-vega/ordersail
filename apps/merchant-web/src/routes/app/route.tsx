@@ -19,7 +19,10 @@ export const Route = createFileRoute("/app")({
   // expose them on the router context so child routes' beforeLoad can gate
   beforeLoad: async () => {
     const me = await queryClient.ensureQueryData(getAuthMeQueryOptions());
-    return { permissions: new Set(me?.permissions ?? []) };
+    return {
+      userId: me?.userId,
+      permissions: new Set(me?.permissions ?? []),
+    };
   },
   component: RouteComponent,
 });

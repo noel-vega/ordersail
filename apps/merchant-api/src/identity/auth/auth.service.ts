@@ -18,6 +18,7 @@ import {
   accountApiKeysTable,
   accountsTable,
   type db as Db,
+  eq,
   isUniqueViolation,
   usersTable,
 } from 'db/identity';
@@ -236,6 +237,19 @@ export class AuthService {
       // Returns the decoded payload if valid
       const payload =
         await this.jwtService.verifyAsync<AuthenticatedUser>(refreshToken);
+
+      // a staff member deactivated mid-session still holds a valid 7-day
+      // refresh token — re-check the row here so they can't keep minting
+      // access tokens (gated routes already 403 them; this also cuts off the
+      // authenticated-but-ungated ones)
+      const [row] = await this.db
+        .select({ deactivatedAt: usersTable.deactivatedAt })
+        .from(usersTable)
+        .where(eq(usersTable.id, payload.sub));
+      if (!row || row.deactivatedAt) {
+        throw new UnauthorizedException('Invalid or expired token');
+      }
+
       const token = await this.createAccessToken(
         payload.sub,
         payload.email,

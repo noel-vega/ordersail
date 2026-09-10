@@ -6,7 +6,8 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
-import { User, UserRoleSummary } from './entities/user.entity';
+import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
+import { User, UserRoleSummary, type UserStatus } from './entities/user.entity';
 import { PaginatedUsers } from './entities/paginated-users.entity';
 import { EmailService } from 'src/shared/email/email.service';
 import { resolvePageParams } from 'src/shared/pagination';
@@ -26,6 +27,7 @@ import {
   ilike,
   inArray,
   isForeignKeyViolation,
+  isNull,
   isUniqueViolation,
   ne,
   or,
@@ -39,6 +41,12 @@ import {
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, matches the refresh token TTL
 
+function userStatus(row: typeof usersTable.$inferSelect): UserStatus {
+  if (row.deactivatedAt) return 'deactivated';
+  if (!row.password) return 'invited';
+  return 'active';
+}
+
 function toUser(
   row: typeof usersTable.$inferSelect,
   roles: UserRoleSummary[],
@@ -46,6 +54,7 @@ function toUser(
   return {
     id: row.id,
     accountId: row.accountId,
+    status: userStatus(row),
     firstName: row.firstname,
     lastName: row.lastname,
     phone: row.phone,
@@ -64,11 +73,15 @@ export class UsersService {
     private readonly permissionsService: PermissionsService,
   ) {}
 
+  // deactivated users are excluded so sign-in refuses them exactly like a
+  // wrong password — no separate "your account is disabled" signal
   async getByEmail(email: string) {
     const [user] = await this.db
       .select()
       .from(usersTable)
-      .where(eq(usersTable.email, email));
+      .where(
+        and(eq(usersTable.email, email), isNull(usersTable.deactivatedAt)),
+      );
 
     return user;
   }
@@ -456,6 +469,147 @@ export class UsersService {
     }
 
     return toUser(user, finalRoles);
+  }
+
+  async getById(userId: number, accountId: number): Promise<User | undefined> {
+    const [user] = await this.db
+      .select()
+      .from(usersTable)
+      .where(
+        and(eq(usersTable.id, userId), eq(usersTable.accountId, accountId)),
+      );
+
+    if (!user) return undefined;
+
+    const roles = await this.getRolesByUserId([user.id]);
+    return toUser(user, roles.get(user.id) ?? []);
+  }
+
+  // name + phone only — email is the login identity and isn't editable here.
+  // Any subset of fields may be present; an all-empty patch is a no-op read.
+  async update(
+    userId: number,
+    accountId: number,
+    dto: UpdateUserProfileDto,
+  ): Promise<User | undefined> {
+    const patch: Partial<typeof usersTable.$inferInsert> = {};
+    if (dto.firstName !== undefined) patch.firstname = dto.firstName;
+    if (dto.lastName !== undefined) patch.lastname = dto.lastName;
+    if (dto.phone !== undefined) patch.phone = dto.phone;
+
+    if (Object.keys(patch).length === 0) {
+      return this.getById(userId, accountId);
+    }
+
+    patch.updatedAt = new Date();
+
+    const [user] = await this.db
+      .update(usersTable)
+      .set(patch)
+      .where(
+        and(eq(usersTable.id, userId), eq(usersTable.accountId, accountId)),
+      )
+      .returning();
+
+    if (!user) return undefined;
+
+    const roles = await this.getRolesByUserId([user.id]);
+    return toUser(user, roles.get(user.id) ?? []);
+  }
+
+  // deactivate (set deactivatedAt) / reactivate (clear it). Deactivating the
+  // last non-deactivated holder of an isSystem (Owner) role is refused —
+  // reuses the same Owner-role row lock as updateRoles so concurrent
+  // deactivations serialize through one point and can't both slip past the
+  // "is there another Owner?" check. Reactivating is always allowed.
+  async setDeactivated(
+    userId: number,
+    accountId: number,
+    deactivated: boolean,
+  ): Promise<User | undefined> {
+    const [user] = await this.db
+      .select()
+      .from(usersTable)
+      .where(
+        and(eq(usersTable.id, userId), eq(usersTable.accountId, accountId)),
+      );
+
+    if (!user) return undefined;
+
+    const alreadyInState = deactivated
+      ? user.deactivatedAt !== null
+      : user.deactivatedAt === null;
+    if (alreadyInState) {
+      const roles = await this.getRolesByUserId([user.id]);
+      return toUser(user, roles.get(user.id) ?? []);
+    }
+
+    let updated: typeof usersTable.$inferSelect | undefined;
+
+    await this.db.transaction(async (tx) => {
+      if (deactivated) {
+        const [ownerRole] = await tx
+          .select({ id: rolesTable.id })
+          .from(rolesTable)
+          .where(
+            and(
+              eq(rolesTable.accountId, accountId),
+              eq(rolesTable.isSystem, true),
+            ),
+          )
+          .for('update');
+
+        if (ownerRole) {
+          const [holdsOwner] = await tx
+            .select({ userId: userRolesTable.userId })
+            .from(userRolesTable)
+            .where(
+              and(
+                eq(userRolesTable.userId, userId),
+                eq(userRolesTable.roleId, ownerRole.id),
+              ),
+            )
+            .limit(1);
+
+          if (holdsOwner) {
+            const [otherHolder] = await tx
+              .select({ userId: userRolesTable.userId })
+              .from(userRolesTable)
+              .innerJoin(usersTable, eq(usersTable.id, userRolesTable.userId))
+              .where(
+                and(
+                  eq(userRolesTable.roleId, ownerRole.id),
+                  ne(userRolesTable.userId, userId),
+                  isNull(usersTable.deactivatedAt),
+                ),
+              )
+              .limit(1);
+
+            if (!otherHolder) {
+              throw new ConflictException(
+                'Cannot deactivate the last active user holding the Owner role',
+              );
+            }
+          }
+        }
+      }
+
+      [updated] = await tx
+        .update(usersTable)
+        .set({
+          deactivatedAt: deactivated ? new Date() : null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(usersTable.id, userId), eq(usersTable.accountId, accountId)),
+        )
+        .returning();
+    });
+
+    if (!updated) return undefined;
+
+    const roles = await this.getRolesByUserId([updated.id]);
+    return toUser(updated, roles.get(updated.id) ?? []);
   }
 
   // batched: one query for every user's roles instead of one per user
