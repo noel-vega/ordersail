@@ -7,6 +7,16 @@ import {
   eq,
   isNull,
 } from 'db/identity';
+import { generateApiKey } from './api-keys.util';
+
+// the four columns the merchant ever sees — the same projection for list and
+// create so the SDK/DTO shape stays identical
+const API_KEY_COLUMNS = {
+  id: accountApiKeysTable.id,
+  key: accountApiKeysTable.key,
+  label: accountApiKeysTable.label,
+  createdAt: accountApiKeysTable.createdAt,
+} as const;
 
 @Injectable()
 export class ApiKeysService {
@@ -14,12 +24,7 @@ export class ApiKeysService {
 
   async listForAccount(accountId: number) {
     return this.db
-      .select({
-        id: accountApiKeysTable.id,
-        key: accountApiKeysTable.key,
-        label: accountApiKeysTable.label,
-        createdAt: accountApiKeysTable.createdAt,
-      })
+      .select(API_KEY_COLUMNS)
       .from(accountApiKeysTable)
       .where(
         and(
@@ -27,5 +32,14 @@ export class ApiKeysService {
           isNull(accountApiKeysTable.revokedAt),
         ),
       );
+  }
+
+  async createForAccount(accountId: number, label?: string | null) {
+    const [created] = await this.db
+      .insert(accountApiKeysTable)
+      .values({ accountId, key: generateApiKey(), label: label ?? null })
+      .returning(API_KEY_COLUMNS);
+
+    return created;
   }
 }
