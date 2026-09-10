@@ -19,6 +19,7 @@ import { Brand } from './entities/brand.entity';
 import { PaginatedBrands } from './entities/paginated-brands.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -27,6 +28,7 @@ export class BrandsController {
   constructor(private readonly brandsService: BrandsService) {}
 
   @Post()
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiCreatedResponse({ type: Brand })
   create(
@@ -37,6 +39,7 @@ export class BrandsController {
   }
 
   @Get()
+  @RequirePermissions('products:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedBrands })
   @ApiQuery({ name: 'q', required: false, description: 'name match' })

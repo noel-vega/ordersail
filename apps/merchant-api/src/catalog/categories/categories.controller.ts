@@ -19,6 +19,7 @@ import { Category } from './entities/category.entity';
 import { PaginatedCategories } from './entities/paginated-categories.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -27,6 +28,7 @@ export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Post()
+  @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiCreatedResponse({ type: Category })
   create(
@@ -37,6 +39,7 @@ export class CategoriesController {
   }
 
   @Get()
+  @RequirePermissions('products:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedCategories })
   @ApiQuery({ name: 'q', required: false, description: 'name match' })

@@ -46,6 +46,7 @@ import { VariantSection } from "../variant-section";
 import { ProductInventoryTab } from "./product-inventory-tab";
 import { ProductImagesTab } from "./product-images-tab";
 import { Separator } from "ui/separator";
+import { Can } from "../../../components/can";
 
 
 const DetailsFormSchema = z.object({
@@ -131,28 +132,30 @@ export function ProductView({ id }: { id: number }) {
               {formatDistanceToNow(new Date(data.updatedAt), { addSuffix: true })}
             </p>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Product settings"
-                />
-              }
-            >
-              <SettingsIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => setDeleteDialogOpen(true)}
+          <Can permission="products:delete">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Product settings"
+                  />
+                }
               >
-                <Trash2Icon /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <SettingsIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  <Trash2Icon /> Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </Can>
         </div>
       </header>
 
@@ -256,25 +259,30 @@ export function ProductView({ id }: { id: number }) {
               )}
             />
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!isDirty || updateProduct.isPending}
-                onClick={() => detailsForm.reset()}
-              >
-                Reset
-              </Button>
-              <Button type="submit" disabled={!isDirty || !isValid || updateProduct.isPending}>
-                {updateProduct.isPending ? (
-                  <>
-                    <LoaderCircleIcon className="animate-spin" /> Saving...
-                  </>
-                ) : (
-                  "Save"
-                )}
-              </Button>
-            </div>
+            <Can permission="products:write">
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!isDirty || updateProduct.isPending}
+                  onClick={() => detailsForm.reset()}
+                >
+                  Reset
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={!isDirty || !isValid || updateProduct.isPending}
+                >
+                  {updateProduct.isPending ? (
+                    <>
+                      <LoaderCircleIcon className="animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+              </div>
+            </Can>
           </form>
         </TabsContent>
 

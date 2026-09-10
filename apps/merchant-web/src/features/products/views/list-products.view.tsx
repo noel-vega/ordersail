@@ -5,6 +5,7 @@ import type { Product } from "merchant-sdk";
 import { format } from "date-fns";
 import { Button } from "ui/button";
 import { cn } from "ui/utils";
+import { Can } from "../../../components/can";
 import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
@@ -81,11 +82,13 @@ export function ProductListView() {
             navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
           }
         />
-        <Link to="/app/products/create">
-          <Button>
-            <PlusIcon /> Product
-          </Button>
-        </Link>
+        <Can permission="products:write">
+          <Link to="/app/products/create">
+            <Button>
+              <PlusIcon /> Product
+            </Button>
+          </Link>
+        </Can>
       </div>
 
       {!showGuidedEmptyState && (
@@ -125,11 +128,13 @@ export function ProductListView() {
           <p className="text-sm text-muted-foreground">
             No products yet — add your first one to start selling.
           </p>
-          <Link to="/app/products/create">
-            <Button className="mt-4">
-              <PlusIcon /> Add your first product
-            </Button>
-          </Link>
+          <Can permission="products:write">
+            <Link to="/app/products/create">
+              <Button className="mt-4">
+                <PlusIcon /> Add your first product
+              </Button>
+            </Link>
+          </Can>
         </div>
       ) : (
         <>
