@@ -1,5 +1,5 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
-import type { RefundOrderDto } from "merchant-sdk"
+import type { CancelOrderDto, RefundOrderDto } from "merchant-sdk"
 import { adminApi } from "../../lib/admin-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { getDashboardSummaryQueryOptions } from "../dashboard/dashboard.hooks"
@@ -37,6 +37,13 @@ function invalidateOrder(orderId: number) {
 export function useRefundOrderMutation(orderId: number) {
   return useMutation({
     mutationFn: (body: RefundOrderDto) => adminApi.orders.refund(orderId, body),
+    onSuccess: () => invalidateOrder(orderId),
+  })
+}
+
+export function useCancelOrderMutation(orderId: number) {
+  return useMutation({
+    mutationFn: (body: CancelOrderDto) => adminApi.orders.cancel(orderId, body),
     onSuccess: () => invalidateOrder(orderId),
   })
 }
