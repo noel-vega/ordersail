@@ -1,23 +1,41 @@
-import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
+import {
+  keepPreviousData,
+  queryOptions,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
+import { PAGE_SIZE, pageOffset, type ListSearch } from "../../lib/list-search"
 
-export function getListLocationsQueryOptions() {
+// No `search` → the full list (capped at 100) for the location pickers. With a
+// `search` → one page for the Locations list route.
+export function getListLocationsQueryOptions(search?: ListSearch) {
   return queryOptions({
-    queryKey: ["locations"],
-    queryFn: () => merchantApi.locations.list({ limit: 100 }),
+    queryKey: ["locations", search ?? "all"],
+    queryFn: () =>
+      merchantApi.locations.list(
+        search
+          ? {
+              limit: PAGE_SIZE,
+              offset: pageOffset(search.page),
+              q: search.q || undefined,
+            }
+          : { limit: 100 },
+      ),
+    placeholderData: keepPreviousData,
   })
 }
 
-export function useListLocationsQuery() {
-  return useQuery(getListLocationsQueryOptions())
+export function useListLocationsQuery(search?: ListSearch) {
+  return useQuery(getListLocationsQueryOptions(search))
 }
 
 export function useCreateLocationMutation() {
   return useMutation({
     mutationFn: merchantApi.locations.create,
     onSuccess: () => {
-      queryClient.invalidateQueries(getListLocationsQueryOptions())
+      queryClient.invalidateQueries({ queryKey: ["locations"] })
     },
   })
 }
@@ -30,7 +48,7 @@ export function useUpdateLocationMutation() {
     }: { id: number } & Parameters<typeof merchantApi.locations.update>[1]) =>
       merchantApi.locations.update(id, params),
     onSuccess: () => {
-      queryClient.invalidateQueries(getListLocationsQueryOptions())
+      queryClient.invalidateQueries({ queryKey: ["locations"] })
     },
   })
 }

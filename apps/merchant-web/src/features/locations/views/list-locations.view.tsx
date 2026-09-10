@@ -1,14 +1,9 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getListLocationsQueryOptions } from "../locations.hooks";
-import { DataTable } from "../../../components/data-table";
+import { Link, getRouteApi } from "@tanstack/react-router";
 import { Button } from "ui/button";
-import { Link } from "@tanstack/react-router";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "ui/input-group";
-import { MoreVerticalIcon, PencilIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { MoreVerticalIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import type { Location } from "merchant-sdk";
-import { Field, FieldLabel } from "ui/field";
 import { format } from "date-fns";
 import {
   DropdownMenu,
@@ -16,7 +11,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "ui/dropdown-menu";
+import { DataTable } from "../../../components/data-table";
+import { DataTablePagination } from "../../../components/data-table-pagination";
+import { ListSearchInput } from "../../../components/list-search-input";
+import { PAGE_SIZE } from "../../../lib/list-search";
+import { useListLocationsQuery } from "../locations.hooks";
 import { EditLocationSheet } from "./edit-location-sheet";
+
+const route = getRouteApi("/app/locations/");
 
 function formatAddress(location: Location) {
   if (!location.addressLine1) return "—";
@@ -74,23 +76,23 @@ function getColumns(handlers: {
 }
 
 export function ListLocationsView() {
-  const locations = useQuery(getListLocationsQueryOptions());
+  const search = route.useSearch();
+  const navigate = route.useNavigate();
+  const locations = useListLocationsQuery(search);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
 
   const columns = getColumns({ onEdit: (location) => setEditingLocation(location) });
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-4 items-end justify-between">
-        <Field className="max-w-xs">
-          <FieldLabel>Search</FieldLabel>
-          <InputGroup>
-            <InputGroupInput placeholder="Search locations..." />
-            <InputGroupAddon>
-              <SearchIcon />
-            </InputGroupAddon>
-          </InputGroup>
-        </Field>
+      <div className="flex items-end justify-between gap-4">
+        <ListSearchInput
+          initialValue={search.q}
+          placeholder="Search locations..."
+          onDebouncedChange={(q) =>
+            navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
+          }
+        />
         <Link to="/app/locations/create">
           <Button>
             <PlusIcon /> Location
@@ -98,6 +100,14 @@ export function ListLocationsView() {
         </Link>
       </div>
       <DataTable data={locations.data?.items ?? []} columns={columns} />
+      <DataTablePagination
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        total={locations.data?.total ?? 0}
+        onPageChange={(page) =>
+          navigate({ search: (prev) => ({ ...prev, page }) })
+        }
+      />
 
       <EditLocationSheet
         location={editingLocation}

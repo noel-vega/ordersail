@@ -39,7 +39,7 @@ import {
   useProductQuery,
   useUpdateProductMutation,
 } from "../products.hooks";
-import { useListInventoryQuery } from "../../inventory/inventory.hooks";
+import { useProductInventoryQuery } from "../../inventory/inventory.hooks";
 import { BrandCombobox } from "../../brands/components/brand-combobox";
 import { CategoryCombobox } from "../../categories/components/category-combobox";
 import { VariantSection } from "../variant-section";
@@ -61,7 +61,7 @@ type DetailsForm = z.infer<typeof DetailsFormSchema>;
 export function ProductView({ id }: { id: number }) {
   const navigate = useNavigate();
   const { data } = useProductQuery(id);
-  const { data: inventory } = useListInventoryQuery({ productId: id });
+  const { data: inventory } = useProductInventoryQuery(id);
   const deleteProduct = useDeleteProductMutation();
   const updateProduct = useUpdateProductMutation(id);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
