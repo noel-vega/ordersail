@@ -1,10 +1,19 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Fulfillment } from '../../fulfillments/entities/fulfillment.entity';
+import { ORDER_STATUSES, type OrderStatus } from '../order-status';
 
 export type FulfillmentStatus =
   'unfulfilled' | 'partially_fulfilled' | 'fulfilled';
 
 export type OrderChannel = 'web' | 'pos';
+
+export type OrderEventType =
+  | 'status_changed'
+  | 'refund'
+  | 'cancellation'
+  | 'payment'
+  | 'fulfillment'
+  | 'note';
 
 class OrderShippingInfo {
   @ApiProperty()
@@ -33,6 +42,7 @@ class OrderPayment {
   @ApiProperty({ enum: ['stripe', 'cash', 'card'] })
   method!: 'stripe' | 'cash' | 'card';
 
+  // negative on a refund row, positive on a tender
   @ApiProperty({ type: Number })
   amountCents!: number;
 
@@ -40,6 +50,44 @@ class OrderPayment {
   // amountTenderedCents - amountCents
   @ApiProperty({ type: Number, nullable: true })
   amountTenderedCents!: number | null;
+
+  // set on refund rows only
+  @ApiProperty({ type: 'string', nullable: true })
+  stripeRefundId!: string | null;
+
+  @ApiProperty({ type: 'string', nullable: true })
+  reason!: string | null;
+}
+
+class OrderEvent {
+  @ApiProperty({ type: Number })
+  id!: number;
+
+  @ApiProperty({
+    enum: [
+      'status_changed',
+      'refund',
+      'cancellation',
+      'payment',
+      'fulfillment',
+      'note',
+    ],
+  })
+  type!: OrderEventType;
+
+  // pre-rendered human summary — the timeline renders this verbatim
+  @ApiProperty()
+  message!: string;
+
+  @ApiProperty({ enum: ['staff', 'system', 'customer'] })
+  actorType!: 'staff' | 'system' | 'customer';
+
+  // the staff member's name; null for system events or a deleted user
+  @ApiProperty({ type: 'string', nullable: true })
+  actorName!: string | null;
+
+  @ApiProperty()
+  createdAt!: Date;
 }
 
 class OrderItemAllocation {
@@ -96,6 +144,10 @@ export class OrderDetail {
   @ApiProperty({ enum: ['web', 'pos'] })
   channel!: OrderChannel;
 
+  // financial lifecycle — distinct from the derived fulfillmentStatus below
+  @ApiProperty({ enum: ORDER_STATUSES })
+  status!: OrderStatus;
+
   @ApiProperty({ type: 'string', nullable: true })
   customerName!: string | null;
 
@@ -131,4 +183,8 @@ export class OrderDetail {
 
   @ApiProperty({ type: () => [Fulfillment] })
   fulfillments!: Fulfillment[];
+
+  // audit trail, newest first
+  @ApiProperty({ type: () => [OrderEvent] })
+  events!: OrderEvent[];
 }

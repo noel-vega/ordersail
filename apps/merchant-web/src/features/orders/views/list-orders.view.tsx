@@ -8,6 +8,7 @@ import { getListOrdersQueryOptions } from "../orders.hooks";
 import { formatCents } from "../../../lib/currency";
 import { DataTable } from "../../../components/data-table";
 import { FulfillmentStatusBadge } from "../components/fulfillment-status-badge";
+import { OrderStatusBadge } from "../components/order-status-badge";
 
 const columns: ColumnDef<OrderListItem>[] = [
   {
@@ -46,6 +47,11 @@ const columns: ColumnDef<OrderListItem>[] = [
     accessorKey: "amountTotalCents",
     header: "Total",
     cell: ({ row }) => formatCents(row.original.amountTotalCents),
+  },
+  {
+    accessorKey: "status",
+    header: "Status",
+    cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
   },
   {
     accessorKey: "fulfillmentStatus",

@@ -44,6 +44,7 @@ export type OrderDetail = components["schemas"]["OrderDetail"];
 export type OrderDetailItem = components["schemas"]["OrderDetailItem"];
 export type OrderShippingInfo = components["schemas"]["OrderShippingInfo"];
 export type OrderPayment = components["schemas"]["OrderPayment"];
+export type OrderEvent = components["schemas"]["OrderEvent"];
 export type OrderStatusChange = components["schemas"]["OrderStatusChange"];
 export type UpdateOrderStatusDto =
   components["schemas"]["UpdateOrderStatusDto"];

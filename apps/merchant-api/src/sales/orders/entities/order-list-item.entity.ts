@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ORDER_STATUSES, type OrderStatus } from '../order-status';
 import type { FulfillmentStatus, OrderChannel } from './order-detail.entity';
 
 export class OrderListItem {
@@ -7,6 +8,9 @@ export class OrderListItem {
 
   @ApiProperty({ enum: ['web', 'pos'] })
   channel!: OrderChannel;
+
+  @ApiProperty({ enum: ORDER_STATUSES })
+  status!: OrderStatus;
 
   @ApiProperty({ type: 'string', nullable: true })
   customerName!: string | null;
