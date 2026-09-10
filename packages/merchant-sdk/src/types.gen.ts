@@ -1212,6 +1212,7 @@ export interface components {
             fulfilledQuantity: number;
             remainingQuantity: number;
             allocations: components["schemas"]["OrderItemAllocation"][];
+            refundedQuantity: number;
         };
         FulfillmentItem: {
             orderItemId: number;

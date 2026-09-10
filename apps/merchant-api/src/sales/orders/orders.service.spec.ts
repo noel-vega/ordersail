@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { orderEventsTable } from 'db/sales';
+import { orderEventsTable, orderRefundLinesTable } from 'db/sales';
 import {
   insertAccount,
   insertOrder,
@@ -102,5 +102,28 @@ describe('OrdersService — status + events (OS-120)', () => {
 
     const detail = await service.findOne(order.id, account.id);
     expect(detail?.events).toEqual([]);
+  });
+
+  it('findOne reports refundedQuantity per item from order_refund_lines', async () => {
+    const account = await insertAccount(db);
+    const order = await insertOrder(db, { accountId: account.id });
+    const item = await insertOrderItem(db, { orderId: order.id, quantity: 3 });
+    const refund = await insertOrderPayment(db, {
+      orderId: order.id,
+      method: 'stripe',
+      amountCents: -5000,
+    });
+    await db.insert(orderRefundLinesTable).values({
+      refundPaymentId: refund.id,
+      orderItemId: item.id,
+      quantity: 1,
+    });
+    const service = await build();
+
+    const detail = await service.findOne(order.id, account.id);
+    expect(detail?.items[0]).toMatchObject({
+      quantity: 3,
+      refundedQuantity: 1,
+    });
   });
 });

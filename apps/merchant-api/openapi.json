@@ -4039,6 +4039,9 @@
             "items": {
               "$ref": "#/components/schemas/OrderItemAllocation"
             }
+          },
+          "refundedQuantity": {
+            "type": "number"
           }
         },
         "required": [
@@ -4051,7 +4054,8 @@
           "quantity",
           "fulfilledQuantity",
           "remainingQuantity",
-          "allocations"
+          "allocations",
+          "refundedQuantity"
         ]
       },
       "FulfillmentItem": {

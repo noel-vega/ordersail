@@ -18,6 +18,7 @@ import {
   orderEventsTable,
   orderItemsTable,
   orderPaymentsTable,
+  orderRefundLinesTable,
   orderShippingTable,
   ordersTable,
   sql,
@@ -125,6 +126,7 @@ export class OrdersService {
     const [
       allocationRows,
       fulfilledByItem,
+      refundedByItem,
       fulfillments,
       [shipping],
       payments,
@@ -132,6 +134,7 @@ export class OrdersService {
     ] = await Promise.all([
       this.getAllocations(itemIds),
       this.getFulfilledQuantityByItem(itemIds),
+      this.getRefundedQuantityByItem(itemIds),
       this.getFulfillments(order.id),
       this.db
         .select({
@@ -165,6 +168,7 @@ export class OrdersService {
         ...item,
         fulfilledQuantity,
         remainingQuantity: item.quantity - fulfilledQuantity,
+        refundedQuantity: refundedByItem.get(item.id) ?? 0,
         allocations: allocationRows
           .filter((a) => a.orderItemId === item.id)
           .map(({ locationId, locationName, quantity }) => ({
@@ -304,6 +308,25 @@ export class OrdersService {
       .groupBy(fulfillmentItemsTable.orderItemId);
 
     return new Map(rows.map((r) => [r.orderItemId, r.fulfilled]));
+  }
+
+  // units of each order item already covered by a line-item refund (OS-122),
+  // so the refund UI can bound its per-line steppers
+  private async getRefundedQuantityByItem(
+    itemIds: number[],
+  ): Promise<Map<number, number>> {
+    if (itemIds.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({
+        orderItemId: orderRefundLinesTable.orderItemId,
+        refunded: sql<number>`coalesce(sum(${orderRefundLinesTable.quantity}), 0)::int`,
+      })
+      .from(orderRefundLinesTable)
+      .where(inArray(orderRefundLinesTable.orderItemId, itemIds))
+      .groupBy(orderRefundLinesTable.orderItemId);
+
+    return new Map(rows.map((r) => [r.orderItemId, r.refunded]));
   }
 
   // how much of an order item's stock came from which location, derived
