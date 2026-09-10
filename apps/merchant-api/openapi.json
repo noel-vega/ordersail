@@ -2762,6 +2762,32 @@
           "ApiKeys"
         ]
       }
+    },
+    "/onboarding/status": {
+      "get": {
+        "operationId": "OnboardingController_getStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Onboarding"
+        ]
+      }
     }
   },
   "info": {
@@ -5388,6 +5414,29 @@
             "nullable": true
           }
         }
+      },
+      "OnboardingStatus": {
+        "type": "object",
+        "properties": {
+          "stripeConnected": {
+            "type": "boolean"
+          },
+          "hasCompleteLocation": {
+            "type": "boolean"
+          },
+          "hasActiveProduct": {
+            "type": "boolean"
+          },
+          "complete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stripeConnected",
+          "hasCompleteLocation",
+          "hasActiveProduct",
+          "complete"
+        ]
       }
     }
   }
