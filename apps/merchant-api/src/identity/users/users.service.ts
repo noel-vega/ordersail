@@ -7,7 +7,9 @@ import {
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { User, UserRoleSummary } from './entities/user.entity';
+import { PaginatedUsers } from './entities/paginated-users.entity';
 import { EmailService } from 'src/shared/email/email.service';
+import { resolvePageParams } from 'src/shared/pagination';
 import { PermissionsService } from '../permissions/permissions.service';
 import { generateToken } from '../../shared/common/generate-token.util';
 import { resolveOwned } from '../shared/resolve-owned.util';
@@ -19,12 +21,17 @@ import { DRIZZLE } from 'src/shared/database/database.constants';
 import {
   and,
   type db as Db,
+  desc,
   eq,
+  ilike,
   inArray,
   isForeignKeyViolation,
   isUniqueViolation,
   ne,
+  or,
   rolesTable,
+  type SQL,
+  sql,
   userInvitesTable,
   userRolesTable,
   usersTable,
@@ -216,14 +223,52 @@ export class UsersService {
     }
   }
 
-  async findAll(accountId: number): Promise<User[]> {
-    const rows = await this.db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.accountId, accountId));
+  async findAll(
+    limit: number,
+    offset: number,
+    accountId: number,
+    q?: string,
+  ): Promise<PaginatedUsers> {
+    const { limit: take, offset: skip } = resolvePageParams(limit, offset);
+    const where = this.listFilter(accountId, q);
+
+    const [rows, [{ total }]] = await Promise.all([
+      this.db
+        .select()
+        .from(usersTable)
+        .where(where)
+        .orderBy(desc(usersTable.createdAt), desc(usersTable.id))
+        .limit(take)
+        .offset(skip),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(usersTable)
+        .where(where),
+    ]);
 
     const rolesByUser = await this.getRolesByUserId(rows.map((row) => row.id));
-    return rows.map((row) => toUser(row, rolesByUser.get(row.id) ?? []));
+    return {
+      items: rows.map((row) => toUser(row, rolesByUser.get(row.id) ?? [])),
+      total,
+      limit: take,
+      offset: skip,
+    };
+  }
+
+  private listFilter(accountId: number, q?: string): SQL | undefined {
+    const scope = eq(usersTable.accountId, accountId);
+    const term = q?.trim();
+    if (!term) return scope;
+
+    const like = `%${term}%`;
+    return and(
+      scope,
+      or(
+        ilike(usersTable.firstname, like),
+        ilike(usersTable.lastname, like),
+        ilike(usersTable.email, like),
+      ),
+    );
   }
 
   // replaces a user's roles wholesale — an empty array strips them to none.

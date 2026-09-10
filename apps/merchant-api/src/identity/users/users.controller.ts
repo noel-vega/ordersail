@@ -1,9 +1,12 @@
 import {
   Controller,
+  DefaultValuePipe,
   Get,
   Post,
   Patch,
   Param,
+  ParseIntPipe,
+  Query,
   Body,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,11 +14,13 @@ import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { AssignRolesDto } from './dto/assign-roles.dto';
 import { User } from './entities/user.entity';
+import { PaginatedUsers } from './entities/paginated-users.entity';
 import {
   CurrentUser,
   GrantedPermissions,
@@ -47,9 +52,15 @@ export class UsersController {
   @Get()
   @RequirePermissions('users:read')
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse({ type: [User] })
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.usersService.findAll(user.accountId);
+  @ApiOkResponse({ type: PaginatedUsers })
+  @ApiQuery({ name: 'q', required: false, description: 'name or email match' })
+  findAll(
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('q') q?: string,
+  ) {
+    return this.usersService.findAll(limit, offset, user.accountId, q);
   }
 
   @Patch(':id/roles')

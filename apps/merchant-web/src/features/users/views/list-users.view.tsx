@@ -75,7 +75,7 @@ export function ListUsersView() {
         </Link>
       </div>
       <DataTable
-        data={users.data ?? []}
+        data={users.data?.items ?? []}
         columns={columns}
         onRowClick={(row) => setEditingUser(row.original)}
       />
