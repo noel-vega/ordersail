@@ -6,7 +6,7 @@ import type { GetImageUploadUrlDto } from "merchant-sdk";
 export function getListProductsQueryOptions() {
     return queryOptions({
         queryKey: ['products'],
-        queryFn: merchantApi.products.list
+        queryFn: () => merchantApi.products.list()
     })
 }
 

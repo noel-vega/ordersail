@@ -924,6 +924,12 @@ export interface components {
             categoryIds?: number[];
             thumbnailUrl?: string | null;
         };
+        PaginatedProducts: {
+            items: components["schemas"]["Product"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
         Brand: {
             id: number;
             accountId: number;
@@ -1774,7 +1780,13 @@ export interface operations {
     };
     ProductsController_findAll: {
         parameters: {
-            query?: never;
+            query: {
+                limit: number;
+                offset: number;
+                /** @description name or description match */
+                q?: string;
+                status?: "draft" | "active" | "archived";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1786,7 +1798,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Product"][];
+                    "application/json": components["schemas"]["PaginatedProducts"];
                 };
             };
         };

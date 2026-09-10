@@ -71,7 +71,7 @@ export function ProductListView() {
           </Button>
         </Link>
       </div>
-      <DataTable onRowClick={handleRowClick} data={products.data ?? []} columns={columns} />
+      <DataTable onRowClick={handleRowClick} data={products.data?.items ?? []} columns={columns} />
     </div>
   );
 }

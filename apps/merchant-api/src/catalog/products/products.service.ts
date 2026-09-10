@@ -8,28 +8,35 @@ import { GetImageUploadUrlDto } from './dto/get-image-upload-url.dto';
 import { CreateProductImageDto } from './dto/create-product-image.dto';
 import { ReorderProductImagesDto } from './dto/reorder-product-images.dto';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { resolvePageParams } from 'src/shared/pagination';
 import {
   and,
   brandsTable,
   categoriesTable,
   type db as Db,
+  desc,
   eq,
+  ilike,
   inArray,
   isNull,
   notInArray,
+  or,
   productBarcodesTable,
   productCategoriesTable,
   productImagesTable,
   productOptionsTable,
   productOptionValuesTable,
   productsTable,
+  productStatusEnum,
   productVariantsTable,
   sql,
   type SQL,
   variantOptionValuesTable,
 } from 'db/catalog';
 import { inventoryTable, locationsTable } from 'db/stock';
-import { Product } from './entities/product.entity';
+import { PaginatedProducts } from './entities/paginated-products.entity';
+
+export type ProductStatus = (typeof productStatusEnum.enumValues)[number];
 import { ProductVariant } from './entities/product-variant.entity';
 import { ProductOption } from './entities/product-option.entity';
 import { ProductDetail } from './entities/product-detail.entity';
@@ -160,12 +167,32 @@ export class ProductsService {
     return product;
   }
 
-  async findAll(accountId: number): Promise<Product[]> {
-    const products = await this.db
-      .select()
-      .from(productsTable)
-      .where(eq(productsTable.accountId, accountId));
-    if (products.length === 0) return [];
+  async findAll(
+    limit: number,
+    offset: number,
+    accountId: number,
+    opts: { q?: string; status?: ProductStatus } = {},
+  ): Promise<PaginatedProducts> {
+    const { limit: take, offset: skip } = resolvePageParams(limit, offset);
+    const where = this.listFilter(accountId, opts);
+
+    const [products, [{ total }]] = await Promise.all([
+      this.db
+        .select()
+        .from(productsTable)
+        .where(where)
+        .orderBy(desc(productsTable.createdAt), desc(productsTable.id))
+        .limit(take)
+        .offset(skip),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(productsTable)
+        .where(where),
+    ]);
+
+    if (products.length === 0) {
+      return { items: [], total, limit: take, offset: skip };
+    }
 
     // first product-level image per product, for the list-view thumbnail —
     // a single batched query rather than N+1 per row
@@ -193,10 +220,38 @@ export class ProductsService {
       }
     }
 
-    return products.map((product) => ({
-      ...product,
-      thumbnailUrl: thumbnailByProduct.get(product.id) ?? null,
-    }));
+    return {
+      items: products.map((product) => ({
+        ...product,
+        thumbnailUrl: thumbnailByProduct.get(product.id) ?? null,
+      })),
+      total,
+      limit: take,
+      offset: skip,
+    };
+  }
+
+  private listFilter(
+    accountId: number,
+    opts: { q?: string; status?: ProductStatus },
+  ): SQL | undefined {
+    const clauses: SQL[] = [eq(productsTable.accountId, accountId)];
+
+    if (opts.status) {
+      clauses.push(eq(productsTable.status, opts.status));
+    }
+
+    const term = opts.q?.trim();
+    if (term) {
+      const like = `%${term}%`;
+      const match = or(
+        ilike(productsTable.name, like),
+        ilike(productsTable.description, like),
+      );
+      if (match) clauses.push(match);
+    }
+
+    return and(...clauses);
   }
 
   async findOne(
