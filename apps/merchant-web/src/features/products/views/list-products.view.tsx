@@ -57,6 +57,13 @@ export function ProductListView() {
   const navigate = route.useNavigate();
   const products = useListProductsQuery(search);
 
+  const total = products.data?.total ?? 0;
+  const isFiltered = !!search.q || !!search.status;
+  // a genuinely empty catalog (not a search that returned nothing) — guide
+  // the merchant to their first product instead of showing an empty table
+  const showGuidedEmptyState =
+    total === 0 && !isFiltered && !products.isLoading;
+
   const setStatus = (status: ProductListSearch["status"]) =>
     navigate({ search: (prev) => ({ ...prev, status, page: 1 }) });
 
@@ -81,48 +88,66 @@ export function ProductListView() {
         </Link>
       </div>
 
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={cn(
-            !search.status && "border-primary bg-primary/5 text-primary",
-          )}
-          onClick={() => setStatus(undefined)}
-        >
-          All
-        </Button>
-        {PRODUCT_STATUSES.map((s) => (
+      {!showGuidedEmptyState && (
+        <div className="flex gap-2">
           <Button
-            key={s}
             type="button"
             variant="outline"
             size="sm"
             className={cn(
-              "capitalize",
-              search.status === s && "border-primary bg-primary/5 text-primary",
+              !search.status && "border-primary bg-primary/5 text-primary",
             )}
-            onClick={() => setStatus(s)}
+            onClick={() => setStatus(undefined)}
           >
-            {s}
+            All
           </Button>
-        ))}
-      </div>
+          {PRODUCT_STATUSES.map((s) => (
+            <Button
+              key={s}
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(
+                "capitalize",
+                search.status === s &&
+                  "border-primary bg-primary/5 text-primary",
+              )}
+              onClick={() => setStatus(s)}
+            >
+              {s}
+            </Button>
+          ))}
+        </div>
+      )}
 
-      <DataTable
-        onRowClick={handleRowClick}
-        data={products.data?.items ?? []}
-        columns={columns}
-      />
-      <DataTablePagination
-        page={search.page}
-        pageSize={PAGE_SIZE}
-        total={products.data?.total ?? 0}
-        onPageChange={(page) =>
-          navigate({ search: (prev) => ({ ...prev, page }) })
-        }
-      />
+      {showGuidedEmptyState ? (
+        <div className="rounded-md border border-dashed py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            No products yet — add your first one to start selling.
+          </p>
+          <Link to="/app/products/create">
+            <Button className="mt-4">
+              <PlusIcon /> Add your first product
+            </Button>
+          </Link>
+        </div>
+      ) : (
+        <>
+          <DataTable
+            onRowClick={handleRowClick}
+            data={products.data?.items ?? []}
+            columns={columns}
+          />
+          <DataTablePagination
+            page={search.page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            onPageChange={(page) =>
+              navigate({ search: (prev) => ({ ...prev, page }) })
+            }
+          />
+        </>
+      )}
     </div>
   );
 }
