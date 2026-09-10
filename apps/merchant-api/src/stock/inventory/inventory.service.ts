@@ -1,55 +1,105 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { resolvePageParams } from 'src/shared/pagination';
 import { usersTable } from 'db/identity';
 import { productsTable, productVariantsTable } from 'db/catalog';
 import {
   and,
+  asc,
   type db as Db,
   desc,
   eq,
+  ilike,
+  inventoryMovementReasonEnum,
   inventoryMovementsTable,
   inventoryTable,
   locationsTable,
-  sql,
+  lte,
+  or,
   type SQL,
+  sql,
 } from 'db/stock';
+import { InventoryMovementRecord } from './entities/inventory.entity';
 import {
-  InventoryRecord,
-  InventoryMovementRecord,
-} from './entities/inventory.entity';
+  PaginatedInventory,
+  PaginatedInventoryMovements,
+} from './entities/paginated-inventory.entity';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
+
+type InventoryMovementReason =
+  (typeof inventoryMovementReasonEnum.enumValues)[number];
+
+export interface InventoryFilter {
+  q?: string;
+  productId?: number;
+  locationId?: number;
+  stockLte?: number;
+}
+
+export interface MovementFilter {
+  variantId?: number;
+  locationId?: number;
+  reason?: InventoryMovementReason;
+}
 
 @Injectable()
 export class InventoryService {
   constructor(@Inject(DRIZZLE) private readonly db: typeof Db) {}
 
-  async findAll(accountId: number): Promise<InventoryRecord[]> {
-    return await this.db
-      .select({
-        id: inventoryTable.id,
-        variantId: inventoryTable.variantId,
-        sku: productVariantsTable.sku,
-        productId: productsTable.id,
-        productName: productsTable.name,
-        locationId: locationsTable.id,
-        locationName: locationsTable.name,
-        stock: inventoryTable.stock,
-        updatedAt: inventoryTable.updatedAt,
-      })
-      .from(inventoryTable)
-      .innerJoin(
-        productVariantsTable,
-        eq(productVariantsTable.id, inventoryTable.variantId),
-      )
-      .innerJoin(
-        productsTable,
-        eq(productsTable.id, productVariantsTable.productId),
-      )
-      .innerJoin(
-        locationsTable,
-        eq(locationsTable.id, inventoryTable.locationId),
-      )
-      .where(eq(productsTable.accountId, accountId));
+  async findAll(
+    limit: number,
+    offset: number,
+    accountId: number,
+    filter: InventoryFilter = {},
+  ): Promise<PaginatedInventory> {
+    const { limit: take, offset: skip } = resolvePageParams(limit, offset);
+    const where = this.inventoryWhere(accountId, filter);
+
+    const [items, [{ total }]] = await Promise.all([
+      this.db
+        .select({
+          id: inventoryTable.id,
+          variantId: inventoryTable.variantId,
+          sku: productVariantsTable.sku,
+          productId: productsTable.id,
+          productName: productsTable.name,
+          locationId: locationsTable.id,
+          locationName: locationsTable.name,
+          stock: inventoryTable.stock,
+          updatedAt: inventoryTable.updatedAt,
+        })
+        .from(inventoryTable)
+        .innerJoin(
+          productVariantsTable,
+          eq(productVariantsTable.id, inventoryTable.variantId),
+        )
+        .innerJoin(
+          productsTable,
+          eq(productsTable.id, productVariantsTable.productId),
+        )
+        .innerJoin(
+          locationsTable,
+          eq(locationsTable.id, inventoryTable.locationId),
+        )
+        .where(where)
+        .orderBy(asc(productsTable.name), asc(inventoryTable.id))
+        .limit(take)
+        .offset(skip),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(inventoryTable)
+        .innerJoin(
+          productVariantsTable,
+          eq(productVariantsTable.id, inventoryTable.variantId),
+        )
+        .innerJoin(
+          productsTable,
+          eq(productsTable.id, productVariantsTable.productId),
+        )
+        .where(where),
+    ]);
+
+    return { items, total, limit: take, offset: skip };
   }
 
   // insert a ledger entry and atomically fold its delta into the
@@ -127,10 +177,67 @@ export class InventoryService {
     return record;
   }
 
-  async findMovements(accountId: number): Promise<InventoryMovementRecord[]> {
-    return await this.movementRecordsQuery(accountId).orderBy(
-      desc(inventoryMovementsTable.createdAt),
-    );
+  async findMovements(
+    limit: number,
+    offset: number,
+    accountId: number,
+    filter: MovementFilter = {},
+  ): Promise<PaginatedInventoryMovements> {
+    const { limit: take, offset: skip } = resolvePageParams(limit, offset);
+    const where = this.movementWhere(filter);
+
+    const [items, [{ total }]] = await Promise.all([
+      this.movementRecordsQuery(accountId, where)
+        .orderBy(desc(inventoryMovementsTable.createdAt))
+        .limit(take)
+        .offset(skip),
+      this.movementCountQuery(accountId, where),
+    ]);
+
+    return { items, total, limit: take, offset: skip };
+  }
+
+  private inventoryWhere(
+    accountId: number,
+    filter: InventoryFilter,
+  ): SQL | undefined {
+    const clauses: SQL[] = [eq(productsTable.accountId, accountId)];
+
+    if (filter.productId != null) {
+      clauses.push(eq(productsTable.id, filter.productId));
+    }
+    if (filter.locationId != null) {
+      clauses.push(eq(inventoryTable.locationId, filter.locationId));
+    }
+    if (filter.stockLte != null) {
+      clauses.push(lte(inventoryTable.stock, filter.stockLte));
+    }
+
+    const term = filter.q?.trim();
+    if (term) {
+      const like = `%${term}%`;
+      const match = or(
+        ilike(productVariantsTable.sku, like),
+        ilike(productsTable.name, like),
+      );
+      if (match) clauses.push(match);
+    }
+
+    return and(...clauses);
+  }
+
+  private movementWhere(filter: MovementFilter): SQL | undefined {
+    const clauses: SQL[] = [];
+    if (filter.variantId != null) {
+      clauses.push(eq(inventoryMovementsTable.variantId, filter.variantId));
+    }
+    if (filter.locationId != null) {
+      clauses.push(eq(inventoryMovementsTable.locationId, filter.locationId));
+    }
+    if (filter.reason) {
+      clauses.push(eq(inventoryMovementsTable.reason, filter.reason));
+    }
+    return clauses.length ? and(...clauses) : undefined;
   }
 
   private movementRecordsQuery(accountId: number, extraWhere?: SQL) {
@@ -165,6 +272,29 @@ export class InventoryService {
       .leftJoin(
         usersTable,
         eq(usersTable.id, inventoryMovementsTable.createdByUserId),
+      )
+      .where(
+        extraWhere
+          ? and(eq(productsTable.accountId, accountId), extraWhere)
+          : eq(productsTable.accountId, accountId),
+      );
+  }
+
+  private movementCountQuery(accountId: number, extraWhere?: SQL) {
+    return this.db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(inventoryMovementsTable)
+      .innerJoin(
+        productVariantsTable,
+        eq(productVariantsTable.id, inventoryMovementsTable.variantId),
+      )
+      .innerJoin(
+        productsTable,
+        eq(productsTable.id, productVariantsTable.productId),
+      )
+      .innerJoin(
+        locationsTable,
+        eq(locationsTable.id, inventoryMovementsTable.locationId),
       )
       .where(
         extraWhere

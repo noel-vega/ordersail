@@ -83,7 +83,7 @@ export function ListInventoryView() {
           </Button>
         </Link>
       </div>
-      <DataTable data={inventory.data ?? []} columns={columns} />
+      <DataTable data={inventory.data?.items ?? []} columns={columns} />
 
       <AdjustStockSheet
         record={adjustingRecord}

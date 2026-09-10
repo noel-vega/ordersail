@@ -64,7 +64,7 @@ export function ListInventoryMovementsView() {
           <ArrowLeftIcon /> Back to inventory
         </Button>
       </Link>
-      <DataTable data={movements.data ?? []} columns={columns} />
+      <DataTable data={movements.data?.items ?? []} columns={columns} />
     </div>
   );
 }
