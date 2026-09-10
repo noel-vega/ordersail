@@ -1090,6 +1090,12 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        PaginatedInventory: {
+            items: components["schemas"]["InventoryRecord"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
         CreateInventoryMovementDto: {
             variantId: number;
             locationId: number;
@@ -1113,6 +1119,12 @@ export interface components {
             createdByEmail: string | null;
             /** Format: date-time */
             createdAt: string;
+        };
+        PaginatedInventoryMovements: {
+            items: components["schemas"]["InventoryMovementRecord"][];
+            total: number;
+            limit: number;
+            offset: number;
         };
         ApiKeyDto: {
             id: number;
@@ -2318,7 +2330,16 @@ export interface operations {
     };
     InventoryController_findAll: {
         parameters: {
-            query?: never;
+            query: {
+                limit: number;
+                offset: number;
+                /** @description SKU or product name match */
+                q?: string;
+                productId?: number;
+                locationId?: number;
+                /** @description only rows at or below this on-hand quantity */
+                stockLte?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2330,14 +2351,20 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InventoryRecord"][];
+                    "application/json": components["schemas"]["PaginatedInventory"];
                 };
             };
         };
     };
     InventoryController_findMovements: {
         parameters: {
-            query?: never;
+            query: {
+                limit: number;
+                offset: number;
+                variantId?: number;
+                locationId?: number;
+                reason?: "received" | "sold" | "return" | "damaged" | "adjustment";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2349,7 +2376,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InventoryMovementRecord"][];
+                    "application/json": components["schemas"]["PaginatedInventoryMovements"];
                 };
             };
         };

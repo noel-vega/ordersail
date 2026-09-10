@@ -61,7 +61,7 @@ type DetailsForm = z.infer<typeof DetailsFormSchema>;
 export function ProductView({ id }: { id: number }) {
   const navigate = useNavigate();
   const { data } = useProductQuery(id);
-  const { data: inventory } = useListInventoryQuery();
+  const { data: inventory } = useListInventoryQuery({ productId: id });
   const deleteProduct = useDeleteProductMutation();
   const updateProduct = useUpdateProductMutation(id);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -96,7 +96,7 @@ export function ProductView({ id }: { id: number }) {
     return null;
   }
 
-  const productInventory = (inventory ?? []).filter(
+  const productInventory = (inventory?.items ?? []).filter(
     (record) => record.productId === id,
   );
   const handleDelete = () => {

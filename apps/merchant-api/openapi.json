@@ -1442,17 +1442,65 @@
     "/inventory": {
       "get": {
         "operationId": "InventoryController_findAll",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "SKU or product name match",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "locationId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "stockLte",
+            "required": false,
+            "in": "query",
+            "description": "only rows at or below this on-hand quantity",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/InventoryRecord"
-                  }
+                  "$ref": "#/components/schemas/PaginatedInventory"
                 }
               }
             }
@@ -1505,17 +1553,62 @@
       },
       "get": {
         "operationId": "InventoryController_findMovements",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "variantId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "locationId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "reason",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "received",
+                "sold",
+                "return",
+                "damaged",
+                "adjustment"
+              ],
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/InventoryMovementRecord"
-                  }
+                  "$ref": "#/components/schemas/PaginatedInventoryMovements"
                 }
               }
             }
@@ -3642,6 +3735,32 @@
           "updatedAt"
         ]
       },
+      "PaginatedInventory": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryRecord"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
       "CreateInventoryMovementDto": {
         "type": "object",
         "properties": {
@@ -3740,6 +3859,32 @@
           "note",
           "createdByEmail",
           "createdAt"
+        ]
+      },
+      "PaginatedInventoryMovements": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryMovementRecord"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
         ]
       },
       "ApiKeyDto": {

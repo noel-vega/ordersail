@@ -38,8 +38,11 @@ export type Brand = components["schemas"]["Brand"];
 export type Category = components["schemas"]["Category"];
 export type Location = components["schemas"]["Location"];
 export type InventoryRecord = components["schemas"]["InventoryRecord"];
+export type PaginatedInventory = components["schemas"]["PaginatedInventory"];
 export type InventoryMovementRecord =
   components["schemas"]["InventoryMovementRecord"];
+export type PaginatedInventoryMovements =
+  components["schemas"]["PaginatedInventoryMovements"];
 export type StripeConnectStatus = components["schemas"]["StripeConnectStatus"];
 export type OrderListItem = components["schemas"]["OrderListItem"];
 export type OrderDetail = components["schemas"]["OrderDetail"];
