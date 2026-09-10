@@ -11,8 +11,7 @@ import {
 } from "ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuItem, sidebarMenuButtonVariants } from "ui/sidebar";
 import { cn } from "ui/utils";
-import { merchantApi } from "../lib/merchant-api-client";
-import { decodeAccessToken } from "../features/auth/auth.utils";
+import { useAuthMe } from "../features/auth/permissions.hooks";
 import { useLogoutMutation } from "../features/auth/auth.hooks";
 
 function UserAvatar({ initials }: { initials: string }) {
@@ -35,20 +34,15 @@ function UserSummary({ name, email }: { name: string; email: string }) {
 export function NavUser() {
   const navigate = useNavigate();
   const logoutMutation = useLogoutMutation();
+  const me = useAuthMe();
 
-  const claims = merchantApi.accessToken
-    ? decodeAccessToken(merchantApi.accessToken)
-    : undefined;
-  // a session from before this JWT payload carried a name won't have one
-  // until the user signs in again — fall back rather than crash
-  const name =
-    claims?.firstName && claims?.lastName
-      ? `${claims.firstName} ${claims.lastName}`
-      : "—";
-  const initials =
-    claims?.firstName && claims?.lastName
-      ? `${claims.firstName[0]}${claims.lastName[0]}`.toUpperCase()
-      : "?";
+  const name = me.data
+    ? `${me.data.firstName} ${me.data.lastName}`
+    : "—";
+  const initials = me.data
+    ? `${me.data.firstName[0]}${me.data.lastName[0]}`.toUpperCase()
+    : "?";
+  const email = me.data?.email ?? "";
 
   function handleLogout() {
     logoutMutation.mutate(undefined, {
@@ -64,7 +58,7 @@ export function NavUser() {
             className={cn(sidebarMenuButtonVariants({ size: "lg" }))}
           >
             <UserAvatar initials={initials} />
-            <UserSummary name={name} email={claims?.email ?? ""} />
+            <UserSummary name={name} email={email} />
             <ChevronsUpDownIcon className="ml-auto size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="end" className="min-w-56">
@@ -72,7 +66,7 @@ export function NavUser() {
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5">
                   <UserAvatar initials={initials} />
-                  <UserSummary name={name} email={claims?.email ?? ""} />
+                  <UserSummary name={name} email={email} />
                 </div>
               </DropdownMenuLabel>
             </DropdownMenuGroup>

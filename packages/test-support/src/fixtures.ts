@@ -9,18 +9,24 @@ import {
   cartsTable,
   categoriesTable,
   customersTable,
+  inArray,
   inventoryTable,
   locationsTable,
   orderItemsTable,
   orderPaymentsTable,
   ordersTable,
+  PERMISSIONS_CATALOG,
+  permissionsTable,
   productCategoriesTable,
   productImagesTable,
   productOptionValuesTable,
   productOptionsTable,
   productsTable,
   productVariantsTable,
+  rolePermissionsTable,
+  rolesTable,
   stripeAccountsTable,
+  userRolesTable,
   usersTable,
   variantOptionValuesTable,
 } from 'db';
@@ -76,6 +82,82 @@ export async function insertUser(
       })
       .returning(),
   );
+}
+
+// ── RBAC ────────────────────────────────────────────────────────────────────
+// Testcontainers TRUNCATEs `permissions` per test, so a spec that exercises the
+// PermissionsGuard / getEffectivePermissionKeys must seed the catalog first —
+// mirrors PermissionsService.onModuleInit.
+export async function seedPermissionsCatalog(db: TestDb): Promise<void> {
+  await db
+    .insert(permissionsTable)
+    .values(PERMISSIONS_CATALOG)
+    .onConflictDoNothing();
+}
+
+// Creates a role and links the given catalog keys (which must already be seeded
+// via seedPermissionsCatalog). `permissionKeys` omitted → a role with no perms;
+// pass the full catalog for an "owner-equivalent" custom role.
+export async function insertRole(
+  db: TestDb,
+  opts: {
+    accountId: number;
+    name?: string;
+    description?: string | null;
+    isSystem?: boolean;
+    permissionKeys?: string[];
+  },
+): Promise<Row<typeof rolesTable>> {
+  const role = await one(
+    await db
+      .insert(rolesTable)
+      .values({
+        accountId: opts.accountId,
+        name: opts.name ?? `Role ${uniq()}`,
+        description: opts.description ?? null,
+        isSystem: opts.isSystem ?? false,
+      })
+      .returning(),
+  );
+  if (opts.permissionKeys?.length) {
+    const perms = await db
+      .select({ id: permissionsTable.id })
+      .from(permissionsTable)
+      .where(inArray(permissionsTable.key, opts.permissionKeys));
+    if (perms.length) {
+      await db
+        .insert(rolePermissionsTable)
+        .values(perms.map((p) => ({ roleId: role.id, permissionId: p.id })));
+    }
+  }
+  return role;
+}
+
+export async function assignRole(
+  db: TestDb,
+  opts: { userId: number; roleId: number },
+): Promise<void> {
+  await db
+    .insert(userRolesTable)
+    .values({ userId: opts.userId, roleId: opts.roleId })
+    .onConflictDoNothing();
+}
+
+// account + user + a role holding exactly `permissionKeys`, all wired up.
+// Seeds the catalog for you. Returns the ids a spec needs.
+export async function insertUserWithPermissions(
+  db: TestDb,
+  opts: { accountId?: number; permissionKeys: string[] },
+): Promise<{ accountId: number; userId: number; roleId: number }> {
+  await seedPermissionsCatalog(db);
+  const accountId = opts.accountId ?? (await insertAccount(db)).id;
+  const user = await insertUser(db, { accountId });
+  const role = await insertRole(db, {
+    accountId,
+    permissionKeys: opts.permissionKeys,
+  });
+  await assignRole(db, { userId: user.id, roleId: role.id });
+  return { accountId, userId: user.id, roleId: role.id };
 }
 
 export async function insertApiKey(

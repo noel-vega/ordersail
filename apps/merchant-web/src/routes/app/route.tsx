@@ -10,15 +10,25 @@ import { SidebarInset, SidebarProvider } from "ui/sidebar";
 import { AppHeader } from "../../components/app-header";
 import { NavCommandMenu } from "../../components/nav-command-menu";
 import { RouteError } from "../../components/route-error";
+import { queryClient } from "../../lib/react-query-client";
+import { getAuthMeQueryOptions } from "../../features/auth/permissions.hooks";
+import { PermissionProvider } from "../../features/auth/permission-context";
 
 export const Route = createFileRoute("/app")({
+  // load the current user's effective permissions once on entering /app and
+  // expose them on the router context so child routes' beforeLoad can gate
+  beforeLoad: async () => {
+    const me = await queryClient.ensureQueryData(getAuthMeQueryOptions());
+    return { permissions: new Set(me?.permissions ?? []) };
+  },
   component: RouteComponent,
 });
 
 function RouteComponent() {
   return (
-    <div className="h-dvh">
-      <SidebarProvider
+    <PermissionProvider>
+      <div className="h-dvh">
+        <SidebarProvider
         style={
           {
             "--header-height": "calc(var(--spacing) * 12)",
@@ -32,9 +42,10 @@ function RouteComponent() {
           <main className="flex flex-1 flex-col p-6">
             <AppOutlet />
           </main>
-        </SidebarInset>
-      </SidebarProvider>
-    </div>
+          </SidebarInset>
+        </SidebarProvider>
+      </div>
+    </PermissionProvider>
   );
 }
 

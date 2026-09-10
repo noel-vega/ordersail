@@ -6,6 +6,7 @@ import {
   PERMISSIONS_CATALOG,
   permissionsTable,
   rolePermissionsTable,
+  rolesTable,
   sql,
   userRolesTable,
 } from 'db/identity';
@@ -31,6 +32,36 @@ export class PermissionsService implements OnModuleInit {
           description: sql`excluded.description`,
         },
       });
+
+    await this.backfillSystemRoles();
+  }
+
+  // every "Owner" (isSystem) role holds every permission by construction, but
+  // createSystemRole only grants the full set at role-creation time — a key
+  // added to the catalog after an account signed up would never reach that
+  // account's Owner. Idempotently top them up on every boot.
+  private async backfillSystemRoles() {
+    const [systemRoles, allPermissions] = await Promise.all([
+      this.db
+        .select({ id: rolesTable.id })
+        .from(rolesTable)
+        .where(eq(rolesTable.isSystem, true)),
+      this.db.select({ id: permissionsTable.id }).from(permissionsTable),
+    ]);
+
+    if (systemRoles.length === 0 || allPermissions.length === 0) return;
+
+    await this.db
+      .insert(rolePermissionsTable)
+      .values(
+        systemRoles.flatMap((role) =>
+          allPermissions.map((permission) => ({
+            roleId: role.id,
+            permissionId: permission.id,
+          })),
+        ),
+      )
+      .onConflictDoNothing();
   }
 
   async findAll() {

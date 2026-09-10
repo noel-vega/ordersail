@@ -9,8 +9,10 @@ import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { UsersService } from '../users/users.service';
 import { RolesService } from '../roles/roles.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
+import { AuthMe } from './entities/auth-me.entity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import {
   accountApiKeysTable,
@@ -30,7 +32,21 @@ export class AuthService {
     private jwtService: JwtService,
     private usersService: UsersService,
     private rolesService: RolesService,
+    private permissionsService: PermissionsService,
   ) {}
+
+  async me(user: AuthenticatedUser): Promise<AuthMe> {
+    const permissions =
+      await this.permissionsService.getEffectivePermissionKeys(user.sub);
+    return {
+      userId: user.sub,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      accountId: user.accountId,
+      permissions: [...permissions].sort(),
+    };
+  }
 
   async signin(signinDto: SignInDto) {
     const user = await this.usersService.getByEmail(signinDto.email);

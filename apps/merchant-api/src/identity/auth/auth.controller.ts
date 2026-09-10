@@ -12,7 +12,12 @@ import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
-import { Public } from 'src/shared/auth/decorators';
+import { AuthMe } from './entities/auth-me.entity';
+import {
+  CurrentUser,
+  Public,
+  type AuthenticatedUser,
+} from 'src/shared/auth/decorators';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ApiBearerAuth,
@@ -110,6 +115,16 @@ export class AuthController {
     });
 
     return { access_token: result.access_token };
+  }
+
+  // no @RequirePermissions — any authenticated user reads their own identity
+  // + effective permission keys (merchant-web's permission context)
+  @Get('me')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: AuthMe })
+  @ApiUnauthorizedResponse()
+  me(@CurrentUser() user: AuthenticatedUser): Promise<AuthMe> {
+    return this.authService.me(user);
   }
 
   @Public()
