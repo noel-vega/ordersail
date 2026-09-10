@@ -23,6 +23,7 @@ import { Location } from './entities/location.entity';
 import { PaginatedLocations } from './entities/paginated-locations.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -31,6 +32,7 @@ export class LocationsController {
   constructor(private readonly locationsService: LocationsService) {}
 
   @Post()
+  @RequirePermissions('locations:write')
   @ApiBearerAuth('JWT-auth')
   @ApiCreatedResponse({ type: Location })
   create(
@@ -41,6 +43,7 @@ export class LocationsController {
   }
 
   @Get()
+  @RequirePermissions('locations:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedLocations })
   @ApiQuery({ name: 'q', required: false, description: 'name match' })
@@ -54,6 +57,7 @@ export class LocationsController {
   }
 
   @Patch(':id')
+  @RequirePermissions('locations:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: Location })
   async update(

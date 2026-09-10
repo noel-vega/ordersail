@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { Button } from "ui/button";
 import { MoreVerticalIcon, PencilIcon, PlusIcon } from "lucide-react";
-import { type ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef, type Row } from "@tanstack/react-table";
 import type { Location } from "merchant-sdk";
 import { format } from "date-fns";
 import {
@@ -11,10 +11,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "ui/dropdown-menu";
+import { Can } from "../../../components/can";
 import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { usePermissions } from "../../auth/permission-context";
 import { useListLocationsQuery } from "../locations.hooks";
 import { EditLocationSheet } from "./edit-location-sheet";
 
@@ -27,6 +29,7 @@ function formatAddress(location: Location) {
 
 function getColumns(handlers: {
   onEdit: (location: Location) => void;
+  canWrite: boolean;
 }): ColumnDef<Location>[] {
   return [
     {
@@ -48,30 +51,34 @@ function getColumns(handlers: {
       cell: ({ row }) =>
         format(new Date(row.original.createdAt), "MM/dd/yyyy hh:mm a"),
     },
-    {
-      id: "actions",
-      cell: ({ row }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Location actions"
-              />
-            }
-          >
-            <MoreVerticalIcon />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => handlers.onEdit(row.original)}>
-              <PencilIcon /> Edit address
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ),
-    },
+    ...(handlers.canWrite
+      ? [
+          {
+            id: "actions",
+            cell: ({ row }: { row: Row<Location> }) => (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Location actions"
+                    />
+                  }
+                >
+                  <MoreVerticalIcon />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => handlers.onEdit(row.original)}>
+                    <PencilIcon /> Edit address
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -79,9 +86,13 @@ export function ListLocationsView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const locations = useListLocationsQuery(search);
+  const canWrite = usePermissions().has("locations:write");
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
 
-  const columns = getColumns({ onEdit: (location) => setEditingLocation(location) });
+  const columns = getColumns({
+    onEdit: (location) => setEditingLocation(location),
+    canWrite,
+  });
 
   return (
     <div className="space-y-4">
@@ -93,11 +104,13 @@ export function ListLocationsView() {
             navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
           }
         />
-        <Link to="/app/locations/create">
-          <Button>
-            <PlusIcon /> Location
-          </Button>
-        </Link>
+        <Can permission="locations:write">
+          <Link to="/app/locations/create">
+            <Button>
+              <PlusIcon /> Location
+            </Button>
+          </Link>
+        </Can>
       </div>
       <DataTable
         data={locations.data?.items ?? []}

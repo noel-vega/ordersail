@@ -4,17 +4,17 @@ import {
   getInventoryPageQueryOptions,
   inventorySearchSchema,
 } from '../../../features/inventory/inventory.hooks'
-import { getListLocationsQueryOptions } from '../../../features/locations/locations.hooks'
 import { queryClient } from '../../../lib/react-query-client'
+import { requirePermission } from '../../../lib/require-permission'
 
 export const Route = createFileRoute('/app/inventory/')({
   staticData: { breadcrumb: 'Inventory' },
   validateSearch: inventorySearchSchema,
-  beforeLoad: async ({ search }) => {
-    await Promise.all([
-      queryClient.ensureQueryData(getInventoryPageQueryOptions(search)),
-      queryClient.ensureQueryData(getListLocationsQueryOptions()),
-    ])
+  beforeLoad: async ({ search, context }) => {
+    requirePermission(context, 'inventory:read')
+    await queryClient.ensureQueryData(getInventoryPageQueryOptions(search))
+    // the location filter is loaded lazily by the view — it needs
+    // locations:read, which an inventory-only role may not hold
   },
   component: ListInventoryView,
 })

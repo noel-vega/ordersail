@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { HistoryIcon } from "lucide-react";
-import { type ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef, type Row } from "@tanstack/react-table";
 import type { InventoryRecord } from "merchant-sdk";
 import { format } from "date-fns";
 import { Badge } from "ui/badge";
@@ -21,6 +21,7 @@ import { PAGE_SIZE } from "../../../lib/list-search";
 import { useListLocationsQuery } from "../../locations/locations.hooks";
 import { useInventoryPageQuery } from "../inventory.hooks";
 import { AdjustStockSheet } from "../components/adjust-stock-sheet";
+import { usePermissions } from "../../auth/permission-context";
 
 const route = getRouteApi("/app/inventory/");
 const LOW_STOCK_THRESHOLD = 0;
@@ -31,6 +32,7 @@ export function ListInventoryView() {
   const navigate = route.useNavigate();
   const inventory = useInventoryPageQuery(search);
   const locations = useListLocationsQuery();
+  const canAdjust = usePermissions().has("inventory:write");
   const [adjustingRecord, setAdjustingRecord] = useState<InventoryRecord | null>(
     null,
   );
@@ -59,19 +61,23 @@ export function ListInventoryView() {
       cell: ({ row }) =>
         format(new Date(row.original.updatedAt), "MM/dd/yyyy hh:mm a"),
     },
-    {
-      id: "actions",
-      cell: ({ row }) => (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setAdjustingRecord(row.original)}
-        >
-          Adjust
-        </Button>
-      ),
-    },
+    ...(canAdjust
+      ? [
+          {
+            id: "actions",
+            cell: ({ row }: { row: Row<InventoryRecord> }) => (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAdjustingRecord(row.original)}
+              >
+                Adjust
+              </Button>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (

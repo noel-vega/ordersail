@@ -24,6 +24,11 @@ export function getListLocationsQueryOptions(search?: ListSearch) {
           : { limit: 100 },
       ),
     placeholderData: keepPreviousData,
+    // used as a filter picker on other pages (e.g. Inventory) where the user
+    // may hold that page's read perm but not locations:read — degrade to an
+    // empty picker instead of throwing the host page to the error boundary.
+    // The Locations route itself is guarded in beforeLoad (requirePermission).
+    throwOnError: false,
   })
 }
 
