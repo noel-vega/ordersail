@@ -15,16 +15,19 @@ import { Public } from 'src/shared/auth/decorators';
 import {
   DOMAIN_EVENTS,
   DomainEventBus,
+  type ChargeDisputeUpdatedPayload,
+  type ChargeRefundedPayload,
   type CheckoutSessionPaidPayload,
 } from 'src/shared/events';
 import { STRIPE } from './payments.constants';
 import { StripeConnectService } from './stripe-connect.service';
 
 // The one Stripe webhook endpoint — a Stripe event destination is a single URL
-// + a single signing secret, so both the Connect (`account.updated`) and
-// Checkout (`checkout.session.*`) events land here and are dispatched by type.
-// Subscribed in the Stripe Dashboard to "events on connected accounts", as
-// Snapshot (v1) events (the payload shapes below are v1 Connect / Checkout).
+// + a single signing secret, so every subscribed event lands here and is
+// dispatched by type: Connect (`account.updated`), Checkout
+// (`checkout.session.*`), and charge lifecycle (`charge.refunded`,
+// `charge.dispute.*` — OS-127). Subscribed in the Stripe Dashboard to "events
+// on connected accounts", as Snapshot (v1) events.
 //
 // The checkout webhook was moved off storefront-api in M9 (OS-357); the two
 // merchant-api controllers were merged here in OS-360.
@@ -113,10 +116,80 @@ export class StripeWebhookController {
         );
         break;
       }
+
+      // A refund was created on a charge — usually one the merchant issued in
+      // the Stripe Dashboard. sales reconciles: writes the negative
+      // order_payments row(s) it's missing and moves the status. Refunds
+      // OrderSail issued are already recorded (by stripeRefundId) and skipped.
+      // emitAsync so a failed reconcile → non-2xx → Stripe redelivers.
+      case 'charge.refunded': {
+        const payload = toChargeRefundedPayload(event.data.object);
+        if (payload) {
+          await this.events.emitAsync(DOMAIN_EVENTS.CHARGE_REFUNDED, payload);
+        } else {
+          this.logger.warn(
+            `${event.type} ${event.data.object.id}: no payment_intent — cannot map to an order`,
+          );
+        }
+        break;
+      }
+
+      // A dispute (chargeback) opened / updated / closed. sales notes it on the
+      // order and raises an alert; it does not auto-refund (OS-141 / M4 owns
+      // the money side).
+      case 'charge.dispute.created':
+      case 'charge.dispute.closed':
+      case 'charge.dispute.funds_withdrawn':
+      case 'charge.dispute.funds_reinstated': {
+        await this.events.emitAsync(
+          DOMAIN_EVENTS.CHARGE_DISPUTE_UPDATED,
+          toDisputePayload(event.type, event.data.object),
+        );
+        break;
+      }
     }
 
     return { received: true };
   }
+}
+
+function toChargeRefundedPayload(
+  charge: Stripe.Charge,
+): ChargeRefundedPayload | null {
+  const paymentIntentId =
+    typeof charge.payment_intent === 'string'
+      ? charge.payment_intent
+      : (charge.payment_intent?.id ?? null);
+  if (!paymentIntentId) return null;
+
+  return {
+    paymentIntentId,
+    refunds: (charge.refunds?.data ?? []).map((r) => ({
+      stripeRefundId: r.id,
+      amountCents: r.amount,
+      reason: r.reason ?? null,
+    })),
+  };
+}
+
+function toDisputePayload(
+  eventType: string,
+  dispute: Stripe.Dispute,
+): ChargeDisputeUpdatedPayload {
+  return {
+    eventType,
+    disputeId: dispute.id,
+    chargeId:
+      typeof dispute.charge === 'string' ? dispute.charge : dispute.charge.id,
+    paymentIntentId:
+      typeof dispute.payment_intent === 'string'
+        ? dispute.payment_intent
+        : (dispute.payment_intent?.id ?? null),
+    status: dispute.status,
+    reason: dispute.reason ?? null,
+    amountCents: dispute.amount,
+    evidenceDueBy: dispute.evidence_details?.due_by ?? null,
+  };
 }
 
 // the paid session → the `checkout.session.paid` payload, or null when it

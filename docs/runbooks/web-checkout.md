@@ -53,7 +53,7 @@ npm run bootstrap   # drizzle push + seed — copy "Created storefront API key: 
 npm run dev         # merchant-api :3000, storefront-api :3001, storefront-web :3002, worker :3003, merchant-web :5000
 
 # in one more terminal — leave running:
-npm run stripe:listen -w merchant-api   # account.updated + checkout.session.* → :3000/webhooks/stripe
+npm run stripe:listen -w merchant-api   # account.updated + checkout.session.* + charge.refunded/dispute.* → :3000/webhooks/stripe
 ```
 
 The seed's "Default" location ships from a real address and every variant has a weight,
@@ -137,7 +137,7 @@ endpoint and delete the old one.
 
 | Endpoint | URL | Events | Secret |
 |---|---|---|---|
-| `we_1UDH0NPv6bBCGBTQqZL0Gjo5` (test mode, Connect app `ca_RXxGu0lk85WkvPTQEbF7LP7hJzSBrWoD`) | `https://merchant.ordersail.com/api/webhooks/stripe` | `account.updated`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired` (last two are `{received:true}` no-ops until OS-115) | `ordersail/production/merchant-api` → `STRIPE_WEBHOOK_SECRET` |
+| `we_1UDH0NPv6bBCGBTQqZL0Gjo5` (test mode, Connect app `ca_RXxGu0lk85WkvPTQEbF7LP7hJzSBrWoD`) | `https://merchant.ordersail.com/api/webhooks/stripe` | `account.updated`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`, `charge.dispute.funds_withdrawn`, `charge.dispute.funds_reinstated` | `ordersail/production/merchant-api` → `STRIPE_WEBHOOK_SECRET` |
 
 Recreate recipe (`stripe` CLI, platform account key):
 
@@ -148,21 +148,26 @@ stripe webhook_endpoints create --connect=true -d "api_version=2026-08-26.dahlia
   --enabled-events=checkout.session.completed \
   --enabled-events=checkout.session.async_payment_succeeded \
   --enabled-events=checkout.session.async_payment_failed \
-  --enabled-events=checkout.session.expired
+  --enabled-events=checkout.session.expired \
+  --enabled-events=charge.refunded \
+  --enabled-events=charge.dispute.created \
+  --enabled-events=charge.dispute.closed \
+  --enabled-events=charge.dispute.funds_withdrawn \
+  --enabled-events=charge.dispute.funds_reinstated
 # → put the returned `secret` into ordersail/production/merchant-api : STRIPE_WEBHOOK_SECRET,
 #   then `aws ecs update-service --cluster ordersail --service ordersail-merchant-api --force-new-deployment`
 ```
 
 `account.updated` → `StripeConnectService.handleAccountUpdated`; `checkout.session.*` →
-the `checkout.session.paid` domain event → `sales`. `/api/` is stripped by the
-CloudFront function before the request reaches the ALB, so the app route is
+the `checkout.session.paid` domain event → `sales`; `charge.refunded` /
+`charge.dispute.*` → `charge.refunded` / `charge.dispute.updated` domain events →
+`sales` (OS-127 — see `docs/runbooks/refunds-disputes.md`). `/api/` is stripped by
+the CloudFront function before the request reaches the ALB, so the app route is
 `/webhooks/stripe`.
 
 ## Not covered by this flow (later milestones)
 
 - Tax — `orders.taxCents` is always 0 (Payments M5)
 - Platform fee — no `application_fee_amount` on the session (Payments M4)
-- Order status / refund / cancel — no `status` column yet (Payments M2)
-- `checkout.session.expired` / `async_payment_failed`, "paid but order-write failed"
-  recovery, a session-creation idempotency key (Payments M1: OS-115/116/117)
+- Fee reversal on refunds, full dispute/chargeback accounting (Payments M4: OS-139/OS-141)
 - Real parcel dimensions, persisting the chosen carrier/service level

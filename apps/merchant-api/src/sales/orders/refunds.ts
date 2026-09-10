@@ -9,7 +9,11 @@ import {
   sql,
 } from 'db/sales';
 import { inventoryMovementsTable, inventoryTable } from 'db/stock';
-import { transitionOrderStatus, type OrderStatus } from './order-status';
+import {
+  canTransition,
+  transitionOrderStatus,
+  type OrderStatus,
+} from './order-status';
 
 type Executor = Pick<typeof Db, 'select' | 'update' | 'insert'>;
 
@@ -188,7 +192,10 @@ export async function recordRefund(
     .where(eq(ordersTable.id, input.orderId));
 
   const target: OrderStatus = net <= 0 ? 'refunded' : 'partially_refunded';
-  if (order && order.status !== target) {
+  // Skip the move when it isn't reachable — e.g. a canceled order picking up a
+  // late dashboard refund via OS-127. The negative row + event below still land
+  // so the money is recorded; the status just stays canceled.
+  if (order && order.status !== target && canTransition(order.status, target)) {
     await transitionOrderStatus(executor, {
       orderId: input.orderId,
       to: target,

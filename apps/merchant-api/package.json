@@ -9,7 +9,7 @@
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "generate:openapi": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts",
-    "stripe:listen": "stripe listen --events account.updated,checkout.session.completed,checkout.session.async_payment_succeeded --forward-connect-to localhost:3000/webhooks/stripe",
+    "stripe:listen": "stripe listen --events account.updated,checkout.session.completed,checkout.session.async_payment_succeeded,charge.refunded,charge.dispute.created,charge.dispute.closed,charge.dispute.funds_withdrawn,charge.dispute.funds_reinstated --forward-connect-to localhost:3000/webhooks/stripe",
     "start": "nest start -- -b swc",
     "start:dev": "nest start --watch",
     "dev": "npm run start:dev",
