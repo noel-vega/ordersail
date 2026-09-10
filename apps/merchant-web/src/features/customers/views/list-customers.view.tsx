@@ -42,7 +42,7 @@ export function ListCustomersView() {
           </InputGroup>
         </Field>
       </div>
-      <DataTable data={customers.data ?? []} columns={columns} />
+      <DataTable data={customers.data?.items ?? []} columns={columns} />
     </div>
   );
 }
