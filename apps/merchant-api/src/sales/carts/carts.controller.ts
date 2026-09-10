@@ -13,6 +13,7 @@ import { PaginatedCarts } from './entities/paginated-carts.entity';
 import { CartDetail } from './entities/cart-detail.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -21,6 +22,7 @@ export class CartsController {
   constructor(private readonly cartsService: CartsService) {}
 
   @Get()
+  @RequirePermissions('orders:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedCarts })
   findAll(
@@ -32,6 +34,7 @@ export class CartsController {
   }
 
   @Get(':id')
+  @RequirePermissions('orders:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: CartDetail })
   async findOne(

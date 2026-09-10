@@ -2,6 +2,7 @@ import z from 'zod'
 import { createFileRoute } from '@tanstack/react-router'
 import { getOrderQueryOptions } from '../../../features/orders/orders.hooks'
 import { queryClient } from '../../../lib/react-query-client'
+import { requirePermission } from '../../../lib/require-permission'
 import { OrderView } from '../../../features/orders/views/order.view'
 import { DetailSkeleton } from '../../../components/skeletons'
 
@@ -12,7 +13,8 @@ export const Route = createFileRoute('/app/orders/$id')({
   staticData: {
     breadcrumb: (params) => `Order #${params.id}`,
   },
-  beforeLoad: async ({ params }) => {
+  beforeLoad: async ({ params, context }) => {
+    requirePermission(context, 'orders:read')
     await queryClient.ensureQueryData(getOrderQueryOptions(params.id))
   },
   pendingComponent: DetailSkeleton,

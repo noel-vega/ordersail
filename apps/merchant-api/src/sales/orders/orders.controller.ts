@@ -37,6 +37,7 @@ export class OrdersController {
   ) {}
 
   @Get()
+  @RequirePermissions('orders:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedOrders })
   findAll(
@@ -48,6 +49,7 @@ export class OrdersController {
   }
 
   @Get(':id')
+  @RequirePermissions('orders:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: OrderDetail })
   async findOne(
