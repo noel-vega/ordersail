@@ -11,6 +11,7 @@ type ChecklistItem = {
   done: boolean
   cta: string
   to: LinkProps["to"]
+  search?: LinkProps["search"]
 }
 
 export function OnboardingChecklist() {
@@ -26,6 +27,8 @@ export function OnboardingChecklist() {
       done: status.data.stripeConnected,
       cta: "Connect Stripe",
       to: "/app/payments",
+      // auto-open the embedded Stripe onboarding flow on arrival (OS-167)
+      search: { onboarding: true },
     },
     {
       label: "Add your location's address so shipping can be quoted",
@@ -66,7 +69,7 @@ export function OnboardingChecklist() {
               {item.label}
             </span>
             {!item.done && (
-              <Link to={item.to}>
+              <Link to={item.to} search={item.search}>
                 <Button variant="outline" size="sm">
                   {item.cta}
                 </Button>

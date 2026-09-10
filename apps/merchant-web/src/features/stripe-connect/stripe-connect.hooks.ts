@@ -17,11 +17,15 @@ export function useStripeConnectStatusQuery() {
 // the cached DB status
 export function useRefreshStripeConnectStatus() {
   const queryClient = useQueryClient()
-  return () =>
-    queryClient.fetchQuery({
+  return async () => {
+    const status = await queryClient.fetchQuery({
       queryKey: ["stripe-connect", "status"],
       queryFn: () => merchantApi.stripeConnect.getStatus({ refresh: true }),
     })
+    // completing Stripe onboarding can tick the dashboard onboarding checklist
+    queryClient.invalidateQueries({ queryKey: ["onboarding"] })
+    return status
+  }
 }
 
 export function useCreateAccountSessionMutation() {
