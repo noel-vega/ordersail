@@ -32,13 +32,19 @@ import {
   SidebarMenuSubItem,
 } from "ui/sidebar";
 import { NavUser } from "./nav-user";
+import { navItemVisible, useVisibleNavItems } from "./use-visible-nav-items";
 
+// `permission` hides the item unless the current user holds that key (or any
+// key, if an array). undefined = always visible. Keys that don't exist in the
+// catalog yet (customers / pos_devices / payments) stay undefined here and get
+// their gate in the domain PR that adds the key (OS-178 / OS-179).
 export const NAV_ITEMS = [
   {
     key: "home",
     label: "Dashboard",
     icon: LayoutDashboardIcon,
     to: "/app",
+    permission: undefined,
     children: undefined,
   },
   {
@@ -46,6 +52,7 @@ export const NAV_ITEMS = [
     label: "Orders",
     icon: ShoppingCartIcon,
     to: "/app/orders",
+    permission: "orders:read",
     children: undefined,
   },
   {
@@ -53,6 +60,7 @@ export const NAV_ITEMS = [
     label: "Failed Orders",
     icon: TriangleAlertIcon,
     to: "/app/failed-orders",
+    permission: "orders:read",
     children: undefined,
   },
   {
@@ -60,6 +68,7 @@ export const NAV_ITEMS = [
     label: "Carts",
     icon: ShoppingBasketIcon,
     to: "/app/carts",
+    permission: "orders:read",
     children: undefined,
   },
   {
@@ -67,9 +76,18 @@ export const NAV_ITEMS = [
     label: "Products",
     icon: LibraryIcon,
     to: "/app/products",
+    permission: "products:read",
     children: [
-      { label: "Categories", to: "/app/products/categories" },
-      { label: "Brands", to: "/app/products/brands" },
+      {
+        label: "Categories",
+        to: "/app/products/categories",
+        permission: "products:read",
+      },
+      {
+        label: "Brands",
+        to: "/app/products/brands",
+        permission: "products:read",
+      },
     ],
   },
   {
@@ -77,6 +95,7 @@ export const NAV_ITEMS = [
     label: "Inventory",
     icon: ShelvingUnitIcon,
     to: "/app/inventory",
+    permission: "inventory:read",
     children: undefined,
   },
   {
@@ -84,6 +103,7 @@ export const NAV_ITEMS = [
     label: "Locations",
     icon: MapPinIcon,
     to: "/app/locations",
+    permission: "locations:read",
     children: undefined,
   },
   {
@@ -91,6 +111,7 @@ export const NAV_ITEMS = [
     label: "POS Devices",
     icon: TabletSmartphoneIcon,
     to: "/app/pos-devices",
+    permission: undefined,
     children: undefined,
   },
   {
@@ -98,6 +119,7 @@ export const NAV_ITEMS = [
     label: "Customers",
     icon: BookUserIcon,
     to: "/app/customers",
+    permission: undefined,
     children: undefined,
   },
   {
@@ -105,6 +127,7 @@ export const NAV_ITEMS = [
     label: "Users",
     icon: UsersIcon,
     to: "/app/users",
+    permission: "users:read",
     children: undefined,
   },
   {
@@ -112,6 +135,7 @@ export const NAV_ITEMS = [
     label: "Roles",
     icon: ShieldIcon,
     to: "/app/roles",
+    permission: "roles:read",
     children: undefined,
   },
   {
@@ -119,6 +143,7 @@ export const NAV_ITEMS = [
     label: "Developers",
     icon: KeyRoundIcon,
     to: "/app/developers",
+    permission: "api_keys:read",
     children: undefined,
   },
   {
@@ -126,6 +151,7 @@ export const NAV_ITEMS = [
     label: "Payments",
     icon: CreditCardIcon,
     to: "/app/payments",
+    permission: undefined,
     children: undefined,
   },
   {
@@ -133,6 +159,7 @@ export const NAV_ITEMS = [
     label: "Settings",
     icon: SettingsIcon,
     to: "/app/settings",
+    permission: "account:read",
     children: undefined,
   },
 ] as const;
@@ -142,6 +169,7 @@ export function AppSidebar() {
   // sub-item link) only ever opens it, any other top-level link closes it
   const [openKey, setOpenKey] = useState<string | null>(null);
   const pathname = useLocation({ select: (location) => location.pathname });
+  const { items, perms } = useVisibleNavItems();
 
   return (
     <Sidebar variant="inset">
@@ -158,8 +186,11 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent className="flex flex-col gap-2">
             <SidebarMenu>
-              {NAV_ITEMS.map((item) => {
-                if (item.children) {
+              {items.map((item) => {
+                const visibleChildren = item.children?.filter((child) =>
+                  navItemVisible(perms, child.permission),
+                );
+                if (visibleChildren && visibleChildren.length > 0) {
                   const isActive =
                     pathname === item.to || pathname.startsWith(`${item.to}/`);
                   return (
@@ -185,7 +216,7 @@ export function AppSidebar() {
                       </SidebarMenuItem>
                       <CollapsibleContent>
                         <SidebarMenuSub>
-                          {item.children.map((child) => (
+                          {visibleChildren.map((child) => (
                             <SidebarMenuSubItem key={child.to}>
                               <SidebarMenuSubButton
                                 render={<Link to={child.to} />}
