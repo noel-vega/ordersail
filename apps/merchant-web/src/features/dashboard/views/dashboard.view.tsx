@@ -9,6 +9,7 @@ import type { OrderListItem, Customer } from "merchant-sdk";
 import { Link } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { formatCents } from "../../../lib/currency";
+import { OnboardingChecklist } from "../../onboarding/views/onboarding-checklist.view";
 
 function MetricCard(props: {
   title: string;
@@ -92,6 +93,8 @@ export function DashboardView() {
 
   return (
     <div className="space-y-6">
+      <OnboardingChecklist />
+
       <div className="flex gap-4">
         <MetricCard title="Orders" value={summary?.orderCount ?? 0} />
         <MetricCard
