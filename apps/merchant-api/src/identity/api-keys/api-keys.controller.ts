@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -33,5 +42,20 @@ export class ApiKeysController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.apiKeysService.createForAccount(user.accountId, dto.label);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('api_keys:write')
+  @ApiOkResponse({ type: ApiKeyDto })
+  async revoke(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const revoked = await this.apiKeysService.revokeForAccount(
+      id,
+      user.accountId,
+    );
+    if (!revoked) throw new NotFoundException();
+    return revoked;
   }
 }

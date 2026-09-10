@@ -15,5 +15,16 @@ export function createApiKeysResource(client: Client<paths>, doRequest: DoFn) {
           client.POST("/api-keys", { body: params ?? {} }),
         ),
       ),
+
+    remove: async (id: number) => {
+      const path: paths["/api-keys/{id}"]["delete"]["parameters"]["path"] = {
+        id: String(id),
+      };
+      return unwrap(
+        await doRequest(() =>
+          client.DELETE("/api-keys/{id}", { params: { path } }),
+        ),
+      );
+    },
   };
 }
