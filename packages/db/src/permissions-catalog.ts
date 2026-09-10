@@ -14,6 +14,7 @@ export const PERMISSIONS_CATALOG: PermissionDef[] = [
   { key: "users:read", resource: "users", action: "read", description: "View staff members" },
   { key: "users:write", resource: "users", action: "write", description: "Invite staff members" },
   { key: "users:manage_roles", resource: "users", action: "manage_roles", description: "Assign roles to staff members" },
+  { key: "users:deactivate", resource: "users", action: "deactivate", description: "Deactivate and reactivate staff members" },
 
   { key: "customers:read", resource: "customers", action: "read", description: "View customers" },
   { key: "customers:write", resource: "customers", action: "write", description: "Edit customers" },

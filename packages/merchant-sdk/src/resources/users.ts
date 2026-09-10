@@ -18,8 +18,42 @@ export function createUsersResource(client: Client<paths>, doRequest: DoFn) {
       return data;
     },
 
+    get: async (id: number) =>
+      unwrap(
+        await doRequest(() =>
+          client.GET("/users/{id}", { params: { path: { id } } }),
+        ),
+      ),
+
     create: async (params: components["schemas"]["CreateUserDto"]) =>
       unwrap(await doRequest(() => client.POST("/users", { body: params }))),
+
+    update: async (
+      id: number,
+      params: components["schemas"]["UpdateUserProfileDto"],
+    ) =>
+      unwrap(
+        await doRequest(() =>
+          client.PATCH("/users/{id}", {
+            params: { path: { id } },
+            body: params,
+          }),
+        ),
+      ),
+
+    deactivate: async (id: number) =>
+      unwrap(
+        await doRequest(() =>
+          client.POST("/users/{id}/deactivate", { params: { path: { id } } }),
+        ),
+      ),
+
+    reactivate: async (id: number) =>
+      unwrap(
+        await doRequest(() =>
+          client.POST("/users/{id}/reactivate", { params: { path: { id } } }),
+        ),
+      ),
 
     updateRoles: async (id: number, roleIds: number[]) => {
       const path: paths["/users/{id}/roles"]["patch"]["parameters"]["path"] = {

@@ -1,6 +1,7 @@
 import {
   Controller,
   DefaultValuePipe,
+  ForbiddenException,
   Get,
   Post,
   Patch,
@@ -17,8 +18,10 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { AssignRolesDto } from './dto/assign-roles.dto';
+import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { User } from './entities/user.entity';
 import { PaginatedUsers } from './entities/paginated-users.entity';
 import {
@@ -30,7 +33,10 @@ import {
 
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly permissionsService: PermissionsService,
+  ) {}
 
   @Post()
   @RequirePermissions('users:write')
@@ -63,6 +69,45 @@ export class UsersController {
     return this.usersService.findAll(limit, offset, user.accountId, q);
   }
 
+  @Get(':id')
+  @RequirePermissions('users:read')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: User })
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const found = await this.usersService.getById(id, user.accountId);
+    if (!found) throw new NotFoundException();
+    return found;
+  }
+
+  // no @RequirePermissions — a user may always edit their own name/phone;
+  // editing anyone else needs users:write (checked in the handler)
+  @Patch(':id')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: User })
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateUserProfileDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (id !== user.sub) {
+      const granted = await this.permissionsService.getEffectivePermissionKeys(
+        user.sub,
+      );
+      if (!granted.has('users:write')) {
+        throw new ForbiddenException(
+          'Missing required permission: users:write',
+        );
+      }
+    }
+
+    const updated = await this.usersService.update(id, user.accountId, dto);
+    if (!updated) throw new NotFoundException();
+    return updated;
+  }
+
   @Patch(':id/roles')
   @RequirePermissions('users:manage_roles')
   @ApiBearerAuth('JWT-auth')
@@ -79,6 +124,40 @@ export class UsersController {
       user.accountId,
       user.sub,
       granted,
+    );
+    if (!updated) throw new NotFoundException();
+    return updated;
+  }
+
+  @Post(':id/deactivate')
+  @RequirePermissions('users:deactivate')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: User })
+  async deactivate(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const updated = await this.usersService.setDeactivated(
+      id,
+      user.accountId,
+      true,
+    );
+    if (!updated) throw new NotFoundException();
+    return updated;
+  }
+
+  @Post(':id/reactivate')
+  @RequirePermissions('users:deactivate')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: User })
+  async reactivate(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const updated = await this.usersService.setDeactivated(
+      id,
+      user.accountId,
+      false,
     );
     if (!updated) throw new NotFoundException();
     return updated;

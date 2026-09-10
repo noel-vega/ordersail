@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { Button } from "ui/button";
 import { Badge } from "ui/badge";
@@ -10,8 +9,9 @@ import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { Can } from "../../../components/can";
 import { useListUsersQuery } from "../users.hooks";
-import { EditUserRolesSheet } from "./edit-user-roles-sheet";
+import { UserStatusBadge } from "./user-status-badge";
 
 const route = getRouteApi("/app/users/");
 
@@ -20,6 +20,11 @@ const columns: ColumnDef<User>[] = [
     id: "name",
     header: "Name",
     cell: ({ row }) => `${row.original.firstName} ${row.original.lastName}`,
+  },
+  {
+    id: "status",
+    header: "Status",
+    cell: ({ row }) => <UserStatusBadge status={row.original.status} />,
   },
   {
     accessorKey: "phone",
@@ -58,7 +63,6 @@ export function ListUsersView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const users = useListUsersQuery(search);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
 
   return (
     <div className="space-y-4">
@@ -70,16 +74,20 @@ export function ListUsersView() {
             navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
           }
         />
-        <Link to="/app/users/create">
-          <Button>
-            <PlusIcon /> Add user
-          </Button>
-        </Link>
+        <Can permission="users:write">
+          <Link to="/app/users/create">
+            <Button>
+              <PlusIcon /> Add user
+            </Button>
+          </Link>
+        </Can>
       </div>
       <DataTable
         data={users.data?.items ?? []}
         columns={columns}
-        onRowClick={(row) => setEditingUser(row.original)}
+        onRowClick={(row) =>
+          navigate({ to: "/app/users/$id", params: { id: row.original.id } })
+        }
         emptyMessage={search.q ? undefined : "No team members yet."}
       />
       <DataTablePagination
@@ -89,12 +97,6 @@ export function ListUsersView() {
         onPageChange={(page) =>
           navigate({ search: (prev) => ({ ...prev, page }) })
         }
-      />
-
-      <EditUserRolesSheet
-        user={editingUser}
-        open={editingUser !== null}
-        onOpenChange={(open) => !open && setEditingUser(null)}
       />
     </div>
   );

@@ -148,3 +148,46 @@ describe('AuthService.me (OS-180)', () => {
     );
   });
 });
+
+describe('AuthService.refreshAccessToken (OS-184)', () => {
+  it('mints a new access token for an active user', async () => {
+    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+    const service = await build();
+    const { userId, accountId } = await service.signup(signupDto);
+
+    const refresh = await service.createRefreshToken(
+      userId,
+      signupDto.email,
+      accountId,
+      signupDto.firstName,
+      signupDto.lastName,
+    );
+
+    await expect(service.refreshAccessToken(refresh)).resolves.toEqual(
+      expect.any(String),
+    );
+  });
+
+  it('rejects the refresh token of a deactivated user', async () => {
+    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+    const service = await build();
+    const { userId, accountId } = await service.signup(signupDto);
+
+    const refresh = await service.createRefreshToken(
+      userId,
+      signupDto.email,
+      accountId,
+      signupDto.firstName,
+      signupDto.lastName,
+    );
+
+    await db
+      .update(usersTable)
+      .set({ deactivatedAt: new Date() })
+      .where(eq(usersTable.id, userId));
+
+    await expect(service.refreshAccessToken(refresh)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+});
