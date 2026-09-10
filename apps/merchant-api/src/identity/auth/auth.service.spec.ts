@@ -17,6 +17,7 @@ import { locationsTable } from 'db/stock';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
 
 const db = useTestDb();
@@ -35,6 +36,8 @@ async function build() {
       // real RolesService for createSystemRole; its PermissionsService dep is
       // unused on that path
       { provide: RolesService, useValue: new RolesService(db, {} as never) },
+      // real PermissionsService — signup() doesn't call it, me() does
+      { provide: PermissionsService, useValue: new PermissionsService(db) },
     ],
   }).compile();
   return ref.get(AuthService);
@@ -114,6 +117,34 @@ describe('AuthService.signup — first-run seed (OS-173)', () => {
     await service.signup(signupDto);
     await expect(service.signup(signupDto)).rejects.toBeInstanceOf(
       ConflictException,
+    );
+  });
+});
+
+describe('AuthService.me (OS-180)', () => {
+  it('returns identity + the caller effective permission keys', async () => {
+    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+    const service = await build();
+    const { userId, accountId } = await service.signup(signupDto);
+
+    const me = await service.me({
+      sub: userId,
+      email: signupDto.email,
+      accountId,
+      firstName: signupDto.firstName,
+      lastName: signupDto.lastName,
+    });
+
+    expect(me).toMatchObject({
+      userId,
+      accountId,
+      email: signupDto.email,
+      firstName: signupDto.firstName,
+      lastName: signupDto.lastName,
+    });
+    // fresh signup → Owner role → every catalog key, sorted
+    expect(me.permissions).toEqual(
+      [...PERMISSIONS_CATALOG.map((p) => p.key)].sort(),
     );
   });
 });

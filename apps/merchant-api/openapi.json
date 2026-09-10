@@ -2788,6 +2788,35 @@
           "Onboarding"
         ]
       }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "AuthController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMe"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
     }
   },
   "info": {
@@ -5436,6 +5465,40 @@
           "hasCompleteLocation",
           "hasActiveProduct",
           "complete"
+        ]
+      },
+      "AuthMe": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number"
+          },
+          "email": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "number"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "userId",
+          "email",
+          "firstName",
+          "lastName",
+          "accountId",
+          "permissions"
         ]
       }
     }

@@ -77,6 +77,7 @@ export type CreateUserDto = components["schemas"]["CreateUserDto"];
 export type Customer = components["schemas"]["Customer"];
 export type PaginatedCustomers = components["schemas"]["PaginatedCustomers"];
 export type AcceptInviteDto = components["schemas"]["AcceptInviteDto"];
+export type AuthMe = components["schemas"]["AuthMe"];
 export type DashboardSummary = components["schemas"]["DashboardSummary"];
 export type OnboardingStatus = components["schemas"]["OnboardingStatus"];
 export type Permission = components["schemas"]["Permission"];
@@ -182,6 +183,13 @@ export class AdminClient {
     const { data } = await this.client.GET("/auth/token/refresh");
     this.accessToken = data?.access_token;
     return this.accessToken;
+  }
+
+  // current user identity + effective permission keys — merchant-web's
+  // permission context. Retries once on 401 via do().
+  async me() {
+    const { data } = await this.do(() => this.client.GET("/auth/me"));
+    return data;
   }
 
   // clears the httpOnly refresh_token cookie server-side — the client can't
