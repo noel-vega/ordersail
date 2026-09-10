@@ -1,10 +1,10 @@
 import { queryOptions, useQuery } from "@tanstack/react-query"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 
 export function getListCustomersQueryOptions() {
   return queryOptions({
     queryKey: ["customers"],
-    queryFn: adminApi.customers.list,
+    queryFn: merchantApi.customers.list,
   })
 }
 

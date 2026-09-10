@@ -11,7 +11,7 @@ import {
 } from "ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuItem, sidebarMenuButtonVariants } from "ui/sidebar";
 import { cn } from "ui/utils";
-import { adminApi } from "../lib/admin-api-client";
+import { merchantApi } from "../lib/merchant-api-client";
 import { decodeAccessToken } from "../features/auth/auth.utils";
 import { useLogoutMutation } from "../features/auth/auth.hooks";
 
@@ -36,8 +36,8 @@ export function NavUser() {
   const navigate = useNavigate();
   const logoutMutation = useLogoutMutation();
 
-  const claims = adminApi.accessToken
-    ? decodeAccessToken(adminApi.accessToken)
+  const claims = merchantApi.accessToken
+    ? decodeAccessToken(merchantApi.accessToken)
     : undefined;
   // a session from before this JWT payload carried a name won't have one
   // until the user signs in again — fall back rather than crash

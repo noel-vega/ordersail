@@ -1,11 +1,11 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 
 export function getListInventoryQueryOptions() {
   return queryOptions({
     queryKey: ["inventory"],
-    queryFn: adminApi.inventory.list,
+    queryFn: merchantApi.inventory.list,
   })
 }
 
@@ -16,7 +16,7 @@ export function useListInventoryQuery() {
 export function getListInventoryMovementsQueryOptions() {
   return queryOptions({
     queryKey: ["inventory", "movements"],
-    queryFn: adminApi.inventory.movements.list,
+    queryFn: merchantApi.inventory.movements.list,
   })
 }
 
@@ -26,7 +26,7 @@ export function useListInventoryMovementsQuery() {
 
 export function useCreateInventoryMovementMutation() {
   return useMutation({
-    mutationFn: adminApi.inventory.movements.create,
+    mutationFn: merchantApi.inventory.movements.create,
     onSuccess: () => {
       queryClient.invalidateQueries(getListInventoryQueryOptions())
       queryClient.invalidateQueries(getListInventoryMovementsQueryOptions())

@@ -1,13 +1,13 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
 import type { CancelOrderDto, RefundOrderDto } from "merchant-sdk"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { getDashboardSummaryQueryOptions } from "../dashboard/dashboard.hooks"
 
 export function getListOrdersQueryOptions() {
   return queryOptions({
     queryKey: ["orders"],
-    queryFn: () => adminApi.orders.list(),
+    queryFn: () => merchantApi.orders.list(),
   })
 }
 
@@ -18,7 +18,7 @@ export function useListOrdersQuery() {
 export function getOrderQueryOptions(id: number) {
   return queryOptions({
     queryKey: ["orders", id],
-    queryFn: () => adminApi.orders.getById(id),
+    queryFn: () => merchantApi.orders.getById(id),
   })
 }
 
@@ -36,14 +36,14 @@ function invalidateOrder(orderId: number) {
 
 export function useRefundOrderMutation(orderId: number) {
   return useMutation({
-    mutationFn: (body: RefundOrderDto) => adminApi.orders.refund(orderId, body),
+    mutationFn: (body: RefundOrderDto) => merchantApi.orders.refund(orderId, body),
     onSuccess: () => invalidateOrder(orderId),
   })
 }
 
 export function useCancelOrderMutation(orderId: number) {
   return useMutation({
-    mutationFn: (body: CancelOrderDto) => adminApi.orders.cancel(orderId, body),
+    mutationFn: (body: CancelOrderDto) => merchantApi.orders.cancel(orderId, body),
     onSuccess: () => invalidateOrder(orderId),
   })
 }

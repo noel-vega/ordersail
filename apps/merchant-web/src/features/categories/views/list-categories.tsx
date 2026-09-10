@@ -6,7 +6,7 @@ import { Button } from "ui/button";
 import { Link } from "@tanstack/react-router";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "ui/input-group";
 import { PlusIcon, SearchIcon } from "lucide-react";
-import { type ColumnDef, type Row } from "@tanstack/react-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import type { Category } from "merchant-sdk";
 import { Field, FieldLabel } from "ui/field";
 import { format } from "date-fns";
@@ -30,10 +30,6 @@ const columns: ColumnDef<Category>[] = [
 export function ListCategoriesView() {
   const categories = useQuery(getListCategoriesQueryOptions());
 
-  const handleRowClick = (row: Row<Category>) => {
-    console.log(row.original)
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex gap-4 items-end justify-between">
@@ -52,7 +48,7 @@ export function ListCategoriesView() {
           </Button>
         </Link>
       </div>
-      <DataTable onRowClick={handleRowClick} data={categories.data ?? []} columns={columns} />
+      <DataTable data={categories.data ?? []} columns={columns} />
     </div>
   );
 }

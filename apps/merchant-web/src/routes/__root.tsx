@@ -1,5 +1,5 @@
 import { createRootRoute, Outlet, redirect } from "@tanstack/react-router";
-import { adminApi } from "../lib/admin-api-client";
+import { merchantApi } from "../lib/merchant-api-client";
 import { appConfig } from "../config";
 
 const RootLayout = () => (
@@ -10,14 +10,16 @@ const RootLayout = () => (
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
-    const accessToken = await adminApi.refreshAccessToken();
+    const accessToken = await merchantApi.refreshAccessToken();
 
     switch (location.pathname) {
+      case "/":
+        // "/" is only ever a gateway — send authed users home, everyone else
+        // to sign-in (routes/index.tsx never renders as a result)
+        throw redirect({ to: accessToken ? appConfig.homeRoute : "/signin" });
       case "/signin":
       case "/signup":
-      case "/":
         if (accessToken) {
-          console.log("REDIRECT:", appConfig.homeRoute)
           throw redirect({ to: appConfig.homeRoute });
         }
         break;
@@ -31,7 +33,6 @@ export const Route = createRootRoute({
         // the case above — bouncing an authenticated visit at /app to
         // homeRoute (also /app) would just redirect to itself forever
         if (!accessToken) {
-          console.log("REDIRECT: /signin")
           throw redirect({ to: "/signin" });
         }
     }

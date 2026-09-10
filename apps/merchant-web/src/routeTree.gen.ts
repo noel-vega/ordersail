@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteRouteImport } from './routes/app/route'
-import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as SigninRouteImport } from './routes/signin'
 import { Route as SignupRouteImport } from './routes/signup'
@@ -53,11 +52,6 @@ const IndexRoute = IndexRouteImport.update({
 const AppRouteRoute = AppRouteRouteImport.update({
   id: '/app',
   path: '/app',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InventoryRoute = InventoryRouteImport.update({
-  id: '/inventory',
-  path: '/inventory',
   getParentRoute: () => rootRouteImport,
 } as any)
 const JoinRoute = JoinRouteImport.update({
@@ -226,7 +220,6 @@ const AppProductsCategoriesCreateRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
-  '/inventory': typeof InventoryRoute
   '/join': typeof JoinRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
@@ -262,7 +255,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/inventory': typeof InventoryRoute
   '/join': typeof JoinRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
@@ -298,7 +290,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
-  '/inventory': typeof InventoryRoute
   '/join': typeof JoinRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
@@ -337,7 +328,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
-    | '/inventory'
     | '/join'
     | '/signin'
     | '/signup'
@@ -373,7 +363,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/inventory'
     | '/join'
     | '/signin'
     | '/signup'
@@ -408,7 +397,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/app'
-    | '/inventory'
     | '/join'
     | '/signin'
     | '/signup'
@@ -446,7 +434,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRouteRoute: typeof AppRouteRouteWithChildren
-  InventoryRoute: typeof InventoryRoute
   JoinRoute: typeof JoinRoute
   SigninRoute: typeof SigninRoute
   SignupRoute: typeof SignupRoute
@@ -466,13 +453,6 @@ declare module '@tanstack/react-router' {
       path: '/app'
       fullPath: '/app'
       preLoaderRoute: typeof AppRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/inventory': {
-      id: '/inventory'
-      path: '/inventory'
-      fullPath: '/inventory'
-      preLoaderRoute: typeof InventoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/join': {
@@ -792,7 +772,6 @@ const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRouteRoute: AppRouteRouteWithChildren,
-  InventoryRoute: InventoryRoute,
   JoinRoute: JoinRoute,
   SigninRoute: SigninRoute,
   SignupRoute: SignupRoute,

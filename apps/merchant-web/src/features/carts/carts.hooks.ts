@@ -1,10 +1,10 @@
 import { queryOptions, useQuery } from "@tanstack/react-query"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 
 export function getListCartsQueryOptions() {
   return queryOptions({
     queryKey: ["carts"],
-    queryFn: () => adminApi.carts.list(),
+    queryFn: () => merchantApi.carts.list(),
   })
 }
 
@@ -15,7 +15,7 @@ export function useListCartsQuery() {
 export function getCartQueryOptions(id: number) {
   return queryOptions({
     queryKey: ["carts", id],
-    queryFn: () => adminApi.carts.getById(id),
+    queryFn: () => merchantApi.carts.getById(id),
   })
 }
 

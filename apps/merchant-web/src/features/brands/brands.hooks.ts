@@ -1,11 +1,11 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 
 export function getListBrandsQueryOptions() {
   return queryOptions({
     queryKey: ["brands"],
-    queryFn: adminApi.brands.list,
+    queryFn: merchantApi.brands.list,
   })
 }
 
@@ -15,7 +15,7 @@ export function useListBrandsQuery() {
 
 export function useCreateBrandMutation() {
   return useMutation({
-    mutationFn: adminApi.brands.create,
+    mutationFn: merchantApi.brands.create,
     onSuccess: () => {
       queryClient.invalidateQueries(getListBrandsQueryOptions())
     },

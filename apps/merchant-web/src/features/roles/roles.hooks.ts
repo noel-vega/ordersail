@@ -1,5 +1,5 @@
 import { queryOptions, useMutation, useQuery, useSuspenseQuery } from "@tanstack/react-query"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { getListUsersQueryOptions } from "../users/users.hooks"
 
@@ -8,7 +8,7 @@ import { getListUsersQueryOptions } from "../users/users.hooks"
 export function getListRolesQueryOptions() {
   return queryOptions({
     queryKey: ["roles"],
-    queryFn: () => adminApi.roles.list(),
+    queryFn: () => merchantApi.roles.list(),
   })
 }
 
@@ -20,7 +20,7 @@ export function getRoleQueryOptions(id: number) {
   return queryOptions({
     queryKey: ["roles", id],
     queryFn: async () => {
-      const role = await adminApi.roles.getById(id)
+      const role = await merchantApi.roles.getById(id)
       if(!role) {
         throw new Error("Role not found")
       }
@@ -37,7 +37,7 @@ export function useRoleSuspenseQuery(id: number) {
 export function getPermissionsCatalogQueryOptions() {
   return queryOptions({
     queryKey: ["permissions"],
-    queryFn: adminApi.permissions.list,
+    queryFn: merchantApi.permissions.list,
     staleTime: Infinity,
   })
 }
@@ -48,7 +48,7 @@ export function usePermissionsCatalogSuspenseQuery() {
 
 export function useCreateRoleMutation() {
   return useMutation({
-    mutationFn: adminApi.roles.create,
+    mutationFn: merchantApi.roles.create,
     onSuccess: () => {
       queryClient.invalidateQueries(getListRolesQueryOptions())
     },
@@ -60,8 +60,8 @@ export function useUpdateRoleMutation() {
     mutationFn: ({
       id,
       ...params
-    }: { id: number } & Parameters<typeof adminApi.roles.update>[1]) =>
-      adminApi.roles.update(id, params),
+    }: { id: number } & Parameters<typeof merchantApi.roles.update>[1]) =>
+      merchantApi.roles.update(id, params),
     onSuccess: () => {
       queryClient.invalidateQueries(getListRolesQueryOptions())
       // the Users list embeds each user's role name as a denormalized
@@ -73,7 +73,7 @@ export function useUpdateRoleMutation() {
 
 export function useDeleteRoleMutation() {
   return useMutation({
-    mutationFn: (id: number) => adminApi.roles.remove(id),
+    mutationFn: (id: number) => merchantApi.roles.remove(id),
     onSuccess: () => {
       queryClient.invalidateQueries(getListRolesQueryOptions())
     },
