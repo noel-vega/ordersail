@@ -1,11 +1,11 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 
 export function getAccountQueryOptions() {
   return queryOptions({
     queryKey: ["account"],
-    queryFn: () => adminApi.account.get(),
+    queryFn: () => merchantApi.account.get(),
   })
 }
 
@@ -15,8 +15,8 @@ export function useAccountQuery() {
 
 export function useUpdateAccountMutation() {
   return useMutation({
-    mutationFn: (params: Parameters<typeof adminApi.account.update>[0]) =>
-      adminApi.account.update(params),
+    mutationFn: (params: Parameters<typeof merchantApi.account.update>[0]) =>
+      merchantApi.account.update(params),
     onSuccess: () => {
       queryClient.invalidateQueries(getAccountQueryOptions())
     },

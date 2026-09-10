@@ -1,12 +1,12 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client";
 import type { GetImageUploadUrlDto } from "merchant-sdk";
 
 export function getListProductsQueryOptions() {
     return queryOptions({
         queryKey: ['products'],
-        queryFn: adminApi.products.list
+        queryFn: merchantApi.products.list
     })
 }
 
@@ -17,7 +17,7 @@ export function useListProductsQuery() {
 
 export function useCreateProductMutation() {
   return useMutation({
-    mutationFn: adminApi.products.create,
+    mutationFn: merchantApi.products.create,
     onSuccess: () => {
       queryClient.invalidateQueries(getListProductsQueryOptions());
     },
@@ -27,7 +27,7 @@ export function useCreateProductMutation() {
 export function getProductQueryOptions(id: number) {
   return queryOptions({
     queryKey: ['products', id],
-    queryFn: () => adminApi.products.getById(id)
+    queryFn: () => merchantApi.products.getById(id)
   })
 }
 
@@ -38,7 +38,7 @@ export function useProductQuery(id: number) {
 export function getProductVariantsQueryOptions(id: number) {
   return queryOptions({
     queryKey: ['products', id, 'variants'],
-    queryFn: () => adminApi.products.variants.list(id)
+    queryFn: () => merchantApi.products.variants.list(id)
   })
 }
 
@@ -48,8 +48,8 @@ export function useProductVariantsQuery(id: number) {
 
 export function useCreateVariantsMutation(productId: number) {
   return useMutation({
-    mutationFn: (params: Parameters<typeof adminApi.products.variants.create>[1]) =>
-      adminApi.products.variants.create(productId, params),
+    mutationFn: (params: Parameters<typeof merchantApi.products.variants.create>[1]) =>
+      merchantApi.products.variants.create(productId, params),
     onSuccess: () => {
       queryClient.invalidateQueries(getProductQueryOptions(productId));
       queryClient.invalidateQueries(getProductVariantsQueryOptions(productId));
@@ -61,7 +61,7 @@ export function useCreateVariantsMutation(productId: number) {
 export function getProductOptionsQueryOptions(id: number) {
   return queryOptions({
     queryKey: ['products', id, 'options'],
-    queryFn: () => adminApi.products.options.list(id)
+    queryFn: () => merchantApi.products.options.list(id)
   })
 }
 
@@ -72,7 +72,7 @@ export function useProductOptionsQuery(id: number) {
 export function useDeleteProductOptionMutation(productId: number) {
   return useMutation({
     mutationFn: (optionId: number) =>
-      adminApi.products.options.remove(productId, optionId),
+      merchantApi.products.options.remove(productId, optionId),
     onSuccess: () => {
       queryClient.invalidateQueries(getProductOptionsQueryOptions(productId));
       queryClient.invalidateQueries(getProductVariantsQueryOptions(productId));
@@ -84,7 +84,7 @@ export function useDeleteProductOptionMutation(productId: number) {
 export function useUpdateProductOptionMutation(productId: number) {
   return useMutation({
     mutationFn: ({ optionId, name }: { optionId: number; name: string }) =>
-      adminApi.products.options.update(productId, optionId, { name }),
+      merchantApi.products.options.update(productId, optionId, { name }),
     onSuccess: () => {
       queryClient.invalidateQueries(getProductOptionsQueryOptions(productId));
     },
@@ -99,7 +99,7 @@ export function useDeleteProductOptionValueMutation(productId: number) {
     }: {
       optionId: number;
       valueId: number;
-    }) => adminApi.products.options.values.remove(productId, optionId, valueId),
+    }) => merchantApi.products.options.values.remove(productId, optionId, valueId),
     onSuccess: () => {
       queryClient.invalidateQueries(getProductOptionsQueryOptions(productId));
       queryClient.invalidateQueries(getProductVariantsQueryOptions(productId));
@@ -109,7 +109,7 @@ export function useDeleteProductOptionValueMutation(productId: number) {
 
 export function useDeleteProductMutation() {
   return useMutation({
-    mutationFn: adminApi.products.remove,
+    mutationFn: merchantApi.products.remove,
     onSuccess: () => {
       queryClient.invalidateQueries(getListProductsQueryOptions());
     },
@@ -118,8 +118,8 @@ export function useDeleteProductMutation() {
 
 export function useUpdateProductMutation(id: number) {
   return useMutation({
-    mutationFn: (params: Parameters<typeof adminApi.products.update>[1]) =>
-      adminApi.products.update(id, params),
+    mutationFn: (params: Parameters<typeof merchantApi.products.update>[1]) =>
+      merchantApi.products.update(id, params),
     onSuccess: () => {
       queryClient.invalidateQueries(getProductQueryOptions(id));
       queryClient.invalidateQueries(getListProductsQueryOptions());
@@ -133,8 +133,8 @@ export function useUpdateVariantMutation(productId: number) {
       variantId,
       ...params
     }: { variantId: number } & Parameters<
-      typeof adminApi.products.variants.update
-    >[2]) => adminApi.products.variants.update(productId, variantId, params),
+      typeof merchantApi.products.variants.update
+    >[2]) => merchantApi.products.variants.update(productId, variantId, params),
     onSuccess: () => {
       queryClient.invalidateQueries(getProductVariantsQueryOptions(productId));
     },
@@ -146,7 +146,7 @@ export function useUpdateVariantMutation(productId: number) {
 export function useUploadProductImageMutation(productId: number) {
   return useMutation({
     mutationFn: async ({ file, variantId }: { file: File; variantId?: number }) => {
-      const uploadInfo = await adminApi.products.images.getUploadUrl(productId, {
+      const uploadInfo = await merchantApi.products.images.getUploadUrl(productId, {
         contentType: file.type as GetImageUploadUrlDto["contentType"],
       });
       if (!uploadInfo) throw new Error("Could not get an upload URL");
@@ -157,7 +157,7 @@ export function useUploadProductImageMutation(productId: number) {
         headers: { "Content-Type": file.type },
       });
 
-      return adminApi.products.images.create(productId, {
+      return merchantApi.products.images.create(productId, {
         key: uploadInfo.key,
         variantId,
       });
@@ -172,7 +172,7 @@ export function useUploadProductImageMutation(productId: number) {
 export function useReorderProductImagesMutation(productId: number) {
   return useMutation({
     mutationFn: (imageIds: number[]) =>
-      adminApi.products.images.reorder(productId, { imageIds }),
+      merchantApi.products.images.reorder(productId, { imageIds }),
     onSuccess: () => {
       queryClient.invalidateQueries(getProductQueryOptions(productId));
       queryClient.invalidateQueries(getProductVariantsQueryOptions(productId));
@@ -182,7 +182,7 @@ export function useReorderProductImagesMutation(productId: number) {
 
 export function useDeleteProductImageMutation(productId: number) {
   return useMutation({
-    mutationFn: (imageId: number) => adminApi.products.images.remove(productId, imageId),
+    mutationFn: (imageId: number) => merchantApi.products.images.remove(productId, imageId),
     onSuccess: () => {
       queryClient.invalidateQueries(getProductQueryOptions(productId));
       queryClient.invalidateQueries(getProductVariantsQueryOptions(productId));

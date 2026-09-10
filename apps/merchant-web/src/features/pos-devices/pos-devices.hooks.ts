@@ -1,11 +1,11 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
-import { adminApi } from "../../lib/admin-api-client";
+import { merchantApi } from "../../lib/merchant-api-client";
 import { queryClient } from "../../lib/react-query-client";
 
 export function getListPosDevicesQueryOptions() {
   return queryOptions({
     queryKey: ["pos-devices"],
-    queryFn: adminApi.posDevices.list,
+    queryFn: merchantApi.posDevices.list,
   });
 }
 
@@ -19,7 +19,7 @@ function invalidatePosDevices() {
 
 export function useCreatePosDeviceMutation() {
   return useMutation({
-    mutationFn: adminApi.posDevices.create,
+    mutationFn: merchantApi.posDevices.create,
     onSuccess: invalidatePosDevices,
   });
 }
@@ -29,22 +29,22 @@ export function useUpdatePosDeviceMutation() {
     mutationFn: ({
       id,
       ...params
-    }: { id: number } & Parameters<typeof adminApi.posDevices.update>[1]) =>
-      adminApi.posDevices.update(id, params),
+    }: { id: number } & Parameters<typeof merchantApi.posDevices.update>[1]) =>
+      merchantApi.posDevices.update(id, params),
     onSuccess: invalidatePosDevices,
   });
 }
 
 export function useRevokePosDeviceMutation() {
   return useMutation({
-    mutationFn: adminApi.posDevices.revoke,
+    mutationFn: merchantApi.posDevices.revoke,
     onSuccess: invalidatePosDevices,
   });
 }
 
 export function useRotatePairingMutation() {
   return useMutation({
-    mutationFn: adminApi.posDevices.rotatePairing,
+    mutationFn: merchantApi.posDevices.rotatePairing,
     onSuccess: invalidatePosDevices,
   });
 }

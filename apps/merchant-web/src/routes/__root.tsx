@@ -1,5 +1,5 @@
 import { createRootRoute, Outlet, redirect } from "@tanstack/react-router";
-import { adminApi } from "../lib/admin-api-client";
+import { merchantApi } from "../lib/merchant-api-client";
 import { appConfig } from "../config";
 
 const RootLayout = () => (
@@ -10,7 +10,7 @@ const RootLayout = () => (
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
-    const accessToken = await adminApi.refreshAccessToken();
+    const accessToken = await merchantApi.refreshAccessToken();
 
     switch (location.pathname) {
       case "/":

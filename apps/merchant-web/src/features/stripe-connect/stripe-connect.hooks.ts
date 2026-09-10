@@ -1,10 +1,10 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 
 export function getStripeConnectStatusQueryOptions() {
   return queryOptions({
     queryKey: ["stripe-connect", "status"],
-    queryFn: () => adminApi.stripeConnect.getStatus(),
+    queryFn: () => merchantApi.stripeConnect.getStatus(),
   })
 }
 
@@ -20,12 +20,12 @@ export function useRefreshStripeConnectStatus() {
   return () =>
     queryClient.fetchQuery({
       queryKey: ["stripe-connect", "status"],
-      queryFn: () => adminApi.stripeConnect.getStatus({ refresh: true }),
+      queryFn: () => merchantApi.stripeConnect.getStatus({ refresh: true }),
     })
 }
 
 export function useCreateAccountSessionMutation() {
   return useMutation({
-    mutationFn: () => adminApi.stripeConnect.createAccountSession(),
+    mutationFn: () => merchantApi.stripeConnect.createAccountSession(),
   })
 }

@@ -1,11 +1,11 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
-import { adminApi } from "../../lib/admin-api-client"
+import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 
 export function getListLocationsQueryOptions() {
   return queryOptions({
     queryKey: ["locations"],
-    queryFn: adminApi.locations.list,
+    queryFn: merchantApi.locations.list,
   })
 }
 
@@ -15,7 +15,7 @@ export function useListLocationsQuery() {
 
 export function useCreateLocationMutation() {
   return useMutation({
-    mutationFn: adminApi.locations.create,
+    mutationFn: merchantApi.locations.create,
     onSuccess: () => {
       queryClient.invalidateQueries(getListLocationsQueryOptions())
     },
@@ -27,8 +27,8 @@ export function useUpdateLocationMutation() {
     mutationFn: ({
       id,
       ...params
-    }: { id: number } & Parameters<typeof adminApi.locations.update>[1]) =>
-      adminApi.locations.update(id, params),
+    }: { id: number } & Parameters<typeof merchantApi.locations.update>[1]) =>
+      merchantApi.locations.update(id, params),
     onSuccess: () => {
       queryClient.invalidateQueries(getListLocationsQueryOptions())
     },
