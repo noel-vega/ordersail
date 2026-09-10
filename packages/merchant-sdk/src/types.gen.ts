@@ -1170,6 +1170,8 @@ export interface components {
             fulfillmentStatus: "unfulfilled" | "partially_fulfilled" | "fulfilled";
             /** Format: date-time */
             createdAt: string;
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
         };
         PaginatedOrders: {
             items: components["schemas"]["OrderListItem"][];
@@ -1191,6 +1193,8 @@ export interface components {
             method: "stripe" | "cash" | "card";
             amountCents: number;
             amountTenderedCents: number | null;
+            stripeRefundId: string | null;
+            reason: string | null;
         };
         OrderItemAllocation: {
             locationId: number;
@@ -1244,6 +1248,9 @@ export interface components {
             createdAt: string;
             items: components["schemas"]["OrderDetailItem"][];
             fulfillments: components["schemas"]["Fulfillment"][];
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+            events: components["schemas"]["OrderEvent"][];
         };
         FulfillmentItemInput: {
             orderItemId: number;
@@ -1396,6 +1403,17 @@ export interface components {
             status: "canceled";
             refundIssued: boolean;
             refundAmountCents: number;
+        };
+        OrderEvent: {
+            id: number;
+            /** @enum {string} */
+            type: "status_changed" | "refund" | "cancellation" | "payment" | "fulfillment" | "note";
+            message: string;
+            /** @enum {string} */
+            actorType: "staff" | "system" | "customer";
+            actorName: string | null;
+            /** Format: date-time */
+            createdAt: string;
         };
     };
     responses: never;

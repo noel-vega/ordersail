@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { OrderDetail, ShippingRate } from "merchant-sdk";
 import { ArrowLeftIcon, LoaderCircleIcon, TruckIcon } from "lucide-react";
@@ -26,6 +26,8 @@ import {
 import { useListLocationsQuery } from "../../locations/locations.hooks";
 import { formatCents } from "../../../lib/currency";
 import { FulfillmentStatusBadge } from "../components/fulfillment-status-badge";
+import { OrderStatusBadge } from "../components/order-status-badge";
+import { OrderEventIcon } from "../components/order-event-icon";
 
 type OrderItem = OrderDetail["items"][number];
 type OrderFulfillment = OrderDetail["fulfillments"][number];
@@ -394,6 +396,7 @@ export function OrderView({ id }: { id: number }) {
               <Badge variant="outline">
                 {data.channel === "pos" ? "In-store" : "Online"}
               </Badge>
+              <OrderStatusBadge status={data.status} />
               {data.shipping && (
                 <FulfillmentStatusBadge status={data.fulfillmentStatus} />
               )}
@@ -459,15 +462,48 @@ export function OrderView({ id }: { id: number }) {
           <Separator className="my-4" />
           <div className="text-sm">
             <h2 className="font-medium mb-1">Payment</h2>
-            {data.payments.map((payment, i) => (
-              <p key={i} className="text-muted-foreground">
-                {PAYMENT_METHOD_LABEL[payment.method]}: {formatCents(payment.amountCents)}
-                {payment.amountTenderedCents != null &&
-                  ` — tendered ${formatCents(payment.amountTenderedCents)}, change ${formatCents(
-                    payment.amountTenderedCents - payment.amountCents,
-                  )}`}
-              </p>
-            ))}
+            {data.payments.map((payment, i) =>
+              payment.amountCents < 0 ? (
+                <p key={i} className="text-muted-foreground">
+                  Refund: {formatCents(payment.amountCents)}
+                  {payment.reason && ` — ${payment.reason}`}
+                </p>
+              ) : (
+                <p key={i} className="text-muted-foreground">
+                  {PAYMENT_METHOD_LABEL[payment.method]}: {formatCents(payment.amountCents)}
+                  {payment.amountTenderedCents != null &&
+                    ` — tendered ${formatCents(payment.amountTenderedCents)}, change ${formatCents(
+                      payment.amountTenderedCents - payment.amountCents,
+                    )}`}
+                </p>
+              ),
+            )}
+          </div>
+        </>
+      )}
+
+      {data.events.length > 0 && (
+        <>
+          <Separator className="my-4" />
+          <div className="text-sm">
+            <h2 className="font-medium mb-2">Activity</h2>
+            <ul className="space-y-3">
+              {data.events.map((event) => (
+                <li key={event.id} className="flex gap-3">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground [&>svg]:size-3.5">
+                    <OrderEventIcon type={event.type} />
+                  </span>
+                  <div>
+                    <p>{event.message}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {event.actorName ??
+                        (event.actorType === "system" ? "System" : "Staff")}{" "}
+                      · {formatDistanceToNow(new Date(event.createdAt), { addSuffix: true })}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
         </>
       )}

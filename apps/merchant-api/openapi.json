@@ -3858,6 +3858,17 @@
           "createdAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
           }
         },
         "required": [
@@ -3868,7 +3879,8 @@
           "itemCount",
           "amountTotalCents",
           "fulfillmentStatus",
-          "createdAt"
+          "createdAt",
+          "status"
         ]
       },
       "PaginatedOrders": {
@@ -3952,12 +3964,22 @@
           "amountTenderedCents": {
             "type": "number",
             "nullable": true
+          },
+          "stripeRefundId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
           "method",
           "amountCents",
-          "amountTenderedCents"
+          "amountTenderedCents",
+          "stripeRefundId",
+          "reason"
         ]
       },
       "OrderItemAllocation": {
@@ -4175,6 +4197,23 @@
             "items": {
               "$ref": "#/components/schemas/Fulfillment"
             }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderEvent"
+            }
           }
         },
         "required": [
@@ -4190,7 +4229,9 @@
           "fulfillmentStatus",
           "createdAt",
           "items",
-          "fulfillments"
+          "fulfillments",
+          "status",
+          "events"
         ]
       },
       "FulfillmentItemInput": {
@@ -4766,6 +4807,52 @@
           "status",
           "refundIssued",
           "refundAmountCents"
+        ]
+      },
+      "OrderEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "status_changed",
+              "refund",
+              "cancellation",
+              "payment",
+              "fulfillment",
+              "note"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "actorType": {
+            "type": "string",
+            "enum": [
+              "staff",
+              "system",
+              "customer"
+            ]
+          },
+          "actorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "message",
+          "actorType",
+          "actorName",
+          "createdAt"
         ]
       }
     }

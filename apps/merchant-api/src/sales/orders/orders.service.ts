@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { inventoryMovementsTable, locationsTable } from 'db/stock';
+import { usersTable } from 'db/identity';
 import {
   and,
   type db as Db,
@@ -14,6 +15,7 @@ import {
   fulfillmentItemsTable,
   fulfillmentsTable,
   inArray,
+  orderEventsTable,
   orderItemsTable,
   orderPaymentsTable,
   orderShippingTable,
@@ -58,6 +60,7 @@ export class OrdersService {
         .select({
           id: ordersTable.id,
           channel: ordersTable.channel,
+          status: ordersTable.status,
           customerName: ordersTable.customerName,
           customerEmail: ordersTable.customerEmail,
           amountTotalCents: ordersTable.amountTotalCents,
@@ -125,6 +128,7 @@ export class OrdersService {
       fulfillments,
       [shipping],
       payments,
+      events,
     ] = await Promise.all([
       this.getAllocations(itemIds),
       this.getFulfilledQuantityByItem(itemIds),
@@ -146,10 +150,13 @@ export class OrdersService {
           method: orderPaymentsTable.method,
           amountCents: orderPaymentsTable.amountCents,
           amountTenderedCents: orderPaymentsTable.amountTenderedCents,
+          stripeRefundId: orderPaymentsTable.stripeRefundId,
+          reason: orderPaymentsTable.reason,
         })
         .from(orderPaymentsTable)
         .where(eq(orderPaymentsTable.orderId, order.id))
         .orderBy(orderPaymentsTable.id),
+      this.getEvents(order.id),
     ]);
 
     const items = itemRows.map((item) => {
@@ -177,6 +184,7 @@ export class OrdersService {
     return {
       id: order.id,
       channel: order.channel,
+      status: order.status,
       customerName: order.customerName,
       customerEmail: order.customerEmail,
       shipping: shipping ?? null,
@@ -188,7 +196,31 @@ export class OrdersService {
       createdAt: order.createdAt,
       items,
       fulfillments,
+      events,
     };
+  }
+
+  // the order's audit trail, newest first, with staff names resolved
+  private async getEvents(orderId: number): Promise<OrderDetail['events']> {
+    const rows = await this.db
+      .select({
+        id: orderEventsTable.id,
+        type: orderEventsTable.type,
+        message: orderEventsTable.message,
+        actorType: orderEventsTable.actorType,
+        createdAt: orderEventsTable.createdAt,
+        firstname: usersTable.firstname,
+        lastname: usersTable.lastname,
+      })
+      .from(orderEventsTable)
+      .leftJoin(usersTable, eq(usersTable.id, orderEventsTable.actorUserId))
+      .where(eq(orderEventsTable.orderId, orderId))
+      .orderBy(desc(orderEventsTable.createdAt), desc(orderEventsTable.id));
+
+    return rows.map(({ firstname, lastname, ...event }) => ({
+      ...event,
+      actorName: firstname ? `${firstname} ${lastname}` : null,
+    }));
   }
 
   // Narrow manual status correction (PATCH /orders/:id/status). Refund states
