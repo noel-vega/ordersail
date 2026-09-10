@@ -24,6 +24,7 @@ import {
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -34,6 +35,7 @@ export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @Get()
+  @RequirePermissions('inventory:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedInventory })
   @ApiQuery({
@@ -70,6 +72,7 @@ export class InventoryController {
   }
 
   @Post('movements')
+  @RequirePermissions('inventory:write')
   @ApiBearerAuth('JWT-auth')
   @ApiCreatedResponse({ type: InventoryMovementRecord })
   createMovement(
@@ -84,6 +87,7 @@ export class InventoryController {
   }
 
   @Get('movements')
+  @RequirePermissions('inventory:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedInventoryMovements })
   @ApiQuery({ name: 'variantId', required: false, type: Number })
