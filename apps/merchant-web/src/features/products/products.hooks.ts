@@ -48,6 +48,8 @@ export function useCreateProductMutation() {
     mutationFn: merchantApi.products.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] });
+      // a first active product can satisfy the dashboard onboarding checklist
+      queryClient.invalidateQueries({ queryKey: ["onboarding"] });
     },
   });
 }
@@ -151,6 +153,8 @@ export function useUpdateProductMutation(id: number) {
     onSuccess: () => {
       queryClient.invalidateQueries(getProductQueryOptions(id));
       queryClient.invalidateQueries({ queryKey: ["products"] });
+      // draft → active can satisfy the dashboard onboarding checklist
+      queryClient.invalidateQueries({ queryKey: ["onboarding"] });
     },
   });
 }

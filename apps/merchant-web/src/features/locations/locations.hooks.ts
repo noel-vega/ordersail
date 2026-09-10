@@ -36,6 +36,8 @@ export function useCreateLocationMutation() {
     mutationFn: merchantApi.locations.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["locations"] })
+      // a new address can satisfy the dashboard onboarding checklist
+      queryClient.invalidateQueries({ queryKey: ["onboarding"] })
     },
   })
 }
@@ -49,6 +51,7 @@ export function useUpdateLocationMutation() {
       merchantApi.locations.update(id, params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["locations"] })
+      queryClient.invalidateQueries({ queryKey: ["onboarding"] })
     },
   })
 }
