@@ -22,12 +22,16 @@ interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
   onRowClick?: (row: Row<TData>) => void
+  // shown in place of the default "No results." row when there are no rows —
+  // e.g. a friendly "No customers yet." on a fresh post-signup account
+  emptyMessage?: string
 }
 
 export function DataTable<TData, TValue>({
   onRowClick,
   columns,
   data,
+  emptyMessage,
 }: DataTableProps<TData, TValue>) {
   const table = useReactTable({
     data,
@@ -78,8 +82,14 @@ export function DataTable<TData, TValue>({
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+              <TableCell
+                colSpan={columns.length}
+                className={cn(
+                  "text-center text-muted-foreground",
+                  emptyMessage ? "h-28" : "h-24",
+                )}
+              >
+                {emptyMessage ?? "No results."}
               </TableCell>
             </TableRow>
           )}

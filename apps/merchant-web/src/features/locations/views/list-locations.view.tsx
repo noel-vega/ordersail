@@ -99,7 +99,11 @@ export function ListLocationsView() {
           </Button>
         </Link>
       </div>
-      <DataTable data={locations.data?.items ?? []} columns={columns} />
+      <DataTable
+        data={locations.data?.items ?? []}
+        columns={columns}
+        emptyMessage={search.q ? undefined : "No locations yet."}
+      />
       <DataTablePagination
         page={search.page}
         pageSize={PAGE_SIZE}

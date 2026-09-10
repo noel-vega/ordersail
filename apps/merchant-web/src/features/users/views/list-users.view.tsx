@@ -80,6 +80,7 @@ export function ListUsersView() {
         data={users.data?.items ?? []}
         columns={columns}
         onRowClick={(row) => setEditingUser(row.original)}
+        emptyMessage={search.q ? undefined : "No team members yet."}
       />
       <DataTablePagination
         page={search.page}

@@ -79,6 +79,7 @@ export function ListOrdersView() {
         onRowClick={handleRowClick}
         data={orders.data?.items ?? []}
         columns={columns}
+        emptyMessage="No orders yet."
       />
     </div>
   );
