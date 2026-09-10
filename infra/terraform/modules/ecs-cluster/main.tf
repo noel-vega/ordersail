@@ -1,9 +1,17 @@
 resource "aws_ecs_cluster" "this" {
   name = var.name_prefix
 
+  # Enabled at create time. Thereafter the environment.yml on/off workflow owns
+  # this toggle (OS-379) — it disables Container Insights (~$21/mo of CloudWatch)
+  # while the environment is parked and re-enables it on resume, so `ignore_changes`
+  # keeps a routine `terraform apply` from flipping it back on mid-park.
   setting {
     name  = "containerInsights"
     value = "enabled"
+  }
+
+  lifecycle {
+    ignore_changes = [setting]
   }
 }
 

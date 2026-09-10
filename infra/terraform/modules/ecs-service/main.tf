@@ -166,6 +166,12 @@ resource "aws_ecs_service" "this" {
   deployment_maximum_percent         = 200
 
   lifecycle {
-    ignore_changes = [task_definition]
+    # task_definition: every running revision is registered by cd.yml, not here
+    # (see the note on aws_ecs_task_definition above).
+    # desired_count: owned entirely by the environment.yml on/off workflow, which
+    # scales services to 0 when the environment is parked and back to 1 on resume
+    # (OS-379). Terraform sets it once at create time and never touches it after,
+    # so `terraform apply` can't fight the switch or an off-hours state.
+    ignore_changes = [task_definition, desired_count]
   }
 }

@@ -1,0 +1,231 @@
+name: Environment
+
+# Manual on/off switch for the production compute + observability layer, to cut
+# spend while the platform is pre-launch and idle (OS-379).
+#
+#   action: down  — scale every ECS service to 0, disarm the running-below-desired
+#                   alarms, disable Container Insights (~$21/mo of CloudWatch).
+#   action: up    — re-enable Container Insights, re-register each task def from
+#                   its Terraform-owned SSM contract (so a Redis endpoint that
+#                   changed while parked is picked up), scale back to 1, health
+#                   check, then re-arm the alarms.
+#
+# The NAT gateway and ElastiCache have no stop API — those are torn down / rebuilt
+# separately by `terraform apply` with `environment_on = false|true` (OS-380).
+# Full procedure: docs/runbooks/environment-onoff.md (OS-381).
+#
+# ⚠️  Do NOT merge to main / run CD while the environment is "down" — cd.yml's
+#     migrate job pulls the migrator image through the NAT, which is gone.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: down = park the environment · up = bring it back
+        type: choice
+        options: [down, up]
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+# Share the CD / Migrate / Rollback lock — parking or resuming while a deploy is
+# in flight queues behind it rather than racing it.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------- DOWN
+  down-services:
+    if: ${{ inputs.action == 'down' }}
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [merchant-api, storefront-api, worker, pos-api]
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Disarm alarm and scale ${{ matrix.app }} to zero
+        run: |
+          set -euo pipefail
+          CLUSTER=$(aws ssm get-parameter --name /ordersail/production/ecs/cluster-name --query Parameter.Value --output text)
+          SERVICE=$(aws ssm get-parameter --name /ordersail/production/ecs/${{ matrix.app }}-service --query Parameter.Value --output text)
+
+          # Disarm first: the running-below-desired alarm is treat_missing_data=breaching,
+          # so it would page the moment the task disappears.
+          aws cloudwatch disable-alarm-actions --alarm-names "ordersail-${{ matrix.app }}-running-below-desired"
+
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --desired-count 0 >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          echo "$SERVICE -> desired 0"
+
+  down-cluster:
+    if: ${{ inputs.action == 'down' }}
+    needs: down-services
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Disable Container Insights
+        run: |
+          set -euo pipefail
+          CLUSTER=$(aws ssm get-parameter --name /ordersail/production/ecs/cluster-name --query Parameter.Value --output text)
+          aws ecs update-cluster --cluster "$CLUSTER" --settings name=containerInsights,value=disabled >/dev/null
+          echo "Container Insights disabled on $CLUSTER"
+
+      - name: Next step
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ### Compute + observability parked ✅
+
+          To also tear down the NAT gateway (~$36/mo) and ElastiCache (~$11/mo),
+          from the dev box:
+
+          ```
+          cd infra/terraform/envs/production
+          printf 'environment_on = false\n' > environment.auto.tfvars
+          terraform apply
+          ```
+
+          Bring everything back: re-run `terraform apply` with `environment_on = true`
+          first, **then** run this workflow with `action: up`.
+
+          Runbook: `docs/runbooks/environment-onoff.md`
+          EOF
+
+  # ---------------------------------------------------------------- UP
+  up-cluster:
+    if: ${{ inputs.action == 'up' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Enable Container Insights
+        run: |
+          set -euo pipefail
+          CLUSTER=$(aws ssm get-parameter --name /ordersail/production/ecs/cluster-name --query Parameter.Value --output text)
+          aws ecs update-cluster --cluster "$CLUSTER" --settings name=containerInsights,value=enabled >/dev/null
+          echo "Container Insights enabled on $CLUSTER"
+
+  up-services:
+    if: ${{ inputs.action == 'up' }}
+    needs: up-cluster
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [merchant-api, storefront-api, worker, pos-api]
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Resume ${{ matrix.app }}
+        run: |
+          set -euo pipefail
+          CLUSTER=$(aws ssm get-parameter --name /ordersail/production/ecs/cluster-name --query Parameter.Value --output text)
+          SERVICE=$(aws ssm get-parameter --name /ordersail/production/ecs/${{ matrix.app }}-service --query Parameter.Value --output text)
+          IMAGE_URI=$(aws ssm get-parameter --name /ordersail/production/ecr/${{ matrix.app }}-uri --query Parameter.Value --output text)
+
+          # This is a park/resume, not a deploy — keep whatever image tag the service
+          # last shipped (read it off the current task-def revision).
+          CUR_ARN=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].taskDefinition' --output text)
+          TAG=$(aws ecs describe-task-definition --task-definition "$CUR_ARN" --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          TAG=${TAG##*:}
+          echo "resuming ${{ matrix.app }} at image tag $TAG"
+
+          # Re-render from the Terraform-owned SSM contract (OS-361) so a Redis
+          # endpoint that changed while ElastiCache was torn down (OS-380) is
+          # picked up, then register a fresh revision.
+          NEW=$(aws ssm get-parameter --name /ordersail/production/ecs/${{ matrix.app }}-taskdef --query Parameter.Value --output text \
+            | jq --arg IMG "$IMAGE_URI:$TAG" '.containerDefinitions[0].image = $IMG')
+
+          if echo "$NEW" | jq -e '.containerDefinitions[0].environment[] | select(.name == "REDIS_HOST")' >/dev/null; then
+            HOST=$(echo "$NEW" | jq -r '.containerDefinitions[0].environment[] | select(.name == "REDIS_HOST") | .value')
+            if [ -z "$HOST" ]; then
+              echo "::error::REDIS_HOST is empty in the ${{ matrix.app }} task-def contract — ElastiCache is still torn down. Run 'terraform apply' with environment_on = true first."
+              exit 1
+            fi
+          fi
+
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW" --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --task-definition "$NEW_ARN" --desired-count 1 >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          echo "$SERVICE -> desired 1 on $NEW_ARN"
+
+      - name: Health-check ${{ matrix.app }}
+        if: ${{ matrix.app != 'worker' }}
+        run: |
+          set -uo pipefail
+          case "${{ matrix.app }}" in
+            merchant-api)   URL="https://merchant.ordersail.com/api/health" ; K="" ;;
+            pos-api)        URL="https://pos.ordersail.com/health" ; K="" ;;
+            storefront-api) URL="https://$(aws ssm get-parameter --name /ordersail/production/alb/storefront-api-dns --query Parameter.Value --output text)/health" ; K="-k" ;;
+          esac
+          for i in $(seq 1 10); do
+            code=$(curl -s $K -o /tmp/b -w '%{http_code}' --max-time 15 "$URL" || echo 000)
+            if [ "$code" = "200" ] && grep -q '"status":"ok"' /tmp/b; then echo "ok  $URL -> 200"; exit 0; fi
+            sleep 6
+          done
+          echo "::error::${{ matrix.app }} /health not healthy after resume"; head -c 300 /tmp/b; exit 1
+
+  up-rearm-alarms:
+    if: ${{ inputs.action == 'up' }}
+    needs: up-services
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Wait for Container Insights metrics, then re-arm alarms
+        run: |
+          set -uo pipefail
+          CLUSTER=$(aws ssm get-parameter --name /ordersail/production/ecs/cluster-name --query Parameter.Value --output text)
+
+          # RunningTaskCount (ECS/ContainerInsights) resumes a few minutes after the
+          # cluster setting is re-enabled. Wait for a fresh datapoint per service so
+          # the treat_missing_data=breaching alarms don't fire a transient page when
+          # re-armed. Best-effort: warn and continue if it's slow.
+          for app in merchant-api storefront-api worker pos-api; do
+            SERVICE=$(aws ssm get-parameter --name /ordersail/production/ecs/$app-service --query Parameter.Value --output text)
+            ready=""
+            for i in $(seq 1 30); do
+              v=$(aws cloudwatch get-metric-statistics \
+                --namespace ECS/ContainerInsights --metric-name RunningTaskCount \
+                --dimensions Name=ClusterName,Value="$CLUSTER" Name=ServiceName,Value="$SERVICE" \
+                --start-time "$(date -u -d '10 minutes ago' +%FT%TZ)" --end-time "$(date -u +%FT%TZ)" \
+                --period 60 --statistics Maximum \
+                --query 'sort_by(Datapoints, &Timestamp)[-1].Maximum' --output text 2>/dev/null || echo None)
+              if [ "$v" != "None" ] && [ -n "$v" ] && awk "BEGIN{exit !($v >= 1)}"; then ready=1; break; fi
+              sleep 20
+            done
+            [ -n "$ready" ] && echo "$app: metrics flowing" || echo "::warning::$app: no ContainerInsights RunningTaskCount datapoint yet — re-arming anyway"
+          done
+
+          aws cloudwatch enable-alarm-actions --alarm-names \
+            ordersail-merchant-api-running-below-desired \
+            ordersail-storefront-api-running-below-desired \
+            ordersail-worker-running-below-desired \
+            ordersail-pos-api-running-below-desired
+          echo "running-below-desired alarm actions re-armed"

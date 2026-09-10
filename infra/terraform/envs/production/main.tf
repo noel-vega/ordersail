@@ -66,16 +66,17 @@ module "deploy_role_website" {
 # resolves the dependency graph regardless of declaration order within one
 # root module, so these forward references are fine.
 module "deploy_role_platform" {
-  source             = "../../modules/deploy-role"
-  name_prefix        = var.name_prefix
-  region             = var.region
-  role_name          = "${var.name_prefix}-github-actions-deploy-platform"
-  oidc_provider_arn  = module.oidc_provider.arn
-  github_repo        = var.github_repo
-  github_owner_id    = var.github_owner_id
-  github_repo_id     = var.github_repo_id
-  include_ecr_push   = true
-  include_ecs_deploy = true
+  source                     = "../../modules/deploy-role"
+  name_prefix                = var.name_prefix
+  region                     = var.region
+  role_name                  = "${var.name_prefix}-github-actions-deploy-platform"
+  oidc_provider_arn          = module.oidc_provider.arn
+  github_repo                = var.github_repo
+  github_owner_id            = var.github_owner_id
+  github_repo_id             = var.github_repo_id
+  include_ecr_push           = true
+  include_ecs_deploy         = true
+  include_environment_toggle = true
 
   # cd.yml's build-and-push job is ungated (matches github_ref's default,
   # "refs/heads/main"); migrate/deploy-services/deploy-frontends run behind
