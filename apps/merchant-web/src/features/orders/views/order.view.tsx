@@ -42,6 +42,7 @@ import { OrderStatusBadge } from "../components/order-status-badge";
 import { OrderEventIcon } from "../components/order-event-icon";
 import { RefundOrderSheet } from "../components/refund-order-sheet";
 import { CancelOrderDialog } from "../components/cancel-order-dialog";
+import { Can } from "../../../components/can";
 
 type OrderItem = OrderDetail["items"][number];
 type OrderFulfillment = OrderDetail["fulfillments"][number];
@@ -432,28 +433,30 @@ export function OrderView({ id }: { id: number }) {
             </p>
           </div>
           {canCancel && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Order actions"
-                  />
-                }
-              >
-                <MoreVerticalIcon />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={() => setCancelOpen(true)}
+            <Can permission="orders:cancel">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Order actions"
+                    />
+                  }
                 >
-                  <BanIcon /> Cancel order
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <MoreVerticalIcon />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => setCancelOpen(true)}
+                  >
+                    <BanIcon /> Cancel order
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </Can>
           )}
         </div>
       </header>
@@ -514,14 +517,16 @@ export function OrderView({ id }: { id: number }) {
             <div className="mb-1 flex items-center justify-between">
               <h2 className="font-medium">Payment</h2>
               {canRefund && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRefundOpen(true)}
-                >
-                  Refund
-                </Button>
+                <Can permission="orders:refund">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRefundOpen(true)}
+                  >
+                    Refund
+                  </Button>
+                </Can>
               )}
             </div>
             {data.payments.map((payment, i) =>
@@ -575,7 +580,9 @@ export function OrderView({ id }: { id: number }) {
           <Separator className="my-4" />
           <div className="space-y-6">
             <ExistingFulfillments order={data} />
-            <CreateFulfillmentFlow order={data} />
+            <Can permission="fulfillments:write">
+              <CreateFulfillmentFlow order={data} />
+            </Can>
           </div>
         </>
       )}

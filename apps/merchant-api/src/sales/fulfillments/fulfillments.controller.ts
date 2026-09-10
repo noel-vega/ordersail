@@ -7,6 +7,7 @@ import { ShippingRate } from './entities/shipping-rate.entity';
 import { OrderDetail } from '../orders/entities/order-detail.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -15,6 +16,7 @@ export class FulfillmentsController {
   constructor(private readonly fulfillmentsService: FulfillmentsService) {}
 
   @Post('rates')
+  @RequirePermissions('fulfillments:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: [ShippingRate] })
   getRates(
@@ -25,6 +27,7 @@ export class FulfillmentsController {
   }
 
   @Post()
+  @RequirePermissions('fulfillments:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: OrderDetail })
   create(
