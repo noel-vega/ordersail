@@ -55,6 +55,12 @@ variable "domain_name" {
   type        = string
 }
 
+variable "environment_on" {
+  description = "Dev-stage cost switch (OS-380). false → tear down the NAT gateway (+EIP, +private default route) and the ElastiCache cluster while the environment is parked. ECS services are scaled to 0 separately by the Environment workflow (OS-379); ALBs and RDS stay up. Persist a false value in a git-ignored environment.auto.tfvars. Runbook: docs/runbooks/environment-onoff.md."
+  type        = bool
+  default     = true
+}
+
 # Alert recipients moved to a Secrets Manager secret (OS-375) — see
 # alerts-recipients.tf. A *.auto.tfvars only loads from the directory `terraform`
 # runs in, so an apply from a fresh checkout silently created zero subscriptions.

@@ -4,8 +4,9 @@
 # one `terraform apply`, no manual multi-step ordering required.
 
 module "network" {
-  source      = "../../modules/network"
-  name_prefix = var.name_prefix
+  source         = "../../modules/network"
+  name_prefix    = var.name_prefix
+  environment_on = var.environment_on
 }
 
 module "ecr" {
@@ -108,7 +109,12 @@ module "rds" {
   alarm_warning_topic_arns  = [aws_sns_topic.alerts_warning.arn]
 }
 
+# Torn down while the environment is parked (OS-380). Redis is a pure cache +
+# BullMQ backend — nothing to preserve; it comes back empty on resume. The three
+# services that use it read local.redis_{host,port} below, which fall back to ""
+# when the cluster is gone (harmless — those services are scaled to 0 too).
 module "elasticache" {
+  count                       = var.environment_on ? 1 : 0
   source                      = "../../modules/elasticache"
   name_prefix                 = var.name_prefix
   vpc_id                      = module.network.vpc_id
@@ -118,6 +124,11 @@ module "elasticache" {
 
   alarm_critical_topic_arns = [aws_sns_topic.alerts_critical.arn]
   alarm_warning_topic_arns  = [aws_sns_topic.alerts_warning.arn]
+}
+
+locals {
+  redis_host = try(one(module.elasticache[*].primary_endpoint_address), "")
+  redis_port = try(tostring(one(module.elasticache[*].port)), "")
 }
 
 module "secrets" {
@@ -224,8 +235,8 @@ module "ecs_service_merchant_api" {
   environment = [
     { name = "NODE_ENV", value = "production" },
     { name = "PORT", value = "3000" },
-    { name = "REDIS_HOST", value = module.elasticache.primary_endpoint_address },
-    { name = "REDIS_PORT", value = tostring(module.elasticache.port) },
+    { name = "REDIS_HOST", value = local.redis_host },
+    { name = "REDIS_PORT", value = local.redis_port },
     # references the module directly, not local.frontends["merchant-web"] — that local
     # aggregates every frontend module as one map expression, so going through it would make a
     # -target apply of just this service also pull in the website's (unrelated) frontend.
@@ -273,8 +284,8 @@ module "ecs_service_storefront_api" {
   environment = [
     { name = "NODE_ENV", value = "production" },
     { name = "PORT", value = "3001" },
-    { name = "REDIS_HOST", value = module.elasticache.primary_endpoint_address },
-    { name = "REDIS_PORT", value = tostring(module.elasticache.port) },
+    { name = "REDIS_HOST", value = local.redis_host },
+    { name = "REDIS_PORT", value = local.redis_port },
     # CORS allow-origin for the storefront. storefront-web is a reference client
     # that merchants fork and host themselves (moving to its own public repo —
     # see the "Extract storefront-web" Linear project), so there's no
@@ -317,8 +328,8 @@ module "ecs_service_worker" {
   environment = [
     { name = "NODE_ENV", value = "production" },
     { name = "PORT", value = "3003" },
-    { name = "REDIS_HOST", value = module.elasticache.primary_endpoint_address },
-    { name = "REDIS_PORT", value = tostring(module.elasticache.port) },
+    { name = "REDIS_HOST", value = local.redis_host },
+    { name = "REDIS_PORT", value = local.redis_port },
     # dead-letter pager for permanently-failed order jobs (OS-73); unset ⇒
     # AlertsService is a no-op and only the [alert] log line fires
     { name = "ALERTS_CRITICAL_TOPIC_ARN", value = local.alerts_critical_topic_arn },
