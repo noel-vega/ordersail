@@ -8,11 +8,12 @@ import {
   CommandItem,
   CommandList,
 } from "ui/command";
-import { NAV_ITEMS } from "./app-sidebar";
+import { navItemVisible, useVisibleNavItems } from "./use-visible-nav-items";
 
 export function NavCommandMenu() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const { items, perms } = useVisibleNavItems();
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -41,20 +42,24 @@ export function NavCommandMenu() {
       <CommandList>
         <CommandEmpty>No matching page.</CommandEmpty>
         <CommandGroup heading="Pages">
-          {NAV_ITEMS.map((item) => (
+          {items.map((item) => (
             <CommandItem key={item.to} onSelect={() => go(item.to)}>
               <item.icon />
               {item.label}
             </CommandItem>
           ))}
-          {NAV_ITEMS.flatMap((item) =>
+          {items.flatMap((item) =>
             item.children
-              ? item.children.map((child) => (
-                  <CommandItem key={child.to} onSelect={() => go(child.to)}>
-                    <span className="text-muted-foreground">{item.label} /</span>
-                    {child.label}
-                  </CommandItem>
-                ))
+              ? item.children
+                  .filter((child) => navItemVisible(perms, child.permission))
+                  .map((child) => (
+                    <CommandItem key={child.to} onSelect={() => go(child.to)}>
+                      <span className="text-muted-foreground">
+                        {item.label} /
+                      </span>
+                      {child.label}
+                    </CommandItem>
+                  ))
               : [],
           )}
         </CommandGroup>
