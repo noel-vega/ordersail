@@ -44,7 +44,13 @@ export function ListCustomersView() {
           }
         />
       </div>
-      <DataTable data={customers.data?.items ?? []} columns={columns} />
+      <DataTable
+        data={customers.data?.items ?? []}
+        columns={columns}
+        emptyMessage={
+          search.q ? undefined : "No customers yet — they'll appear here after their first order."
+        }
+      />
       <DataTablePagination
         page={search.page}
         pageSize={PAGE_SIZE}

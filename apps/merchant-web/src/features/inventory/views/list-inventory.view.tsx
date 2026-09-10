@@ -136,7 +136,15 @@ export function ListInventoryView() {
         </Link>
       </div>
 
-      <DataTable data={inventory.data?.items ?? []} columns={columns} />
+      <DataTable
+        data={inventory.data?.items ?? []}
+        columns={columns}
+        emptyMessage={
+          search.q || search.locationId || search.lowStock
+            ? undefined
+            : "No inventory yet — add a product with variants to start tracking stock."
+        }
+      />
       <DataTablePagination
         page={search.page}
         pageSize={PAGE_SIZE}
