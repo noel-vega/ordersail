@@ -448,3 +448,63 @@ describe('RefundsService.refundOrder — partial + line-item', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 });
+
+describe('RefundsService.reconcileExternalRefund (OS-127)', () => {
+  it('records a dashboard refund not already in the DB, no restock, status moves', async () => {
+    const s = await seedPaidWebOrder();
+    const { service } = await build(jest.fn());
+
+    await service.reconcileExternalRefund({
+      paymentIntentId: 'pi_test_1',
+      refunds: [
+        {
+          stripeRefundId: 're_dash_1',
+          amountCents: 4000,
+          reason: 'fraudulent',
+        },
+      ],
+    });
+
+    const payments = await paymentsFor(s.orderId);
+    expect(payments).toHaveLength(2);
+    expect(payments[1]).toMatchObject({
+      amountCents: -4000,
+      stripeRefundId: 're_dash_1',
+      reason: 'Stripe: fraudulent',
+    });
+    // partial → partially_refunded, no return movements
+    expect(await statusOf(s.orderId)).toBe('partially_refunded');
+    expect(await allReturns()).toHaveLength(0);
+  });
+
+  it('is a no-op for a refund OrderSail already recorded', async () => {
+    const s = await seedPaidWebOrder();
+    const { service } = await build(jest.fn());
+    // pretend we issued this refund ourselves
+    await db.insert(orderPaymentsTable).values({
+      orderId: s.orderId,
+      method: 'stripe',
+      amountCents: -s.totalCents,
+      stripeRefundId: 're_ours',
+    });
+
+    await service.reconcileExternalRefund({
+      paymentIntentId: 'pi_test_1',
+      refunds: [
+        { stripeRefundId: 're_ours', amountCents: s.totalCents, reason: null },
+      ],
+    });
+
+    expect(await paymentsFor(s.orderId)).toHaveLength(2); // unchanged
+  });
+
+  it('is a no-op when no order matches the payment intent', async () => {
+    const { service } = await build(jest.fn());
+    await expect(
+      service.reconcileExternalRefund({
+        paymentIntentId: 'pi_unknown',
+        refunds: [{ stripeRefundId: 're_x', amountCents: 100, reason: null }],
+      }),
+    ).resolves.toBeUndefined();
+  });
+});

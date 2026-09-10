@@ -5,10 +5,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Logger } from 'logging';
 import {
   and,
   type db as Db,
   eq,
+  gt,
+  isNotNull,
   orderItemsTable,
   orderPaymentsTable,
   orderRefundLinesTable,
@@ -16,6 +19,7 @@ import {
   sql,
 } from 'db/sales';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import type { ChargeRefundedPayload } from 'src/shared/events';
 import { OrderRefund } from './entities/order-refund.entity';
 import { RefundOrderDto } from './dto/refund-order.dto';
 import { PAYMENTS_PORT, type PaymentsPort } from './ports/payments.port';
@@ -31,6 +35,8 @@ const fmt = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 @Injectable()
 export class RefundsService {
+  private readonly logger = new Logger(RefundsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: typeof Db,
     @Inject(PAYMENTS_PORT) private readonly payments: PaymentsPort,
@@ -233,5 +239,65 @@ export class RefundsService {
       .where(eq(orderPaymentsTable.orderId, orderId))
       .groupBy(orderRefundLinesTable.orderItemId);
     return new Map(rows.map((r) => [r.orderItemId, r.qty]));
+  }
+
+  // OS-127: a `charge.refunded` webhook — reconcile refunds issued outside
+  // OrderSail (typically in the Stripe Dashboard) into order_payments. Matches
+  // by stripeRefundId, so refunds we issued are already present and skipped,
+  // and a redelivered event is a no-op. No restock — an external refund
+  // carries no line intent.
+  async reconcileExternalRefund(input: ChargeRefundedPayload): Promise<void> {
+    const [tender] = await this.db
+      .select({
+        id: orderPaymentsTable.id,
+        orderId: orderPaymentsTable.orderId,
+      })
+      .from(orderPaymentsTable)
+      .where(
+        and(
+          eq(orderPaymentsTable.stripePaymentIntentId, input.paymentIntentId),
+          gt(orderPaymentsTable.amountCents, 0),
+        ),
+      );
+    if (!tender) {
+      this.logger.warn(
+        `charge.refunded: no order for payment intent ${input.paymentIntentId}`,
+      );
+      return;
+    }
+
+    const known = await this.db
+      .select({ stripeRefundId: orderPaymentsTable.stripeRefundId })
+      .from(orderPaymentsTable)
+      .where(
+        and(
+          eq(orderPaymentsTable.orderId, tender.orderId),
+          isNotNull(orderPaymentsTable.stripeRefundId),
+        ),
+      );
+    const seen = new Set(known.map((k) => k.stripeRefundId));
+    const missing = input.refunds.filter(
+      (r) => r.amountCents > 0 && !seen.has(r.stripeRefundId),
+    );
+    if (missing.length === 0) return;
+
+    await this.db.transaction(async (tx) => {
+      for (const r of missing) {
+        await recordRefund(tx, {
+          orderId: tender.orderId,
+          parentPaymentId: tender.id,
+          grossAmountCents: r.amountCents,
+          stripeRefundId: r.stripeRefundId,
+          reason: r.reason ? `Stripe: ${r.reason}` : 'Refunded in Stripe',
+          restockLines: [],
+          eventLines: [],
+          actorType: 'system',
+          actorUserId: null,
+        });
+      }
+    });
+    this.logger.log(
+      `charge.refunded: recorded ${missing.length} external refund(s) on order ${tender.orderId}`,
+    );
   }
 }

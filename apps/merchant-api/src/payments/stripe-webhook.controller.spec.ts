@@ -301,4 +301,116 @@ describe('StripeWebhookController', () => {
     expect(emitAsync).not.toHaveBeenCalled();
     expect(handleAccountUpdated).not.toHaveBeenCalled();
   });
+
+  describe('charge.refunded', () => {
+    const chargeEvent = (object: Record<string, unknown>): Stripe.Event =>
+      ({
+        type: 'charge.refunded',
+        data: { object },
+      }) as unknown as Stripe.Event;
+
+    it('emits charge.refunded with the payment intent + refund list', async () => {
+      constructEvent.mockReturnValue(
+        chargeEvent({
+          id: 'ch_1',
+          payment_intent: 'pi_1',
+          refunds: {
+            data: [
+              { id: 're_1', amount: 2000, reason: 'requested_by_customer' },
+              { id: 're_2', amount: 500, reason: null },
+            ],
+          },
+        }),
+      );
+      const { controller, emitAsync } = await build();
+
+      await expect(controller.handle(REQ)).resolves.toEqual({ received: true });
+      expect(emitAsync).toHaveBeenCalledWith(DOMAIN_EVENTS.CHARGE_REFUNDED, {
+        paymentIntentId: 'pi_1',
+        refunds: [
+          {
+            stripeRefundId: 're_1',
+            amountCents: 2000,
+            reason: 'requested_by_customer',
+          },
+          { stripeRefundId: 're_2', amountCents: 500, reason: null },
+        ],
+      });
+    });
+
+    it('warns and does not emit when the charge has no payment intent', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      constructEvent.mockReturnValue(
+        chargeEvent({ id: 'ch_2', refunds: { data: [] } }),
+      );
+      const { controller, emitAsync } = await build();
+
+      await controller.handle(REQ);
+
+      expect(emitAsync).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('ch_2'));
+      warn.mockRestore();
+    });
+  });
+
+  describe('charge.dispute.*', () => {
+    const disputeEvent = (
+      type: string,
+      object: Record<string, unknown> = {},
+    ): Stripe.Event =>
+      ({
+        type,
+        data: {
+          object: {
+            id: 'dp_1',
+            charge: 'ch_1',
+            payment_intent: 'pi_1',
+            status: 'warning_needs_response',
+            reason: 'fraudulent',
+            amount: 2599,
+            evidence_details: { due_by: 1_700_000_000 },
+            ...object,
+          },
+        },
+      }) as unknown as Stripe.Event;
+
+    it('emits charge.dispute.updated for a created dispute', async () => {
+      constructEvent.mockReturnValue(disputeEvent('charge.dispute.created'));
+      const { controller, emitAsync } = await build();
+
+      await expect(controller.handle(REQ)).resolves.toEqual({ received: true });
+      expect(emitAsync).toHaveBeenCalledWith(
+        DOMAIN_EVENTS.CHARGE_DISPUTE_UPDATED,
+        {
+          eventType: 'charge.dispute.created',
+          disputeId: 'dp_1',
+          chargeId: 'ch_1',
+          paymentIntentId: 'pi_1',
+          status: 'warning_needs_response',
+          reason: 'fraudulent',
+          amountCents: 2599,
+          evidenceDueBy: 1_700_000_000,
+        },
+      );
+    });
+
+    it('also emits for a closed dispute', async () => {
+      constructEvent.mockReturnValue(
+        disputeEvent('charge.dispute.closed', { status: 'lost' }),
+      );
+      const { controller, emitAsync } = await build();
+
+      await controller.handle(REQ);
+
+      expect(emitAsync).toHaveBeenCalledWith(
+        DOMAIN_EVENTS.CHARGE_DISPUTE_UPDATED,
+        expect.objectContaining({
+          eventType: 'charge.dispute.closed',
+          status: 'lost',
+        }),
+      );
+    });
+  });
 });

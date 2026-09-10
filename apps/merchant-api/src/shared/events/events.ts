@@ -17,6 +17,19 @@ export const DOMAIN_EVENTS = {
   // context converts it into an order. Emitted by the checkout webhook
   // controller; see M9 (OS-355 / OS-356).
   CHECKOUT_SESSION_PAID: 'checkout.session.paid',
+
+  // owner: payments. A refund was created on a charge — usually one the
+  // merchant issued in the Stripe Dashboard rather than through OrderSail.
+  // sales reconciles it: writes the missing negative order_payments row(s) and
+  // moves the order status. Refunds OrderSail itself issued are already in the
+  // DB and skipped. Emitted from `charge.refunded`. See OS-127.
+  CHARGE_REFUNDED: 'charge.refunded',
+
+  // owner: payments. A dispute (chargeback) was opened, updated, or closed on
+  // a charge. sales records a note on the order and raises an alert; it does
+  // NOT auto-refund. Emitted from `charge.dispute.*`. See OS-127 (full
+  // dispute handling is OS-141 / M4).
+  CHARGE_DISPUTE_UPDATED: 'charge.dispute.updated',
 } as const;
 
 // The Stripe Checkout Session narrowed to the fields order creation reads,
@@ -43,9 +56,36 @@ export interface CheckoutSessionPaidPayload {
   } | null;
 }
 
+// A Stripe charge's refunds, narrowed to what reconciliation needs. payments
+// pulls this from the verified `charge.refunded` event; sales matches each
+// against order_payments by stripeRefundId and records the ones it's missing.
+export interface ChargeRefundedPayload {
+  paymentIntentId: string;
+  refunds: {
+    stripeRefundId: string;
+    amountCents: number;
+    reason: string | null;
+  }[];
+}
+
+// A Stripe dispute, narrowed to what an order note + alert need. `eventType` is
+// the originating `charge.dispute.*` type so the consumer can word the note.
+export interface ChargeDisputeUpdatedPayload {
+  eventType: string;
+  disputeId: string;
+  chargeId: string;
+  paymentIntentId: string | null;
+  status: string;
+  reason: string | null;
+  amountCents: number;
+  evidenceDueBy: number | null;
+}
+
 // Producer: `DomainEventBus.emit(name, payload)`. Consumer: a provider method
 // decorated `@OnDomainEvent(name)` with its parameter typed `DomainEventMap[name]`.
 // Every event adds its entry here next to its `DOMAIN_EVENTS` constant.
 export interface DomainEventMap {
   [DOMAIN_EVENTS.CHECKOUT_SESSION_PAID]: CheckoutSessionPaidPayload;
+  [DOMAIN_EVENTS.CHARGE_REFUNDED]: ChargeRefundedPayload;
+  [DOMAIN_EVENTS.CHARGE_DISPUTE_UPDATED]: ChargeDisputeUpdatedPayload;
 }
