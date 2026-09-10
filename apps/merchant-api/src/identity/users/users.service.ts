@@ -612,6 +612,75 @@ export class UsersService {
     return toUser(updated, roles.get(updated.id) ?? []);
   }
 
+  // regenerates the pending invite's token + expiry (killing the old link)
+  // and re-sends the email. Returns undefined when there's no pending invite
+  // for this account's user — either the id is wrong or they've already
+  // joined (password set → invite row consumed).
+  async resendInvite(
+    userId: number,
+    accountId: number,
+  ): Promise<User | undefined> {
+    const [user] = await this.db
+      .select()
+      .from(usersTable)
+      .where(
+        and(eq(usersTable.id, userId), eq(usersTable.accountId, accountId)),
+      );
+
+    if (!user || user.password) return undefined;
+
+    const token = generateToken(32);
+    const [invite] = await this.db
+      .update(userInvitesTable)
+      .set({ token, expiresAt: new Date(Date.now() + INVITE_TTL_MS) })
+      .where(eq(userInvitesTable.userId, userId))
+      .returning();
+
+    if (!invite) return undefined;
+
+    const inviteUrl = `${env.MERCHANT_WEB_URL}/join?token=${token}`;
+    await this.emailService.sendInviteEmail(user.email, {
+      firstName: user.firstname,
+      inviteUrl,
+    });
+
+    const roles = await this.getRolesByUserId([user.id]);
+    return toUser(user, roles.get(user.id) ?? []);
+  }
+
+  // hard-deletes a never-joined invitee (user row + invite, which cascades).
+  // Only valid while password IS NULL — a joined user must be deactivated
+  // instead (see OS-184), so their row + history survive. Returns the
+  // now-deleted user's shape (for the caller's response) or undefined when
+  // the id doesn't match a user in this account; throws ConflictException
+  // when it does but they've already joined.
+  async revokeInvite(
+    userId: number,
+    accountId: number,
+  ): Promise<User | undefined> {
+    const [user] = await this.db
+      .select()
+      .from(usersTable)
+      .where(
+        and(eq(usersTable.id, userId), eq(usersTable.accountId, accountId)),
+      );
+
+    if (!user) return undefined;
+
+    if (user.password) {
+      throw new ConflictException(
+        'This user has already joined — deactivate them instead',
+      );
+    }
+
+    const roles = await this.getRolesByUserId([user.id]);
+
+    // the user_invites row has onDelete: cascade on userId, so deleting the
+    // user removes the invite too
+    await this.db.delete(usersTable).where(eq(usersTable.id, userId));
+    return toUser(user, roles.get(user.id) ?? []);
+  }
+
   // batched: one query for every user's roles instead of one per user
   private async getRolesByUserId(userIds: number[]) {
     if (userIds.length === 0) return new Map<number, UserRoleSummary[]>();

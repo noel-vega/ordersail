@@ -2965,6 +2965,76 @@
           "Users"
         ]
       }
+    },
+    "/users/{id}/invite/resend": {
+      "post": {
+        "operationId": "UsersController_resendInvite",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/{id}/invite": {
+      "delete": {
+        "operationId": "UsersController_revokeInvite",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
     }
   },
   "info": {

@@ -1,6 +1,7 @@
 import {
   Controller,
   DefaultValuePipe,
+  Delete,
   ForbiddenException,
   Get,
   Post,
@@ -161,5 +162,33 @@ export class UsersController {
     );
     if (!updated) throw new NotFoundException();
     return updated;
+  }
+
+  @Post(':id/invite/resend')
+  @RequirePermissions('users:write')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: User })
+  async resendInvite(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const invited = await this.usersService.resendInvite(id, user.accountId);
+    if (!invited)
+      throw new NotFoundException('No pending invite for this user');
+    return invited;
+  }
+
+  @Delete(':id/invite')
+  @RequirePermissions('users:write')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: User })
+  async revokeInvite(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const revoked = await this.usersService.revokeInvite(id, user.accountId);
+    if (!revoked)
+      throw new NotFoundException('No pending invite for this user');
+    return revoked;
   }
 }

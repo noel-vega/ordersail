@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import z from "zod";
@@ -19,12 +19,16 @@ import { Field, FieldLabel } from "ui/field";
 import { Input } from "ui/input";
 import { Badge } from "ui/badge";
 import { Button } from "ui/button";
+import { toast } from "ui/sonner";
 import { ArrowLeftIcon, LoaderCircleIcon } from "lucide-react";
+import { Can } from "../../../components/can";
 import { usePermissions } from "../../auth/permission-context";
 import { useAuthMe } from "../../auth/permissions.hooks";
 import {
   useDeactivateUserMutation,
   useReactivateUserMutation,
+  useResendInviteMutation,
+  useRevokeInviteMutation,
   useUpdateUserMutation,
   useUserSuspenseQuery,
 } from "../users.hooks";
@@ -40,6 +44,7 @@ const ProfileFormSchema = z.object({
 type ProfileForm = z.infer<typeof ProfileFormSchema>;
 
 export function UserDetailView({ id }: { id: number }) {
+  const navigate = useNavigate();
   const { data: user } = useUserSuspenseQuery(id);
   const me = useAuthMe();
   const perms = usePermissions();
@@ -51,10 +56,35 @@ export function UserDetailView({ id }: { id: number }) {
   const [rolesOpen, setRolesOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const deactivate = useDeactivateUserMutation();
   const reactivate = useReactivateUserMutation();
+  const resendInvite = useResendInviteMutation();
+  const revokeInvite = useRevokeInviteMutation();
   const lifecyclePending = deactivate.isPending || reactivate.isPending;
+
+  const handleResend = () => {
+    resendInvite.mutate(id, {
+      onSuccess: () =>
+        toast.success(`Invite re-sent to ${user.email}. The old link no longer works.`),
+    });
+  };
+
+  const handleRevoke = async () => {
+    setRevokeError(null);
+    try {
+      await revokeInvite.mutateAsync(id);
+      navigate({ to: "/app/users" });
+    } catch (err) {
+      setRevokeError(
+        err instanceof ApiError
+          ? err.message
+          : "Couldn't revoke the invite — please try again.",
+      );
+    }
+  };
 
   const runLifecycle = async () => {
     setLifecycleError(null);
@@ -138,6 +168,45 @@ export function UserDetailView({ id }: { id: number }) {
         )}
       </section>
 
+      {user.status === "invited" && (
+        <Can permission="users:write">
+          <section className="mt-10 max-w-lg space-y-3">
+            <h2 className="text-sm font-medium">Pending invite</h2>
+            <p className="text-sm text-muted-foreground">
+              {user.firstName} hasn't joined yet. Resend the invite email (this
+              invalidates the previous link) or revoke it to remove them.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={resendInvite.isPending}
+                onClick={handleResend}
+              >
+                {resendInvite.isPending ? (
+                  <>
+                    <LoaderCircleIcon className="animate-spin" /> Sending...
+                  </>
+                ) : (
+                  "Resend invite"
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                onClick={() => {
+                  setRevokeError(null);
+                  setRevokeOpen(true);
+                }}
+              >
+                Revoke invite
+              </Button>
+            </div>
+          </section>
+        </Can>
+      )}
+
       <EditUserRolesSheet
         user={rolesOpen ? user : null}
         open={rolesOpen}
@@ -174,6 +243,34 @@ export function UserDetailView({ id }: { id: number }) {
               }}
             >
               {user.status === "deactivated" ? "Reactivate" : "Deactivate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={revokeOpen} onOpenChange={setRevokeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke {user.firstName}'s invite?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The invite link stops working and {user.firstName} is removed. You
+              can invite them again later. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {revokeError && (
+            <p className="text-sm text-destructive">{revokeError}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={revokeInvite.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleRevoke();
+              }}
+            >
+              Revoke invite
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

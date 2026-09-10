@@ -55,6 +55,22 @@ export function createUsersResource(client: Client<paths>, doRequest: DoFn) {
         ),
       ),
 
+    resendInvite: async (id: number) =>
+      unwrap(
+        await doRequest(() =>
+          client.POST("/users/{id}/invite/resend", {
+            params: { path: { id } },
+          }),
+        ),
+      ),
+
+    revokeInvite: async (id: number) =>
+      unwrap(
+        await doRequest(() =>
+          client.DELETE("/users/{id}/invite", { params: { path: { id } } }),
+        ),
+      ),
+
     updateRoles: async (id: number, roleIds: number[]) => {
       const path: paths["/users/{id}/roles"]["patch"]["parameters"]["path"] = {
         id: String(id),

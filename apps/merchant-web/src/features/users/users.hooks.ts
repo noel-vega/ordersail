@@ -73,6 +73,25 @@ export function useUpdateUserMutation() {
   })
 }
 
+export function useResendInviteMutation() {
+  return useMutation({
+    mutationFn: (id: number) => merchantApi.users.resendInvite(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] })
+    },
+  })
+}
+
+export function useRevokeInviteMutation() {
+  return useMutation({
+    meta: { skipGlobalErrorToast: true },
+    mutationFn: (id: number) => merchantApi.users.revokeInvite(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] })
+    },
+  })
+}
+
 export function useDeactivateUserMutation() {
   return useMutation({
     meta: { skipGlobalErrorToast: true },
