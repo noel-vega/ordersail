@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
-import type { paths } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import type { components, paths } from "../types.gen.js";
+import { unwrap, type DoFn } from "../http.js";
 
 export function createApiKeysResource(client: Client<paths>, doRequest: DoFn) {
   return {
@@ -8,5 +8,12 @@ export function createApiKeysResource(client: Client<paths>, doRequest: DoFn) {
       const { data } = await doRequest(() => client.GET("/api-keys"));
       return data;
     },
+
+    create: async (params?: components["schemas"]["CreateApiKeyDto"]) =>
+      unwrap(
+        await doRequest(() =>
+          client.POST("/api-keys", { body: params ?? {} }),
+        ),
+      ),
   };
 }

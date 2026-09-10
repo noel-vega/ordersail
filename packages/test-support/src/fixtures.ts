@@ -2,6 +2,7 @@
 // data composes these instead of hand-writing inserts. Each returns the
 // inserted row (ids included). Shapes mirror packages/seed/scripts/seed.ts.
 import {
+  accountApiKeysTable,
   accountsTable,
   brandsTable,
   cartItemsTable,
@@ -72,6 +73,30 @@ export async function insertUser(
         firstname: opts.firstname ?? 'Staff',
         lastname: opts.lastname ?? `Member ${uniq()}`,
         email: opts.email ?? `staff-${uniq()}@store.test`,
+      })
+      .returning(),
+  );
+}
+
+export async function insertApiKey(
+  db: TestDb,
+  opts: {
+    accountId: number;
+    key?: string;
+    label?: string | null;
+    // set → a revoked key (GET /api-keys and the storefront AppKeyGuard both
+    // filter these out)
+    revokedAt?: Date | null;
+  },
+): Promise<Row<typeof accountApiKeysTable>> {
+  return one(
+    await db
+      .insert(accountApiKeysTable)
+      .values({
+        accountId: opts.accountId,
+        key: opts.key ?? `sfk_test_${uniq()}`,
+        label: opts.label ?? null,
+        revokedAt: opts.revokedAt ?? null,
       })
       .returning(),
   );

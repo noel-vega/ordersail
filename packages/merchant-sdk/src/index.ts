@@ -22,6 +22,7 @@ import { createPermissionsResource } from "./resources/permissions.js";
 import { createPosDevicesResource } from "./resources/pos-devices.js";
 
 export type ApiKey = components["schemas"]["ApiKeyDto"];
+export type CreateApiKeyDto = components["schemas"]["CreateApiKeyDto"];
 export type CartListItem = components["schemas"]["CartListItem"];
 export type CartDetail = components["schemas"]["CartDetail"];
 export type PaginatedCarts = components["schemas"]["PaginatedCarts"];
