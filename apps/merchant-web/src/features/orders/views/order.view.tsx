@@ -28,6 +28,7 @@ import { formatCents } from "../../../lib/currency";
 import { FulfillmentStatusBadge } from "../components/fulfillment-status-badge";
 import { OrderStatusBadge } from "../components/order-status-badge";
 import { OrderEventIcon } from "../components/order-event-icon";
+import { RefundOrderSheet } from "../components/refund-order-sheet";
 
 type OrderItem = OrderDetail["items"][number];
 type OrderFulfillment = OrderDetail["fulfillments"][number];
@@ -376,10 +377,15 @@ function CreateFulfillmentFlow({ order }: { order: OrderDetail }) {
 
 export function OrderView({ id }: { id: number }) {
   const { data } = useOrderQuery(id);
+  const [refundOpen, setRefundOpen] = useState(false);
 
   if (!data) {
     return null;
   }
+
+  const canRefund =
+    (data.status === "paid" || data.status === "partially_refunded") &&
+    data.payments.some((p) => p.method === "stripe" && p.amountCents > 0);
 
   return (
     <div>
@@ -461,7 +467,19 @@ export function OrderView({ id }: { id: number }) {
         <>
           <Separator className="my-4" />
           <div className="text-sm">
-            <h2 className="font-medium mb-1">Payment</h2>
+            <div className="mb-1 flex items-center justify-between">
+              <h2 className="font-medium">Payment</h2>
+              {canRefund && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRefundOpen(true)}
+                >
+                  Refund
+                </Button>
+              )}
+            </div>
             {data.payments.map((payment, i) =>
               payment.amountCents < 0 ? (
                 <p key={i} className="text-muted-foreground">
@@ -517,6 +535,12 @@ export function OrderView({ id }: { id: number }) {
           </div>
         </>
       )}
+
+      <RefundOrderSheet
+        order={data}
+        open={refundOpen}
+        onOpenChange={setRefundOpen}
+      />
     </div>
   );
 }

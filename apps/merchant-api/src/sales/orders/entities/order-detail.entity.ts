@@ -129,6 +129,10 @@ class OrderDetailItem {
   @ApiProperty({ type: Number })
   remainingQuantity!: number;
 
+  // units of this line already covered by a line-item refund (OS-122)
+  @ApiProperty({ type: Number })
+  refundedQuantity!: number;
+
   // where this item's stock was actually pulled from at order time (see
   // inventoryMovementsTable.orderItemId) — informs which location(s) a
   // merchant can realistically ship this item from, but isn't a hard limit
