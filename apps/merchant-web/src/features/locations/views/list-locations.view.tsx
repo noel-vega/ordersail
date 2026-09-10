@@ -97,7 +97,7 @@ export function ListLocationsView() {
           </Button>
         </Link>
       </div>
-      <DataTable data={locations.data ?? []} columns={columns} />
+      <DataTable data={locations.data?.items ?? []} columns={columns} />
 
       <EditLocationSheet
         location={editingLocation}

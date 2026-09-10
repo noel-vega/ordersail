@@ -5,7 +5,7 @@ import { queryClient } from "../../lib/react-query-client"
 export function getListLocationsQueryOptions() {
   return queryOptions({
     queryKey: ["locations"],
-    queryFn: merchantApi.locations.list,
+    queryFn: () => merchantApi.locations.list({ limit: 100 }),
   })
 }
 

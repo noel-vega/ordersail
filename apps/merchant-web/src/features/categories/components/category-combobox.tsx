@@ -26,7 +26,7 @@ export function CategoryCombobox({
   const [inputValue, setInputValue] = useState("")
   const anchorRef = useComboboxAnchor()
 
-  const options: CategoryOption[] = (categoriesQuery.data ?? []).map(
+  const options: CategoryOption[] = (categoriesQuery.data?.items ?? []).map(
     (category) => ({ value: category.id, label: category.name })
   )
 

@@ -5,7 +5,7 @@ import { queryClient } from "../../lib/react-query-client"
 export function getListBrandsQueryOptions() {
   return queryOptions({
     queryKey: ["brands"],
-    queryFn: merchantApi.brands.list,
+    queryFn: () => merchantApi.brands.list({ limit: 100 }),
   })
 }
 

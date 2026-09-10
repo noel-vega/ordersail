@@ -19,7 +19,7 @@ export function LocationSelect({
   onChange: (value: string) => void;
 }) {
   const locations = useListLocationsQuery();
-  const items = locations.data ?? [];
+  const items = locations.data?.items ?? [];
 
   if (!locations.isLoading && items.length === 0) {
     return (
