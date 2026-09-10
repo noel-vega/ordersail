@@ -1,5 +1,6 @@
-# VPC with 2 public + 2 private subnets across 2 AZs, a single NAT gateway
-# (cheaper than one per AZ; accepted AZ-level SPOF at this stage).
+# VPC with 2 public + 2 private subnets across 2 AZs, and a single NAT gateway
+# (cheaper than one per AZ; accepted AZ-level SPOF at this stage) that is torn
+# down while the environment is parked — see var.environment_on / OS-380.
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -41,7 +42,11 @@ resource "aws_subnet" "private" {
   tags = { Name = "${var.name_prefix}-private-${local.azs[count.index]}" }
 }
 
+# NAT gateway + its EIP exist only while the environment is "on" (OS-380) —
+# torn down when parked to save ~$36/mo. Nothing depends on the NAT's public IP
+# (no outbound allow-lists), so a new IP on recreate is fine.
 resource "aws_eip" "nat" {
+  count  = var.environment_on ? 1 : 0
   domain = "vpc"
   tags   = { Name = "${var.name_prefix}-nat" }
 }
@@ -51,7 +56,8 @@ resource "aws_eip" "nat" {
 # internet access for all private subnets. Accepted tradeoff for cost at
 # this stage (one NAT gateway vs. one per AZ).
 resource "aws_nat_gateway" "this" {
-  allocation_id = aws_eip.nat.id
+  count         = var.environment_on ? 1 : 0
+  allocation_id = aws_eip.nat[0].id
   subnet_id     = aws_subnet.public[0].id
   tags          = { Name = "${var.name_prefix}-nat" }
 
@@ -78,9 +84,17 @@ resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
   tags   = { Name = "${var.name_prefix}-private" }
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.this.id
+  # Default route via the NAT, present only while the environment is "on"
+  # (OS-380). When parked, this block disappears and Terraform stops managing
+  # the route: deleting the NAT leaves it as a harmless blackhole entry (nothing
+  # in the private subnets needs egress while parked — RDS is idle, ElastiCache
+  # is gone), and the next "on" apply re-points it at the fresh NAT.
+  dynamic "route" {
+    for_each = var.environment_on ? [1] : []
+    content {
+      cidr_block     = "0.0.0.0/0"
+      nat_gateway_id = aws_nat_gateway.this[0].id
+    }
   }
 }
 
