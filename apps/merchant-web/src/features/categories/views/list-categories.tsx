@@ -1,15 +1,16 @@
-
-import { useQuery } from "@tanstack/react-query";
-import { getListCategoriesQueryOptions } from "../categories.hooks";
-import { DataTable } from "../../../components/data-table";
-import { Button } from "ui/button";
-import { Link } from "@tanstack/react-router";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "ui/input-group";
-import { PlusIcon, SearchIcon } from "lucide-react";
+import { Link, getRouteApi } from "@tanstack/react-router";
+import { PlusIcon } from "lucide-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import type { Category } from "merchant-sdk";
-import { Field, FieldLabel } from "ui/field";
 import { format } from "date-fns";
+import { Button } from "ui/button";
+import { DataTable } from "../../../components/data-table";
+import { DataTablePagination } from "../../../components/data-table-pagination";
+import { ListSearchInput } from "../../../components/list-search-input";
+import { PAGE_SIZE } from "../../../lib/list-search";
+import { useListCategoriesQuery } from "../categories.hooks";
+
+const route = getRouteApi("/app/products/categories/");
 
 const columns: ColumnDef<Category>[] = [
   {
@@ -23,25 +24,26 @@ const columns: ColumnDef<Category>[] = [
   {
     accessorKey: "createdAt",
     header: "Created At",
-    cell: ({row}) => format(new Date(row.original.createdAt), "MM/dd/yyyy hh:mm a")
+    cell: ({ row }) =>
+      format(new Date(row.original.createdAt), "MM/dd/yyyy hh:mm a"),
   },
 ];
 
 export function ListCategoriesView() {
-  const categories = useQuery(getListCategoriesQueryOptions());
+  const search = route.useSearch();
+  const navigate = route.useNavigate();
+  const categories = useListCategoriesQuery(search);
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-4 items-end justify-between">
-        <Field className="max-w-xs">
-          <FieldLabel>Search</FieldLabel>
-          <InputGroup>
-            <InputGroupInput placeholder="Search categories..." />
-            <InputGroupAddon>
-              <SearchIcon />
-            </InputGroupAddon>
-          </InputGroup>
-        </Field>
+      <div className="flex items-end justify-between gap-4">
+        <ListSearchInput
+          initialValue={search.q}
+          placeholder="Search categories..."
+          onDebouncedChange={(q) =>
+            navigate({ search: (prev) => ({ ...prev, q, page: 1 }) })
+          }
+        />
         <Link to="/app/products/categories/create">
           <Button>
             <PlusIcon /> Category
@@ -49,6 +51,14 @@ export function ListCategoriesView() {
         </Link>
       </div>
       <DataTable data={categories.data?.items ?? []} columns={columns} />
+      <DataTablePagination
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        total={categories.data?.total ?? 0}
+        onPageChange={(page) =>
+          navigate({ search: (prev) => ({ ...prev, page }) })
+        }
+      />
     </div>
   );
 }
