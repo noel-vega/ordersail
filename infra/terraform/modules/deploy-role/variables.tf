@@ -58,6 +58,12 @@ variable "include_ecs_deploy" {
   default     = false
 }
 
+variable "include_environment_toggle" {
+  description = "Grant the environment.yml on/off workflow (OS-379) its extra permissions: toggle the cluster's Container Insights setting and arm/disarm the running-below-desired alarms. Off by default — only the platform-wide role needs this."
+  type        = bool
+  default     = false
+}
+
 variable "pass_role_arns" {
   description = "ECS execution/task role ARNs the deploy role is allowed to iam:PassRole. Wired from the ecs-service module outputs in envs/production."
   type        = list(string)

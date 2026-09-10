@@ -158,6 +158,39 @@ data "aws_iam_policy_document" "deploy" {
   }
 
   dynamic "statement" {
+    # environment.yml (OS-379) flips the cluster's Container Insights setting
+    # off/on around a park. UpdateCluster/DescribeClusters have no resource-level
+    # support beyond the cluster ARN itself.
+    for_each = var.include_environment_toggle ? [1] : []
+    content {
+      sid    = "EcsClusterInsightsToggle"
+      effect = "Allow"
+      actions = [
+        "ecs:UpdateCluster",
+        "ecs:DescribeClusters",
+      ]
+      resources = ["arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.name_prefix}"]
+    }
+  }
+
+  dynamic "statement" {
+    # environment.yml disarms the *-running-below-desired alarms before scaling
+    # services to 0 (they are treat_missing_data=breaching) and re-arms them once
+    # tasks and Container Insights metrics are back. Disable/EnableAlarmActions
+    # do not support resource-level permissions.
+    for_each = var.include_environment_toggle ? [1] : []
+    content {
+      sid    = "CloudWatchAlarmActionsToggle"
+      effect = "Allow"
+      actions = [
+        "cloudwatch:DisableAlarmActions",
+        "cloudwatch:EnableAlarmActions",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
     for_each = length(var.pass_role_arns) > 0 ? [1] : []
     content {
       sid       = "PassEcsRoles"
