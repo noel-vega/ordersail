@@ -6,6 +6,10 @@ import {
   Patch,
   Param,
   Delete,
+  DefaultValuePipe,
+  ParseEnumPipe,
+  ParseIntPipe,
+  Query,
   NotFoundException,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
@@ -21,8 +25,12 @@ import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
+import { productStatusEnum } from 'db/catalog';
 import { Product } from './entities/product.entity';
+import { PaginatedProducts } from './entities/paginated-products.entity';
+import type { ProductStatus } from './products.service';
 import { ProductDetail } from './entities/product-detail.entity';
 import { ProductVariant } from './entities/product-variant.entity';
 import { ProductOption } from './entities/product-option.entity';
@@ -49,9 +57,32 @@ export class ProductsController {
 
   @Get()
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse({ type: [Product] })
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.productsService.findAll(user.accountId);
+  @ApiOkResponse({ type: PaginatedProducts })
+  @ApiQuery({
+    name: 'q',
+    required: false,
+    description: 'name or description match',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: productStatusEnum.enumValues,
+  })
+  findAll(
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('q') q?: string,
+    @Query(
+      'status',
+      new ParseEnumPipe(productStatusEnum.enumValues, { optional: true }),
+    )
+    status?: ProductStatus,
+  ) {
+    return this.productsService.findAll(limit, offset, user.accountId, {
+      q,
+      status,
+    });
   }
 
   @Get(':id')

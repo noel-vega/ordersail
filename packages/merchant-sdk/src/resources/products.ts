@@ -4,8 +4,23 @@ import type { DoFn } from "../http.js";
 
 export function createProductsResource(client: Client<paths>, doRequest: DoFn) {
   return {
-    list: async () => {
-      const { data } = await doRequest(() => client.GET("/products"));
+    list: async (params?: {
+      limit?: number;
+      offset?: number;
+      q?: string;
+      status?: components["schemas"]["Product"]["status"];
+    }) => {
+      const query: NonNullable<
+        paths["/products"]["get"]["parameters"]["query"]
+      > = {
+        limit: params?.limit ?? 20,
+        offset: params?.offset ?? 0,
+        ...(params?.q ? { q: params.q } : {}),
+        ...(params?.status ? { status: params.status } : {}),
+      };
+      const { data } = await doRequest(() =>
+        client.GET("/products", { params: { query } }),
+      );
       return data;
     },
 

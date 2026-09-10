@@ -26,6 +26,7 @@ export type CartListItem = components["schemas"]["CartListItem"];
 export type CartDetail = components["schemas"]["CartDetail"];
 export type PaginatedCarts = components["schemas"]["PaginatedCarts"];
 export type Product = components["schemas"]["Product"];
+export type PaginatedProducts = components["schemas"]["PaginatedProducts"];
 export type ProductDetail = components["schemas"]["ProductDetail"];
 export type ProductVariant = components["schemas"]["ProductVariant"];
 export type ProductOption = components["schemas"]["ProductOption"];
