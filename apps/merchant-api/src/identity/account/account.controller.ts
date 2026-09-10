@@ -5,6 +5,7 @@ import { UpdateAccountDto } from './dto/update-account.dto';
 import { Account } from './entities/account.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -13,6 +14,7 @@ export class AccountController {
   constructor(private readonly accountService: AccountService) {}
 
   @Get()
+  @RequirePermissions('account:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: Account })
   findOne(@CurrentUser() user: AuthenticatedUser) {
@@ -20,6 +22,7 @@ export class AccountController {
   }
 
   @Patch()
+  @RequirePermissions('account:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: Account })
   update(

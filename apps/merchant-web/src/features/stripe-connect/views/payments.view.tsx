@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "ui/card";
 import { Badge } from "ui/badge";
 import { Button } from "ui/button";
+import { usePermissions } from "../../auth/permission-context";
 import {
   useCreateAccountSessionMutation,
   useRefreshStripeConnectStatus,
@@ -35,12 +36,14 @@ export function PaymentsView() {
   const status = useStripeConnectStatusQuery();
   const createAccountSession = useCreateAccountSessionMutation();
   const refreshStatus = useRefreshStripeConnectStatus();
+  const canConnect = usePermissions().has("payments:write");
   const { onboarding } = route.useSearch();
   const navigate = route.useNavigate();
   // deep-linked from the dashboard checklist — jump straight into the
-  // embedded onboarding flow, but only if it isn't already done
+  // embedded onboarding flow, but only if it isn't already done and the user
+  // may actually connect
   const [showOnboarding, setShowOnboarding] = useState(
-    () => (onboarding ?? false) && !status.data?.chargesEnabled,
+    () => (onboarding ?? false) && !status.data?.chargesEnabled && canConnect,
   );
 
   // drop the ?onboarding param once consumed so a refresh doesn't re-trigger
@@ -90,9 +93,17 @@ export function PaymentsView() {
         </CardHeader>
         {!showOnboarding && !status.data?.chargesEnabled && (
           <CardContent>
-            <Button onClick={() => setShowOnboarding(true)}>
-              {status.data?.connected ? "Continue onboarding" : "Connect with Stripe"}
-            </Button>
+            {canConnect ? (
+              <Button onClick={() => setShowOnboarding(true)}>
+                {status.data?.connected
+                  ? "Continue onboarding"
+                  : "Connect with Stripe"}
+              </Button>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                An account owner needs to connect Stripe.
+              </p>
+            )}
           </CardContent>
         )}
       </Card>
