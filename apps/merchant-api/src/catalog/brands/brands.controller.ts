@@ -79,7 +79,10 @@ export class BrandsController {
   @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: Brand })
-  async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     const brand = await this.brandsService.remove(+id, user.accountId);
     if (!brand) throw new NotFoundException();
     return brand;

@@ -76,7 +76,9 @@ export class BrandsService {
       const [existing] = await tx
         .select()
         .from(brandsTable)
-        .where(and(eq(brandsTable.id, id), eq(brandsTable.accountId, accountId)))
+        .where(
+          and(eq(brandsTable.id, id), eq(brandsTable.accountId, accountId)),
+        )
         .for('update');
 
       if (!existing) return undefined;
@@ -95,7 +97,9 @@ export class BrandsService {
 
       const [brand] = await tx
         .delete(brandsTable)
-        .where(and(eq(brandsTable.id, id), eq(brandsTable.accountId, accountId)))
+        .where(
+          and(eq(brandsTable.id, id), eq(brandsTable.accountId, accountId)),
+        )
         .returning();
 
       return brand;

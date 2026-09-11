@@ -58,7 +58,9 @@ describe('BrandsService.update (OS-186)', () => {
     const updated = await service.update(brand.id, { name: 'New' }, account.id);
     expect(updated?.name).toBe('New');
 
-    expect(await service.update(brand.id, { name: 'Nope' }, other.id)).toBeUndefined();
+    expect(
+      await service.update(brand.id, { name: 'Nope' }, other.id),
+    ).toBeUndefined();
   });
 });
 
