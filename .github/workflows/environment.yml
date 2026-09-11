@@ -4,11 +4,13 @@ name: Environment
 # spend while the platform is pre-launch and idle (OS-379).
 #
 #   action: down  — scale every ECS service to 0, disarm the running-below-desired
-#                   alarms, disable Container Insights (~$21/mo of CloudWatch).
+#                   and (per app) ALB alarms — the ALBs stay up while parked, so
+#                   their alb-5xx alarm would otherwise page on the empty target
+#                   groups — and disable Container Insights (~$21/mo of CloudWatch).
 #   action: up    — re-enable Container Insights, re-register each task def from
 #                   its Terraform-owned SSM contract (so a Redis endpoint that
 #                   changed while parked is picked up), scale back to 1, health
-#                   check, then re-arm the alarms.
+#                   check, then re-arm the ECS + ALB alarms.
 #
 # The NAT gateway and ElastiCache have no stop API — those are torn down / rebuilt
 # separately by `terraform apply` with `environment_on = false|true` (OS-380).
@@ -51,6 +53,21 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+
+      # The ALB itself stays up while parked (destroying it breaks the Route53
+      # alias — OS-63), fronting a target group that's about to go to zero
+      # healthy targets. Without this, every request that still reaches it
+      # (uptime checks, bots, stray tabs) gets a 503, and alb-5xx — built to
+      # catch exactly a "no healthy targets" outage (OS-366) — pages on it.
+      - name: Disarm ${{ matrix.app }} ALB alarms
+        if: ${{ matrix.app != 'worker' }}
+        run: |
+          set -euo pipefail
+          aws cloudwatch disable-alarm-actions --alarm-names \
+            "ordersail-${{ matrix.app }}-alb-5xx" \
+            "ordersail-${{ matrix.app }}-alb-error-rate" \
+            "ordersail-${{ matrix.app }}-alb-unhealthy-hosts" \
+            "ordersail-${{ matrix.app }}-alb-p95-latency"
 
       - name: Disarm alarm and scale ${{ matrix.app }} to zero
         run: |
@@ -229,3 +246,14 @@ jobs:
             ordersail-worker-running-below-desired \
             ordersail-pos-api-running-below-desired
           echo "running-below-desired alarm actions re-armed"
+
+          # up-services already health-checked each ALB above, so its target
+          # group has a healthy target by the time these re-arm.
+          aws cloudwatch enable-alarm-actions --alarm-names \
+            ordersail-merchant-api-alb-5xx ordersail-merchant-api-alb-error-rate \
+            ordersail-merchant-api-alb-unhealthy-hosts ordersail-merchant-api-alb-p95-latency \
+            ordersail-storefront-api-alb-5xx ordersail-storefront-api-alb-error-rate \
+            ordersail-storefront-api-alb-unhealthy-hosts ordersail-storefront-api-alb-p95-latency \
+            ordersail-pos-api-alb-5xx ordersail-pos-api-alb-error-rate \
+            ordersail-pos-api-alb-unhealthy-hosts ordersail-pos-api-alb-p95-latency
+          echo "ALB alarm actions re-armed"

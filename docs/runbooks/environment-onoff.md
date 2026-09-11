@@ -15,6 +15,7 @@ linked to OS-63.
 | 4 ECS services (merchant-api, storefront-api, worker, pos-api) | `desired_count → 0` — the **Environment** workflow (OS-379) | ~$35/mo |
 | Container Insights | cluster setting `disabled` — the workflow | ~$21/mo |
 | `running-below-desired` alarms | actions disarmed — the workflow (they're `treat_missing_data = breaching`) | — |
+| ALB alarms (5xx, error-rate, unhealthy-hosts, p95-latency) on the 3 ALBs | actions disarmed — the workflow, per app before scale-down | — |
 | NAT gateway + its EIP | destroyed — `terraform apply` with `environment_on = false` (OS-380) | ~$36/mo |
 | ElastiCache Redis | destroyed — same apply | ~$11/mo |
 
@@ -29,8 +30,11 @@ Off-state run-rate ≈ **$50/mo**.
 1. **Scale down the compute + observability layer.**
    GitHub → Actions → **Environment** → *Run workflow* → `action: down`.
    Approve the `production` environment gate. The run:
-   - disarms each `ordersail-<svc>-running-below-desired` alarm, then
-     `desired-count 0`, then waits for the service to drain;
+   - disarms that app's 4 ALB alarms (5xx, error-rate, unhealthy-hosts,
+     p95-latency), then each `ordersail-<svc>-running-below-desired` alarm,
+     then `desired-count 0`, then waits for the service to drain — the ALBs
+     stay up (see below), so their target groups go to zero healthy targets
+     and would otherwise page on `alb-5xx`;
    - disables Container Insights on the cluster.
 
 2. **Tear down the NAT gateway + Redis.** From a checkout with AWS creds:
@@ -77,7 +81,7 @@ Off-state run-rate ≈ **$50/mo**.
      last-shipped image tag (so the new Redis hostname lands), `desired-count 1`,
      waits stable, health-checks;
    - waits for Container Insights `RunningTaskCount` to resume, then re-arms the
-     `running-below-desired` alarms.
+     `running-below-desired` alarms and the 3 ALBs' alarms.
 
    If you skip step 1, `up` fails fast: the task-def contract still has an empty
    `REDIS_HOST`.
