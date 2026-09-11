@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PublishCommand, SNSClient } from '@aws-sdk/client-sns';
+import type { SNSClient } from '@aws-sdk/client-sns';
 import { Logger } from 'logging';
 
 export interface CriticalAlert {
@@ -13,25 +13,32 @@ export interface CriticalAlert {
 // SNS topic (ordersail-alerts-critical, OS-80) fans out to email today, SMS
 // later. With no topic ARN configured — local dev, tests, CI — every method
 // is a no-op: the [alert]-shaped log line stays the only channel.
+//
+// `@aws-sdk/client-sns` is a prod-only dependency and is imported lazily
+// (dynamic import inside publishCritical) so a missing/uninstalled SDK can't
+// take the whole worker down at boot — it isn't touched unless a topic ARN
+// is set and a critical alert actually fires.
 @Injectable()
 export class AlertsService {
   private readonly logger = new Logger(AlertsService.name);
   private readonly topicArn = process.env.ALERTS_CRITICAL_TOPIC_ARN;
-  // region comes from the task's AWS_REGION / execution-role env in ECS
-  private readonly sns = this.topicArn ? new SNSClient({}) : null;
+  private client: SNSClient | null = null;
 
   get enabled(): boolean {
-    return this.sns !== null;
+    return Boolean(this.topicArn);
   }
 
   // deliberately swallows its own errors — a paging failure must never turn
   // into an unhandled rejection in a BullMQ worker-event handler, and the
   // caller has already written a durable record + log line before calling us
   async publishCritical(alert: CriticalAlert): Promise<void> {
-    if (!this.sns || !this.topicArn) return;
+    if (!this.topicArn) return;
 
     try {
-      await this.sns.send(
+      const { SNSClient, PublishCommand } = await import('@aws-sdk/client-sns');
+      // region comes from the task's AWS_REGION / execution-role env in ECS
+      this.client ??= new SNSClient({});
+      await this.client.send(
         new PublishCommand({
           TopicArn: this.topicArn,
           Subject: alert.subject.replace(/\s+/g, ' ').trim().slice(0, 100),
