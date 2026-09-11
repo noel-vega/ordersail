@@ -1,10 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { type ColumnDef, type Row } from "@tanstack/react-table";
 import { format } from "date-fns";
+import { TriangleAlertIcon } from "lucide-react";
 import type { OrderListItem } from "merchant-sdk";
+import { Alert, AlertDescription, AlertTitle } from "ui/alert";
 import { Badge } from "ui/badge";
 import { getListOrdersQueryOptions } from "../orders.hooks";
+import { getFailedOrdersQueryOptions } from "../../failed-orders/failed-orders.hooks";
 import { formatCents } from "../../../lib/currency";
 import { DataTable } from "../../../components/data-table";
 import { FulfillmentStatusBadge } from "../components/fulfillment-status-badge";
@@ -67,6 +70,8 @@ const columns: ColumnDef<OrderListItem>[] = [
 
 export function ListOrdersView() {
   const orders = useQuery(getListOrdersQueryOptions());
+  const failedOrders = useQuery(getFailedOrdersQueryOptions());
+  const unresolvedFailed = failedOrders.data?.unresolvedCount ?? 0;
   const navigate = useNavigate();
 
   const handleRowClick = (row: Row<OrderListItem>) => {
@@ -75,6 +80,20 @@ export function ListOrdersView() {
 
   return (
     <div className="space-y-4">
+      {unresolvedFailed > 0 ? (
+        <Link to="/app/failed-orders">
+          <Alert variant="destructive">
+            <TriangleAlertIcon />
+            <AlertTitle>
+              {unresolvedFailed} checkout{unresolvedFailed === 1 ? "" : "s"}{" "}
+              failed and need attention
+            </AlertTitle>
+            <AlertDescription>
+              View failed checkouts to review errors and retry.
+            </AlertDescription>
+          </Alert>
+        </Link>
+      ) : null}
       <DataTable
         onRowClick={handleRowClick}
         data={orders.data?.items ?? []}
