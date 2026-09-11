@@ -516,6 +516,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/brands/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["BrandsController_remove"];
+        options?: never;
+        head?: never;
+        patch: operations["BrandsController_update"];
+        trace?: never;
+    };
     "/categories": {
         parameters: {
             query?: never;
@@ -530,6 +546,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/categories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["CategoriesController_remove"];
+        options?: never;
+        head?: never;
+        patch: operations["CategoriesController_update"];
         trace?: never;
     };
     "/inventory": {
@@ -590,7 +622,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete: operations["LocationsController_remove"];
+        delete?: never;
         options?: never;
         head?: never;
         patch: operations["LocationsController_update"];
@@ -1213,6 +1245,9 @@ export interface components {
             limit: number;
             offset: number;
         };
+        UpdateBrandDto: {
+            name?: string;
+        };
         CreateCategoryDto: {
             name: string;
         };
@@ -1225,11 +1260,24 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        CategoryListItem: {
+            id: number;
+            accountId: number;
+            name: string;
+            productCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         PaginatedCategories: {
-            items: components["schemas"]["Category"][];
+            items: components["schemas"]["CategoryListItem"][];
             total: number;
             limit: number;
             offset: number;
+        };
+        UpdateCategoryDto: {
+            name?: string;
         };
         InventoryRecord: {
             id: number;
@@ -2654,6 +2702,52 @@ export interface operations {
             };
         };
     };
+    BrandsController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Brand"];
+                };
+            };
+        };
+    };
+    BrandsController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBrandDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Brand"];
+                };
+            };
+        };
+    };
     CategoriesController_findAll: {
         parameters: {
             query: {
@@ -2692,6 +2786,52 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Category"];
+                };
+            };
+        };
+    };
+    CategoriesController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Category"];
+                };
+            };
+        };
+    };
+    CategoriesController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCategoryDto"];
+            };
+        };
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2815,27 +2955,6 @@ export interface operations {
         };
         responses: {
             201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Location"];
-                };
-            };
-        };
-    };
-    LocationsController_remove: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
                 headers: {
                     [name: string]: unknown;
                 };

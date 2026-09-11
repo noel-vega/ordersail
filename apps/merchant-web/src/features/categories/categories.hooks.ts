@@ -39,3 +39,27 @@ export function useCreateCategoryMutation() {
     },
   })
 }
+
+export function useUpdateCategoryMutation() {
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...params
+    }: { id: number } & Parameters<typeof merchantApi.categories.update>[1]) =>
+      merchantApi.categories.update(id, params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] })
+    },
+  })
+}
+
+export function useDeleteCategoryMutation() {
+  return useMutation({
+    mutationFn: (id: number) => merchantApi.categories.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] })
+      // deleting a category unlinks it from any products that had it
+      queryClient.invalidateQueries({ queryKey: ["products"] })
+    },
+  })
+}
