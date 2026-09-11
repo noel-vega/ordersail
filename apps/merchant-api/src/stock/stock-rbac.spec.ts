@@ -35,4 +35,10 @@ describe('stock RBAC (OS-177)', () => {
       'locations:write',
     ]);
   });
+
+  it('gates location delete with locations:delete (OS-188)', () => {
+    expect(perm(LocationsController.prototype, 'remove')).toEqual([
+      'locations:delete',
+    ]);
+  });
 });
