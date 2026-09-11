@@ -12,6 +12,7 @@ import {
   accountsTable,
   and,
   cartsTable,
+  customersTable,
   desc,
   eq,
   failedOrdersTable,
@@ -133,6 +134,19 @@ export class OrdersProcessor extends WorkerHost {
           });
       };
 
+      // best-effort link to a registered customer — a guest checkout has no
+      // customersTable row, so this stays null the same way customerEmail
+      // itself does for POS walk-ins (see ordersTable.customerId's comment)
+      const [customer] = await tx
+        .select({ id: customersTable.id })
+        .from(customersTable)
+        .where(
+          and(
+            eq(customersTable.accountId, data.accountId),
+            eq(customersTable.email, data.customerEmail),
+          ),
+        );
+
       const [order] = await tx
         .insert(ordersTable)
         .values({
@@ -141,6 +155,7 @@ export class OrdersProcessor extends WorkerHost {
           status: 'paid',
           customerEmail: data.customerEmail,
           customerName: data.customerName,
+          customerId: customer?.id ?? null,
           subtotalCents: data.subtotalCents,
           amountTotalCents: data.amountTotalCents,
           shippingCents: data.shippingCents,

@@ -16,6 +16,7 @@ import { productVariantsTable } from "./products.js";
 import { locationsTable } from "./inventory.js";
 import { posDevicesTable } from "./pos-devices.js";
 import { usersTable } from "./users.js";
+import { customersTable } from "./customers.js";
 import { createInsertSchema, createSelectSchema } from "drizzle-orm/zod";
 import z from "zod";
 
@@ -67,6 +68,14 @@ export const ordersTable = pgTable("orders", {
   // null for POS walk-in sales; the guest's details for a web order
   customerEmail: text(),
   customerName: text(),
+  // set when customerEmail matches a registered customersTable row at
+  // checkout time (OS-189) — null for guest checkouts and POS sales, same
+  // as customerEmail itself. The email fields above stay the source of
+  // truth for display/receipts; this is purely for joining a customer's
+  // order history without a fragile email string-match at read time.
+  customerId: integer().references(() => customersTable.id, {
+    onDelete: "set null",
+  }),
   subtotalCents: integer().notNull(),
   // reserved for future tax collection — always 0 today
   taxCents: integer().notNull().default(0),

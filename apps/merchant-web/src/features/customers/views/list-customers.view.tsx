@@ -47,6 +47,9 @@ export function ListCustomersView() {
       <DataTable
         data={customers.data?.items ?? []}
         columns={columns}
+        onRowClick={(row) =>
+          navigate({ to: "/app/customers/$id", params: { id: row.original.id } })
+        }
         emptyMessage={
           search.q ? undefined : "No customers yet — they'll appear here after their first order."
         }
