@@ -852,6 +852,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/customers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CustomersController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CustomersController_findOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dashboard": {
         parameters: {
             query?: never;
@@ -1615,6 +1647,34 @@ export interface components {
         };
         PaginatedCustomers: {
             items: components["schemas"]["Customer"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        CustomerDetail: {
+            id: number;
+            accountId: number;
+            firstName: string;
+            lastName: string;
+            email: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            lifetimeValueCents: number;
+        };
+        CustomerOrderSummary: {
+            id: number;
+            /** @enum {string} */
+            channel: "web" | "pos";
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+            amountTotalCents: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PaginatedCustomerOrders: {
+            items: components["schemas"]["CustomerOrderSummary"][];
             total: number;
             limit: number;
             offset: number;
@@ -3317,6 +3377,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedCustomers"];
+                };
+            };
+        };
+    };
+    CustomersController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerDetail"];
+                };
+            };
+        };
+    };
+    CustomersController_findOrders: {
+        parameters: {
+            query: {
+                limit: number;
+                offset: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedCustomerOrders"];
                 };
             };
         };
