@@ -13,7 +13,6 @@ import {
   ShoppingBasketIcon,
   ShoppingCartIcon,
   TabletSmartphoneIcon,
-  TriangleAlertIcon,
   UsersIcon,
 } from "lucide-react";
 import { Collapsible, CollapsibleContent } from "ui/collapsible";
@@ -50,14 +49,6 @@ export const NAV_ITEMS = [
     label: "Orders",
     icon: ShoppingCartIcon,
     to: "/app/orders",
-    permission: "orders:read",
-    children: undefined,
-  },
-  {
-    key: "failed-orders",
-    label: "Failed Orders",
-    icon: TriangleAlertIcon,
-    to: "/app/failed-orders",
     permission: "orders:read",
     children: undefined,
   },
