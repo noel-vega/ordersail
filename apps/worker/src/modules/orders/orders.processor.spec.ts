@@ -18,6 +18,7 @@ import { QUEUE_NAMES, type OrderJobData } from 'queue';
 import {
   insertAccount,
   insertCart,
+  insertCustomer,
   insertLocation,
   insertOrder,
   insertOrderPayment,
@@ -218,6 +219,32 @@ describe('OrdersProcessor — checkout-completed', () => {
       stripeCheckoutSessionId: 'cs_1',
       stripePaymentIntentId: 'pi_1',
     });
+  });
+
+  // OS-189
+  it('links the order to a registered customer by email match', async () => {
+    const s = await seedScenario();
+    const customer = await insertCustomer(db, {
+      accountId: s.accountId,
+      email: 'buyer@test.com',
+    });
+    const { processor } = await build();
+
+    await processor.process(job(s));
+
+    const [order] = await rowsFor.orders(db, s.accountId);
+    expect(order.customerId).toBe(customer.id);
+  });
+
+  // OS-189
+  it('leaves customerId null for a guest checkout (no matching customer)', async () => {
+    const s = await seedScenario();
+    const { processor } = await build();
+
+    await processor.process(job(s));
+
+    const [order] = await rowsFor.orders(db, s.accountId);
+    expect(order.customerId).toBeNull();
   });
 
   it('snapshots each line into order_items with the variant weight', async () => {

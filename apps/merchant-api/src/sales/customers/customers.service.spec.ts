@@ -1,5 +1,10 @@
 import { Test } from '@nestjs/testing';
-import { insertAccount, insertCustomer, useTestDb } from 'test-support';
+import {
+  insertAccount,
+  insertCustomer,
+  insertOrder,
+  useTestDb,
+} from 'test-support';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { CustomersService } from './customers.service';
 
@@ -78,5 +83,73 @@ describe('CustomersService.findAll (OS-158)', () => {
     const page = await service.findAll(20, 0, a.id);
     expect(page.total).toBe(1);
     expect(page.items[0]?.accountId).toBe(a.id);
+  });
+});
+
+describe('CustomersService.findOne (OS-189)', () => {
+  it('returns the customer with a computed lifetimeValueCents', async () => {
+    const account = await insertAccount(db);
+    const customer = await insertCustomer(db, { accountId: account.id });
+    await insertOrder(db, {
+      accountId: account.id,
+      customerId: customer.id,
+      amountTotalCents: 1500,
+    });
+    await insertOrder(db, {
+      accountId: account.id,
+      customerId: customer.id,
+      amountTotalCents: 2500,
+    });
+    // a different customer's order must not bleed into this total
+    const other = await insertCustomer(db, { accountId: account.id });
+    await insertOrder(db, {
+      accountId: account.id,
+      customerId: other.id,
+      amountTotalCents: 9999,
+    });
+    const service = await build();
+
+    const detail = await service.findOne(customer.id, account.id);
+    expect(detail).toMatchObject({ id: customer.id, lifetimeValueCents: 4000 });
+  });
+
+  it('reports 0 lifetimeValueCents for a customer with no orders', async () => {
+    const account = await insertAccount(db);
+    const customer = await insertCustomer(db, { accountId: account.id });
+    const service = await build();
+
+    const detail = await service.findOne(customer.id, account.id);
+    expect(detail?.lifetimeValueCents).toBe(0);
+  });
+
+  it('returns undefined for a customer outside the account', async () => {
+    const account = await insertAccount(db);
+    const other = await insertAccount(db);
+    const customer = await insertCustomer(db, { accountId: account.id });
+    const service = await build();
+
+    expect(await service.findOne(customer.id, other.id)).toBeUndefined();
+  });
+});
+
+describe('CustomersService.findOrders (OS-189)', () => {
+  it("paginates a customer's orders, newest first, scoped to the account", async () => {
+    const account = await insertAccount(db);
+    const customer = await insertCustomer(db, { accountId: account.id });
+    const first = await insertOrder(db, {
+      accountId: account.id,
+      customerId: customer.id,
+    });
+    const second = await insertOrder(db, {
+      accountId: account.id,
+      customerId: customer.id,
+    });
+    const other = await insertCustomer(db, { accountId: account.id });
+    await insertOrder(db, { accountId: account.id, customerId: other.id });
+    const service = await build();
+
+    const page = await service.findOrders(customer.id, account.id, 20, 0);
+    expect(page.total).toBe(2);
+    expect(page.items.map((o) => o.id)).toEqual([second.id, first.id]);
   });
 });

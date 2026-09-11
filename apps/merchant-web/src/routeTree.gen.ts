@@ -21,6 +21,7 @@ import { Route as AppRolesRouteRouteImport } from './routes/app/roles/route'
 import { Route as AppCartsIndexRouteImport } from './routes/app/carts/index'
 import { Route as AppCartsIdRouteImport } from './routes/app/carts/$id'
 import { Route as AppCustomersIndexRouteImport } from './routes/app/customers/index'
+import { Route as AppCustomersIdRouteImport } from './routes/app/customers/$id'
 import { Route as AppDevelopersIndexRouteImport } from './routes/app/developers/index'
 import { Route as AppFailedOrdersIndexRouteImport } from './routes/app/failed-orders/index'
 import { Route as AppInventoryIndexRouteImport } from './routes/app/inventory/index'
@@ -104,6 +105,11 @@ const AppCartsIdRoute = AppCartsIdRouteImport.update({
 const AppCustomersIndexRoute = AppCustomersIndexRouteImport.update({
   id: '/customers/',
   path: '/customers/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppCustomersIdRoute = AppCustomersIdRouteImport.update({
+  id: '/customers/$id',
+  path: '/customers/$id',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppDevelopersIndexRoute = AppDevelopersIndexRouteImport.update({
@@ -240,6 +246,7 @@ export interface FileRoutesByFullPath {
   '/app/403': typeof App403Route
   '/app/': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
+  '/app/customers/$id': typeof AppCustomersIdRoute
   '/app/inventory/movements': typeof AppInventoryMovementsRoute
   '/app/locations/create': typeof AppLocationsCreateRoute
   '/app/orders/$id': typeof AppOrdersIdRoute
@@ -275,6 +282,7 @@ export interface FileRoutesByTo {
   '/app/403': typeof App403Route
   '/app': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
+  '/app/customers/$id': typeof AppCustomersIdRoute
   '/app/inventory/movements': typeof AppInventoryMovementsRoute
   '/app/locations/create': typeof AppLocationsCreateRoute
   '/app/orders/$id': typeof AppOrdersIdRoute
@@ -314,6 +322,7 @@ export interface FileRoutesById {
   '/app/403': typeof App403Route
   '/app/': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
+  '/app/customers/$id': typeof AppCustomersIdRoute
   '/app/inventory/movements': typeof AppInventoryMovementsRoute
   '/app/locations/create': typeof AppLocationsCreateRoute
   '/app/orders/$id': typeof AppOrdersIdRoute
@@ -354,6 +363,7 @@ export interface FileRouteTypes {
     | '/app/403'
     | '/app/'
     | '/app/carts/$id'
+    | '/app/customers/$id'
     | '/app/inventory/movements'
     | '/app/locations/create'
     | '/app/orders/$id'
@@ -389,6 +399,7 @@ export interface FileRouteTypes {
     | '/app/403'
     | '/app'
     | '/app/carts/$id'
+    | '/app/customers/$id'
     | '/app/inventory/movements'
     | '/app/locations/create'
     | '/app/orders/$id'
@@ -427,6 +438,7 @@ export interface FileRouteTypes {
     | '/app/403'
     | '/app/'
     | '/app/carts/$id'
+    | '/app/customers/$id'
     | '/app/inventory/movements'
     | '/app/locations/create'
     | '/app/orders/$id'
@@ -547,6 +559,13 @@ declare module '@tanstack/react-router' {
       path: '/customers'
       fullPath: '/app/customers/'
       preLoaderRoute: typeof AppCustomersIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/customers/$id': {
+      id: '/app/customers/$id'
+      path: '/customers/$id'
+      fullPath: '/app/customers/$id'
+      preLoaderRoute: typeof AppCustomersIdRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/app/developers/': {
@@ -765,6 +784,7 @@ interface AppRouteRouteChildren {
   App403Route: typeof App403Route
   AppIndexRoute: typeof AppIndexRoute
   AppCartsIdRoute: typeof AppCartsIdRoute
+  AppCustomersIdRoute: typeof AppCustomersIdRoute
   AppInventoryMovementsRoute: typeof AppInventoryMovementsRoute
   AppLocationsCreateRoute: typeof AppLocationsCreateRoute
   AppOrdersIdRoute: typeof AppOrdersIdRoute
@@ -789,6 +809,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   App403Route: App403Route,
   AppIndexRoute: AppIndexRoute,
   AppCartsIdRoute: AppCartsIdRoute,
+  AppCustomersIdRoute: AppCustomersIdRoute,
   AppInventoryMovementsRoute: AppInventoryMovementsRoute,
   AppLocationsCreateRoute: AppLocationsCreateRoute,
   AppOrdersIdRoute: AppOrdersIdRoute,

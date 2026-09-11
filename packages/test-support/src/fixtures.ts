@@ -516,6 +516,7 @@ export async function insertOrder(
       | 'payment_failed';
     customerEmail?: string | null;
     customerName?: string | null;
+    customerId?: number | null;
     subtotalCents?: number;
     amountTotalCents?: number;
     shippingCents?: number;
@@ -531,6 +532,7 @@ export async function insertOrder(
         status: opts.status ?? 'paid',
         customerEmail: opts.customerEmail ?? 'buyer@test.com',
         customerName: opts.customerName ?? 'Buyer',
+        customerId: opts.customerId ?? null,
         subtotalCents: opts.subtotalCents ?? 1000,
         amountTotalCents: opts.amountTotalCents ?? 1000,
         shippingCents: opts.shippingCents ?? 0,

@@ -24,4 +24,13 @@ describe('customers RBAC (OS-178)', () => {
     expect(catalogKeys).toContain('customers:read');
     expect(catalogKeys).toContain('customers:write');
   });
+
+  it('gates the customer detail + order history routes with customers:read alone (OS-189)', () => {
+    expect(perm(CustomersController.prototype, 'findOne')).toEqual([
+      'customers:read',
+    ]);
+    expect(perm(CustomersController.prototype, 'findOrders')).toEqual([
+      'customers:read',
+    ]);
+  });
 });

@@ -18,7 +18,7 @@ export function createApiKeysResource(client: Client<paths>, doRequest: DoFn) {
 
     remove: async (id: number) => {
       const path: paths["/api-keys/{id}"]["delete"]["parameters"]["path"] = {
-        id: String(id),
+        id,
       };
       return unwrap(
         await doRequest(() =>

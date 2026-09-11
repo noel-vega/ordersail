@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Customer } from './entities/customer.entity';
+import { CustomerDetail } from './entities/customer-detail.entity';
 import { PaginatedCustomers } from './entities/paginated-customers.entity';
+import { PaginatedCustomerOrders } from './entities/paginated-customer-orders.entity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { resolvePageParams } from 'src/shared/pagination';
 import {
@@ -11,6 +13,7 @@ import {
   eq,
   ilike,
   or,
+  ordersTable,
   sql,
   type SQL,
 } from 'db/sales';
@@ -67,6 +70,79 @@ export class CustomersService {
       .limit(limit);
 
     return rows.map(toCustomer);
+  }
+
+  async findOne(
+    id: number,
+    accountId: number,
+  ): Promise<CustomerDetail | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(customersTable)
+      .where(
+        and(eq(customersTable.id, id), eq(customersTable.accountId, accountId)),
+      );
+    if (!row) return undefined;
+
+    const lifetimeValueCents = await this.getLifetimeValueCents(id, accountId);
+    return { ...toCustomer(row), lifetimeValueCents };
+  }
+
+  // sum of amountTotalCents across every order linked to this customer via
+  // orders.customerId (OS-189) — same coalesce/sum convention as
+  // DashboardService.getOrderTotals
+  private async getLifetimeValueCents(
+    customerId: number,
+    accountId: number,
+  ): Promise<number> {
+    const [row] = await this.db
+      .select({
+        total: sql<number>`coalesce(sum(${ordersTable.amountTotalCents}), 0)::int`,
+      })
+      .from(ordersTable)
+      .where(
+        and(
+          eq(ordersTable.customerId, customerId),
+          eq(ordersTable.accountId, accountId),
+        ),
+      );
+
+    return row.total;
+  }
+
+  async findOrders(
+    customerId: number,
+    accountId: number,
+    limit: number,
+    offset: number,
+  ): Promise<PaginatedCustomerOrders> {
+    const { limit: take, offset: skip } = resolvePageParams(limit, offset);
+    const where = and(
+      eq(ordersTable.customerId, customerId),
+      eq(ordersTable.accountId, accountId),
+    );
+
+    const [items, [{ total }]] = await Promise.all([
+      this.db
+        .select({
+          id: ordersTable.id,
+          channel: ordersTable.channel,
+          status: ordersTable.status,
+          amountTotalCents: ordersTable.amountTotalCents,
+          createdAt: ordersTable.createdAt,
+        })
+        .from(ordersTable)
+        .where(where)
+        .orderBy(desc(ordersTable.createdAt), desc(ordersTable.id))
+        .limit(take)
+        .offset(skip),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(ordersTable)
+        .where(where),
+    ]);
+
+    return { items, total, limit: take, offset: skip };
   }
 
   private filter(accountId: number, q?: string): SQL | undefined {

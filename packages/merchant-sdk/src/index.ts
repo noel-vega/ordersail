@@ -75,7 +75,12 @@ export type User = components["schemas"]["User"];
 export type PaginatedUsers = components["schemas"]["PaginatedUsers"];
 export type CreateUserDto = components["schemas"]["CreateUserDto"];
 export type Customer = components["schemas"]["Customer"];
+export type CustomerDetail = components["schemas"]["CustomerDetail"];
+export type CustomerOrderSummary =
+  components["schemas"]["CustomerOrderSummary"];
 export type PaginatedCustomers = components["schemas"]["PaginatedCustomers"];
+export type PaginatedCustomerOrders =
+  components["schemas"]["PaginatedCustomerOrders"];
 export type AcceptInviteDto = components["schemas"]["AcceptInviteDto"];
 export type AuthMe = components["schemas"]["AuthMe"];
 export type DashboardSummary = components["schemas"]["DashboardSummary"];
