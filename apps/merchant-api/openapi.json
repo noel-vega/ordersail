@@ -117,6 +117,35 @@
         ]
       }
     },
+    "/auth/me": {
+      "get": {
+        "operationId": "AuthController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMe"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/auth/logout": {
       "post": {
         "operationId": "AuthController_logout",
@@ -246,6 +275,84 @@
         ]
       }
     },
+    "/users/{id}": {
+      "get": {
+        "operationId": "UsersController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      },
+      "patch": {
+        "operationId": "UsersController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
     "/users/{id}/roles": {
       "patch": {
         "operationId": "UsersController_updateRoles",
@@ -269,6 +376,146 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/{id}/deactivate": {
+      "post": {
+        "operationId": "UsersController_deactivate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/{id}/reactivate": {
+      "post": {
+        "operationId": "UsersController_reactivate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/{id}/invite/resend": {
+      "post": {
+        "operationId": "UsersController_resendInvite",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/{id}/invite": {
+      "delete": {
+        "operationId": "UsersController_revokeInvite",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -491,6 +738,164 @@
         ],
         "tags": [
           "Roles"
+        ]
+      }
+    },
+    "/api-keys": {
+      "get": {
+        "operationId": "ApiKeysController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "ApiKeys"
+        ]
+      },
+      "post": {
+        "operationId": "ApiKeysController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiKeyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "ApiKeys"
+        ]
+      }
+    },
+    "/api-keys/{id}": {
+      "delete": {
+        "operationId": "ApiKeysController_revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "ApiKeys"
+        ]
+      }
+    },
+    "/account": {
+      "get": {
+        "operationId": "AccountController_findOne",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Account"
+        ]
+      },
+      "patch": {
+        "operationId": "AccountController_update",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Account"
         ]
       }
     },
@@ -1377,95 +1782,9 @@
         ]
       }
     },
-    "/locations": {
-      "post": {
-        "operationId": "LocationsController_create",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateLocationDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Location"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Locations"
-        ]
-      },
-      "get": {
-        "operationId": "LocationsController_findAll",
-        "parameters": [
-          {
-            "name": "limit",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "offset",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "description": "name match",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaginatedLocations"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Locations"
-        ]
-      }
-    },
-    "/locations/{id}": {
+    "/categories/{id}": {
       "patch": {
-        "operationId": "LocationsController_update",
+        "operationId": "CategoriesController_update",
         "parameters": [
           {
             "name": "id",
@@ -1481,7 +1800,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateLocationDto"
+                "$ref": "#/components/schemas/UpdateCategoryDto"
               }
             }
           }
@@ -1492,7 +1811,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Location"
+                  "$ref": "#/components/schemas/Category"
                 }
               }
             }
@@ -1504,7 +1823,40 @@
           }
         ],
         "tags": [
-          "Locations"
+          "Categories"
+        ]
+      },
+      "delete": {
+        "operationId": "CategoriesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Categories"
         ]
       }
     },
@@ -1693,43 +2045,16 @@
         ]
       }
     },
-    "/api-keys": {
-      "get": {
-        "operationId": "ApiKeysController_list",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ApiKeyDto"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "ApiKeys"
-        ]
-      },
+    "/locations": {
       "post": {
-        "operationId": "ApiKeysController_create",
+        "operationId": "LocationsController_create",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateApiKeyDto"
+                "$ref": "#/components/schemas/CreateLocationDto"
               }
             }
           }
@@ -1740,7 +2065,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyDto"
+                  "$ref": "#/components/schemas/Location"
                 }
               }
             }
@@ -1752,13 +2077,11 @@
           }
         ],
         "tags": [
-          "ApiKeys"
+          "Locations"
         ]
-      }
-    },
-    "/carts": {
+      },
       "get": {
-        "operationId": "CartsController_findAll",
+        "operationId": "LocationsController_findAll",
         "parameters": [
           {
             "name": "limit",
@@ -1775,38 +2098,12 @@
             "schema": {
               "type": "number"
             }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaginatedCarts"
-                }
-              }
-            }
-          }
-        },
-        "security": [
+          },
           {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Carts"
-        ]
-      }
-    },
-    "/carts/{id}": {
-      "get": {
-        "operationId": "CartsController_findOne",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "name match",
             "schema": {
               "type": "string"
             }
@@ -1818,7 +2115,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CartDetail"
+                  "$ref": "#/components/schemas/PaginatedLocations"
                 }
               }
             }
@@ -1830,56 +2127,40 @@
           }
         ],
         "tags": [
-          "Carts"
+          "Locations"
         ]
       }
     },
-    "/stripe-connect/account-session": {
-      "post": {
-        "operationId": "StripeConnectController_createAccountSession",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountSessionResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "StripeConnect"
-        ]
-      }
-    },
-    "/stripe-connect/status": {
-      "get": {
-        "operationId": "StripeConnectController_getStatus",
+    "/locations/{id}": {
+      "patch": {
+        "operationId": "LocationsController_update",
         "parameters": [
           {
-            "name": "refresh",
-            "required": false,
-            "in": "query",
+            "name": "id",
+            "required": true,
+            "in": "path",
             "schema": {
-              "type": "boolean"
+              "type": "string"
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLocationDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StripeConnectStatus"
+                  "$ref": "#/components/schemas/Location"
                 }
               }
             }
@@ -1891,7 +2172,7 @@
           }
         ],
         "tags": [
-          "StripeConnect"
+          "Locations"
         ]
       }
     },
@@ -2108,6 +2389,67 @@
         ]
       }
     },
+    "/stripe-connect/account-session": {
+      "post": {
+        "operationId": "StripeConnectController_createAccountSession",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSessionResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "StripeConnect"
+        ]
+      }
+    },
+    "/stripe-connect/status": {
+      "get": {
+        "operationId": "StripeConnectController_getStatus",
+        "parameters": [
+          {
+            "name": "refresh",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StripeConnectStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "StripeConnect"
+        ]
+      }
+    },
     "/fulfillments/rates": {
       "post": {
         "operationId": "FulfillmentsController_getRates",
@@ -2183,17 +2525,34 @@
         ]
       }
     },
-    "/account": {
+    "/carts": {
       "get": {
-        "operationId": "AccountController_findOne",
-        "parameters": [],
+        "operationId": "CartsController_findAll",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Account"
+                  "$ref": "#/components/schemas/PaginatedCarts"
                 }
               }
             }
@@ -2205,29 +2564,30 @@
           }
         ],
         "tags": [
-          "Account"
+          "Carts"
         ]
-      },
-      "patch": {
-        "operationId": "AccountController_update",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAccountDto"
-              }
+      }
+    },
+    "/carts/{id}": {
+      "get": {
+        "operationId": "CartsController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
             }
           }
-        },
+        ],
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Account"
+                  "$ref": "#/components/schemas/CartDetail"
                 }
               }
             }
@@ -2239,7 +2599,68 @@
           }
         ],
         "tags": [
-          "Account"
+          "Carts"
+        ]
+      }
+    },
+    "/failed-orders": {
+      "get": {
+        "operationId": "FailedOrdersController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FailedOrdersList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "FailedOrders"
+        ]
+      }
+    },
+    "/failed-orders/{id}/retry": {
+      "post": {
+        "operationId": "FailedOrdersController_retry",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FailedOrder"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "FailedOrders"
         ]
       }
     },
@@ -2489,6 +2910,32 @@
         ]
       }
     },
+    "/onboarding/status": {
+      "get": {
+        "operationId": "OnboardingController_getStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Onboarding"
+        ]
+      }
+    },
     "/pos-devices": {
       "post": {
         "operationId": "PosDevicesController_create",
@@ -2666,375 +3113,6 @@
           "PosDevices"
         ]
       }
-    },
-    "/failed-orders": {
-      "get": {
-        "operationId": "FailedOrdersController_list",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FailedOrdersList"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "FailedOrders"
-        ]
-      }
-    },
-    "/failed-orders/{id}/retry": {
-      "post": {
-        "operationId": "FailedOrdersController_retry",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FailedOrder"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "FailedOrders"
-        ]
-      }
-    },
-    "/api-keys/{id}": {
-      "delete": {
-        "operationId": "ApiKeysController_revoke",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiKeyDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "ApiKeys"
-        ]
-      }
-    },
-    "/onboarding/status": {
-      "get": {
-        "operationId": "OnboardingController_getStatus",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OnboardingStatus"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Onboarding"
-        ]
-      }
-    },
-    "/auth/me": {
-      "get": {
-        "operationId": "AuthController_me",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthMe"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Auth"
-        ]
-      }
-    },
-    "/users/{id}": {
-      "get": {
-        "operationId": "UsersController_findOne",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Users"
-        ]
-      },
-      "patch": {
-        "operationId": "UsersController_update",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateUserProfileDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/users/{id}/deactivate": {
-      "post": {
-        "operationId": "UsersController_deactivate",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/users/{id}/reactivate": {
-      "post": {
-        "operationId": "UsersController_reactivate",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/users/{id}/invite/resend": {
-      "post": {
-        "operationId": "UsersController_resendInvite",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/users/{id}/invite": {
-      "delete": {
-        "operationId": "UsersController_revokeInvite",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Users"
-        ]
-      }
     }
   },
   "info": {
@@ -3126,6 +3204,40 @@
           "password"
         ]
       },
+      "AuthMe": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number"
+          },
+          "email": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "number"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "userId",
+          "email",
+          "firstName",
+          "lastName",
+          "accountId",
+          "permissions"
+        ]
+      },
       "CreateUserDto": {
         "type": "object",
         "properties": {
@@ -3179,6 +3291,14 @@
           "accountId": {
             "type": "number"
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "invited",
+              "deactivated"
+            ]
+          },
           "firstName": {
             "type": "string"
           },
@@ -3205,14 +3325,6 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "invited",
-              "deactivated"
-            ]
           }
         },
         "required": [
@@ -3253,6 +3365,20 @@
           "limit",
           "offset"
         ]
+      },
+      "UpdateUserProfileDto": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        }
       },
       "AssignRolesDto": {
         "type": "object",
@@ -3422,6 +3548,84 @@
           "updatedAt"
         ]
       },
+      "ApiKeyDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "label",
+          "createdAt"
+        ]
+      },
+      "CreateApiKeyDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "phone",
+          "email",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpdateAccountDto": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        }
+      },
       "CreateProductDto": {
         "type": "object",
         "properties": {
@@ -3585,32 +3789,6 @@
           "name",
           "createdAt",
           "updatedAt"
-        ]
-      },
-      "PaginatedBrands": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Brand"
-            }
-          },
-          "total": {
-            "type": "number"
-          },
-          "limit": {
-            "type": "number"
-          },
-          "offset": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "limit",
-          "offset"
         ]
       },
       "ProductImage": {
@@ -3997,6 +4175,32 @@
           "name"
         ]
       },
+      "PaginatedBrands": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Brand"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
       "CreateCategoryDto": {
         "type": "object",
         "properties": {
@@ -4037,44 +4241,7 @@
           "updatedAt"
         ]
       },
-      "PaginatedCategories": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Category"
-            }
-          },
-          "total": {
-            "type": "number"
-          },
-          "limit": {
-            "type": "number"
-          },
-          "offset": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "limit",
-          "offset"
-        ]
-      },
-      "CreateLocationDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ]
-      },
-      "Location": {
+      "CategoryListItem": {
         "type": "object",
         "properties": {
           "id": {
@@ -4086,29 +4253,8 @@
           "name": {
             "type": "string"
           },
-          "addressLine1": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressLine2": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCity": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressState": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressPostalCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCountry": {
-            "type": "string",
-            "nullable": true
+          "productCount": {
+            "type": "number"
           },
           "createdAt": {
             "format": "date-time",
@@ -4123,23 +4269,18 @@
           "id",
           "accountId",
           "name",
-          "addressLine1",
-          "addressLine2",
-          "addressCity",
-          "addressState",
-          "addressPostalCode",
-          "addressCountry",
+          "productCount",
           "createdAt",
           "updatedAt"
         ]
       },
-      "PaginatedLocations": {
+      "PaginatedCategories": {
         "type": "object",
         "properties": {
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Location"
+              "$ref": "#/components/schemas/CategoryListItem"
             }
           },
           "total": {
@@ -4159,32 +4300,11 @@
           "offset"
         ]
       },
-      "UpdateLocationDto": {
+      "UpdateCategoryDto": {
         "type": "object",
         "properties": {
-          "addressLine1": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressLine2": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCity": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressState": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressPostalCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCountry": {
-            "type": "string",
-            "nullable": true
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -4385,16 +4505,473 @@
           "offset"
         ]
       },
-      "ApiKeyDto": {
+      "CreateLocationDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "Location": {
         "type": "object",
         "properties": {
           "id": {
             "type": "number"
           },
-          "key": {
+          "accountId": {
+            "type": "number"
+          },
+          "name": {
             "type": "string"
           },
-          "label": {
+          "addressLine1": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressLine2": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCity": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressState": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressPostalCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCountry": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "name",
+          "addressLine1",
+          "addressLine2",
+          "addressCity",
+          "addressState",
+          "addressPostalCode",
+          "addressCountry",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PaginatedLocations": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Location"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "UpdateLocationDto": {
+        "type": "object",
+        "properties": {
+          "addressLine1": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressLine2": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCity": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressState": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressPostalCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCountry": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "OrderListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "web",
+              "pos"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
+          },
+          "customerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "itemCount": {
+            "type": "number"
+          },
+          "amountTotalCents": {
+            "type": "number"
+          },
+          "fulfillmentStatus": {
+            "type": "string",
+            "enum": [
+              "unfulfilled",
+              "partially_fulfilled",
+              "fulfilled"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "channel",
+          "status",
+          "customerName",
+          "customerEmail",
+          "itemCount",
+          "amountTotalCents",
+          "fulfillmentStatus",
+          "createdAt"
+        ]
+      },
+      "PaginatedOrders": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderListItem"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "OrderShippingInfo": {
+        "type": "object",
+        "properties": {
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "postalCode": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "line1",
+          "line2",
+          "city",
+          "state",
+          "postalCode",
+          "country",
+          "locationId"
+        ]
+      },
+      "OrderPayment": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "stripe",
+              "cash",
+              "card"
+            ]
+          },
+          "amountCents": {
+            "type": "number"
+          },
+          "amountTenderedCents": {
+            "type": "number",
+            "nullable": true
+          },
+          "stripeRefundId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "method",
+          "amountCents",
+          "amountTenderedCents",
+          "stripeRefundId",
+          "reason"
+        ]
+      },
+      "OrderItemAllocation": {
+        "type": "object",
+        "properties": {
+          "locationId": {
+            "type": "number"
+          },
+          "locationName": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "locationId",
+          "locationName",
+          "quantity"
+        ]
+      },
+      "OrderDetailItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "variantId": {
+            "type": "number",
+            "nullable": true
+          },
+          "productName": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "optionsLabel": {
+            "type": "string",
+            "nullable": true
+          },
+          "priceCents": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "fulfilledQuantity": {
+            "type": "number"
+          },
+          "remainingQuantity": {
+            "type": "number"
+          },
+          "refundedQuantity": {
+            "type": "number"
+          },
+          "allocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderItemAllocation"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "variantId",
+          "productName",
+          "sku",
+          "optionsLabel",
+          "priceCents",
+          "quantity",
+          "fulfilledQuantity",
+          "remainingQuantity",
+          "refundedQuantity",
+          "allocations"
+        ]
+      },
+      "FulfillmentItem": {
+        "type": "object",
+        "properties": {
+          "orderItemId": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "orderItemId",
+          "quantity"
+        ]
+      },
+      "Fulfillment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "locationId": {
+            "type": "number"
+          },
+          "locationName": {
+            "type": "string"
+          },
+          "shippingCarrier": {
+            "type": "string",
+            "nullable": true
+          },
+          "shippingServiceLevel": {
+            "type": "string",
+            "nullable": true
+          },
+          "trackingNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "trackingUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "labelUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "amountCents": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FulfillmentItem"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "locationId",
+          "locationName",
+          "shippingCarrier",
+          "shippingServiceLevel",
+          "trackingNumber",
+          "trackingUrl",
+          "labelUrl",
+          "amountCents",
+          "createdAt",
+          "items"
+        ]
+      },
+      "OrderEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "status_changed",
+              "refund",
+              "cancellation",
+              "payment",
+              "fulfillment",
+              "note"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "actorType": {
+            "type": "string",
+            "enum": [
+              "staff",
+              "system",
+              "customer"
+            ]
+          },
+          "actorName": {
             "type": "string",
             "nullable": true
           },
@@ -4405,9 +4982,411 @@
         },
         "required": [
           "id",
-          "key",
-          "label",
+          "type",
+          "message",
+          "actorType",
+          "actorName",
           "createdAt"
+        ]
+      },
+      "OrderDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "web",
+              "pos"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
+          },
+          "customerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "shipping": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderShippingInfo"
+              }
+            ]
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderPayment"
+            }
+          },
+          "subtotalCents": {
+            "type": "number"
+          },
+          "amountTotalCents": {
+            "type": "number"
+          },
+          "shippingCents": {
+            "type": "number"
+          },
+          "fulfillmentStatus": {
+            "type": "string",
+            "enum": [
+              "unfulfilled",
+              "partially_fulfilled",
+              "fulfilled"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderDetailItem"
+            }
+          },
+          "fulfillments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Fulfillment"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderEvent"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "channel",
+          "status",
+          "customerName",
+          "customerEmail",
+          "shipping",
+          "payments",
+          "subtotalCents",
+          "amountTotalCents",
+          "shippingCents",
+          "fulfillmentStatus",
+          "createdAt",
+          "items",
+          "fulfillments",
+          "events"
+        ]
+      },
+      "UpdateOrderStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "OrderStatusChange": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
+          },
+          "previousStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "previousStatus"
+        ]
+      },
+      "RefundLineDto": {
+        "type": "object",
+        "properties": {
+          "orderItemId": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "orderItemId",
+          "quantity"
+        ]
+      },
+      "RefundOrderDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "restock": {
+            "type": "boolean",
+            "default": true
+          },
+          "amountCents": {
+            "type": "number"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundLineDto"
+            }
+          }
+        }
+      },
+      "OrderRefund": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "orderId": {
+            "type": "number"
+          },
+          "amountCents": {
+            "type": "number"
+          },
+          "stripeRefundId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "orderId",
+          "amountCents",
+          "stripeRefundId",
+          "status"
+        ]
+      },
+      "CancelOrderDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "OrderCancellation": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "canceled"
+            ]
+          },
+          "refundIssued": {
+            "type": "boolean"
+          },
+          "refundAmountCents": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "orderId",
+          "status",
+          "refundIssued",
+          "refundAmountCents"
+        ]
+      },
+      "AccountSessionResponse": {
+        "type": "object",
+        "properties": {
+          "clientSecret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientSecret"
+        ]
+      },
+      "StripeConnectStatus": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "chargesEnabled": {
+            "type": "boolean"
+          },
+          "detailsSubmitted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connected",
+          "chargesEnabled",
+          "detailsSubmitted"
+        ]
+      },
+      "FulfillmentItemInput": {
+        "type": "object",
+        "properties": {
+          "orderItemId": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "orderItemId",
+          "quantity"
+        ]
+      },
+      "GetFulfillmentRatesDto": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "number"
+          },
+          "locationId": {
+            "type": "number"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FulfillmentItemInput"
+            }
+          }
+        },
+        "required": [
+          "orderId",
+          "locationId",
+          "items"
+        ]
+      },
+      "ShippingRate": {
+        "type": "object",
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "servicelevel": {
+            "type": "string"
+          },
+          "amountCents": {
+            "type": "number"
+          },
+          "estimatedDays": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "objectId",
+          "provider",
+          "servicelevel",
+          "amountCents",
+          "estimatedDays"
+        ]
+      },
+      "CreateFulfillmentDto": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "number"
+          },
+          "locationId": {
+            "type": "number"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FulfillmentItemInput"
+            }
+          },
+          "rateObjectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "servicelevel": {
+            "type": "string"
+          },
+          "amountCents": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "orderId",
+          "locationId",
+          "items",
+          "rateObjectId",
+          "provider",
+          "servicelevel",
+          "amountCents"
         ]
       },
       "CartListItem": {
@@ -4567,54 +5546,24 @@
           "itemCount"
         ]
       },
-      "AccountSessionResponse": {
-        "type": "object",
-        "properties": {
-          "clientSecret": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "clientSecret"
-        ]
-      },
-      "StripeConnectStatus": {
-        "type": "object",
-        "properties": {
-          "connected": {
-            "type": "boolean"
-          },
-          "chargesEnabled": {
-            "type": "boolean"
-          },
-          "detailsSubmitted": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "connected",
-          "chargesEnabled",
-          "detailsSubmitted"
-        ]
-      },
-      "OrderListItem": {
+      "FailedOrder": {
         "type": "object",
         "properties": {
           "id": {
             "type": "number"
           },
-          "channel": {
-            "type": "string",
-            "enum": [
-              "web",
-              "pos"
-            ]
+          "stripeCheckoutSessionId": {
+            "type": "string"
           },
-          "customerName": {
+          "stripePaymentIntentId": {
             "type": "string",
             "nullable": true
           },
           "customerEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerName": {
             "type": "string",
             "nullable": true
           },
@@ -4622,516 +5571,23 @@
             "type": "number"
           },
           "amountTotalCents": {
+            "type": "number",
+            "nullable": true
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "attempts": {
             "type": "number"
           },
-          "fulfillmentStatus": {
+          "resolvedAt": {
             "type": "string",
-            "enum": [
-              "unfulfilled",
-              "partially_fulfilled",
-              "fulfilled"
-            ]
-          },
-          "createdAt": {
             "format": "date-time",
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "paid",
-              "partially_refunded",
-              "refunded",
-              "canceled",
-              "payment_failed"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "channel",
-          "customerName",
-          "customerEmail",
-          "itemCount",
-          "amountTotalCents",
-          "fulfillmentStatus",
-          "createdAt",
-          "status"
-        ]
-      },
-      "PaginatedOrders": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrderListItem"
-            }
-          },
-          "total": {
-            "type": "number"
-          },
-          "limit": {
-            "type": "number"
-          },
-          "offset": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "limit",
-          "offset"
-        ]
-      },
-      "OrderShippingInfo": {
-        "type": "object",
-        "properties": {
-          "line1": {
-            "type": "string"
-          },
-          "line2": {
-            "type": "string",
             "nullable": true
           },
-          "city": {
-            "type": "string"
-          },
-          "state": {
+          "resolvedBy": {
             "type": "string",
             "nullable": true
-          },
-          "postalCode": {
-            "type": "string"
-          },
-          "country": {
-            "type": "string"
-          },
-          "locationId": {
-            "type": "number",
-            "nullable": true
-          }
-        },
-        "required": [
-          "line1",
-          "line2",
-          "city",
-          "state",
-          "postalCode",
-          "country",
-          "locationId"
-        ]
-      },
-      "OrderPayment": {
-        "type": "object",
-        "properties": {
-          "method": {
-            "type": "string",
-            "enum": [
-              "stripe",
-              "cash",
-              "card"
-            ]
-          },
-          "amountCents": {
-            "type": "number"
-          },
-          "amountTenderedCents": {
-            "type": "number",
-            "nullable": true
-          },
-          "stripeRefundId": {
-            "type": "string",
-            "nullable": true
-          },
-          "reason": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "required": [
-          "method",
-          "amountCents",
-          "amountTenderedCents",
-          "stripeRefundId",
-          "reason"
-        ]
-      },
-      "OrderItemAllocation": {
-        "type": "object",
-        "properties": {
-          "locationId": {
-            "type": "number"
-          },
-          "locationName": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "locationId",
-          "locationName",
-          "quantity"
-        ]
-      },
-      "OrderDetailItem": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "variantId": {
-            "type": "number",
-            "nullable": true
-          },
-          "productName": {
-            "type": "string"
-          },
-          "sku": {
-            "type": "string",
-            "nullable": true
-          },
-          "optionsLabel": {
-            "type": "string",
-            "nullable": true
-          },
-          "priceCents": {
-            "type": "number"
-          },
-          "quantity": {
-            "type": "number"
-          },
-          "fulfilledQuantity": {
-            "type": "number"
-          },
-          "remainingQuantity": {
-            "type": "number"
-          },
-          "allocations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrderItemAllocation"
-            }
-          },
-          "refundedQuantity": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "variantId",
-          "productName",
-          "sku",
-          "optionsLabel",
-          "priceCents",
-          "quantity",
-          "fulfilledQuantity",
-          "remainingQuantity",
-          "allocations",
-          "refundedQuantity"
-        ]
-      },
-      "FulfillmentItem": {
-        "type": "object",
-        "properties": {
-          "orderItemId": {
-            "type": "number"
-          },
-          "quantity": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "orderItemId",
-          "quantity"
-        ]
-      },
-      "Fulfillment": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "locationId": {
-            "type": "number"
-          },
-          "locationName": {
-            "type": "string"
-          },
-          "shippingCarrier": {
-            "type": "string",
-            "nullable": true
-          },
-          "shippingServiceLevel": {
-            "type": "string",
-            "nullable": true
-          },
-          "trackingNumber": {
-            "type": "string",
-            "nullable": true
-          },
-          "trackingUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "labelUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "amountCents": {
-            "type": "number"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FulfillmentItem"
-            }
-          }
-        },
-        "required": [
-          "id",
-          "locationId",
-          "locationName",
-          "shippingCarrier",
-          "shippingServiceLevel",
-          "trackingNumber",
-          "trackingUrl",
-          "labelUrl",
-          "amountCents",
-          "createdAt",
-          "items"
-        ]
-      },
-      "OrderDetail": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "channel": {
-            "type": "string",
-            "enum": [
-              "web",
-              "pos"
-            ]
-          },
-          "customerName": {
-            "type": "string",
-            "nullable": true
-          },
-          "customerEmail": {
-            "type": "string",
-            "nullable": true
-          },
-          "shipping": {
-            "nullable": true,
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/OrderShippingInfo"
-              }
-            ]
-          },
-          "payments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrderPayment"
-            }
-          },
-          "subtotalCents": {
-            "type": "number"
-          },
-          "amountTotalCents": {
-            "type": "number"
-          },
-          "shippingCents": {
-            "type": "number"
-          },
-          "fulfillmentStatus": {
-            "type": "string",
-            "enum": [
-              "unfulfilled",
-              "partially_fulfilled",
-              "fulfilled"
-            ]
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrderDetailItem"
-            }
-          },
-          "fulfillments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Fulfillment"
-            }
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "paid",
-              "partially_refunded",
-              "refunded",
-              "canceled",
-              "payment_failed"
-            ]
-          },
-          "events": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrderEvent"
-            }
-          }
-        },
-        "required": [
-          "id",
-          "channel",
-          "customerName",
-          "customerEmail",
-          "shipping",
-          "payments",
-          "subtotalCents",
-          "amountTotalCents",
-          "shippingCents",
-          "fulfillmentStatus",
-          "createdAt",
-          "items",
-          "fulfillments",
-          "status",
-          "events"
-        ]
-      },
-      "FulfillmentItemInput": {
-        "type": "object",
-        "properties": {
-          "orderItemId": {
-            "type": "number"
-          },
-          "quantity": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "orderItemId",
-          "quantity"
-        ]
-      },
-      "GetFulfillmentRatesDto": {
-        "type": "object",
-        "properties": {
-          "orderId": {
-            "type": "number"
-          },
-          "locationId": {
-            "type": "number"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FulfillmentItemInput"
-            }
-          }
-        },
-        "required": [
-          "orderId",
-          "locationId",
-          "items"
-        ]
-      },
-      "ShippingRate": {
-        "type": "object",
-        "properties": {
-          "objectId": {
-            "type": "string"
-          },
-          "provider": {
-            "type": "string"
-          },
-          "servicelevel": {
-            "type": "string"
-          },
-          "amountCents": {
-            "type": "number"
-          },
-          "estimatedDays": {
-            "type": "number",
-            "nullable": true
-          }
-        },
-        "required": [
-          "objectId",
-          "provider",
-          "servicelevel",
-          "amountCents",
-          "estimatedDays"
-        ]
-      },
-      "CreateFulfillmentDto": {
-        "type": "object",
-        "properties": {
-          "orderId": {
-            "type": "number"
-          },
-          "locationId": {
-            "type": "number"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FulfillmentItemInput"
-            }
-          },
-          "rateObjectId": {
-            "type": "string"
-          },
-          "provider": {
-            "type": "string"
-          },
-          "servicelevel": {
-            "type": "string"
-          },
-          "amountCents": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "orderId",
-          "locationId",
-          "items",
-          "rateObjectId",
-          "provider",
-          "servicelevel",
-          "amountCents"
-        ]
-      },
-      "Account": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "name": {
-            "type": "string"
-          },
-          "phone": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
           },
           "createdAt": {
             "format": "date-time",
@@ -5144,23 +5600,37 @@
         },
         "required": [
           "id",
-          "name",
-          "phone",
-          "email",
+          "stripeCheckoutSessionId",
+          "stripePaymentIntentId",
+          "customerEmail",
+          "customerName",
+          "itemCount",
+          "amountTotalCents",
+          "errorMessage",
+          "attempts",
+          "resolvedAt",
+          "resolvedBy",
           "createdAt",
           "updatedAt"
         ]
       },
-      "UpdateAccountDto": {
+      "FailedOrdersList": {
         "type": "object",
         "properties": {
-          "phone": {
-            "type": "string"
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FailedOrder"
+            }
           },
-          "email": {
-            "type": "string"
+          "unresolvedCount": {
+            "type": "number"
           }
-        }
+        },
+        "required": [
+          "items",
+          "unresolvedCount"
+        ]
       },
       "Customer": {
         "type": "object",
@@ -5256,6 +5726,29 @@
           "outOfStockCount",
           "recentOrders",
           "recentCustomers"
+        ]
+      },
+      "OnboardingStatus": {
+        "type": "object",
+        "properties": {
+          "stripeConnected": {
+            "type": "boolean"
+          },
+          "hasCompleteLocation": {
+            "type": "boolean"
+          },
+          "hasActiveProduct": {
+            "type": "boolean"
+          },
+          "complete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stripeConnected",
+          "hasCompleteLocation",
+          "hasActiveProduct",
+          "complete"
         ]
       },
       "CreatePosDeviceDto": {
@@ -5365,380 +5858,6 @@
           },
           "locationId": {
             "type": "number"
-          }
-        }
-      },
-      "FailedOrder": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "stripeCheckoutSessionId": {
-            "type": "string"
-          },
-          "stripePaymentIntentId": {
-            "type": "string",
-            "nullable": true
-          },
-          "customerEmail": {
-            "type": "string",
-            "nullable": true
-          },
-          "customerName": {
-            "type": "string",
-            "nullable": true
-          },
-          "itemCount": {
-            "type": "number"
-          },
-          "amountTotalCents": {
-            "type": "number",
-            "nullable": true
-          },
-          "errorMessage": {
-            "type": "string"
-          },
-          "attempts": {
-            "type": "number"
-          },
-          "resolvedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "resolvedBy": {
-            "type": "string",
-            "nullable": true
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "stripeCheckoutSessionId",
-          "stripePaymentIntentId",
-          "customerEmail",
-          "customerName",
-          "itemCount",
-          "amountTotalCents",
-          "errorMessage",
-          "attempts",
-          "resolvedAt",
-          "resolvedBy",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "FailedOrdersList": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FailedOrder"
-            }
-          },
-          "unresolvedCount": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "items",
-          "unresolvedCount"
-        ]
-      },
-      "UpdateOrderStatusDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "paid",
-              "partially_refunded",
-              "refunded",
-              "canceled",
-              "payment_failed"
-            ]
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
-      "OrderStatusChange": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "paid",
-              "partially_refunded",
-              "refunded",
-              "canceled",
-              "payment_failed"
-            ]
-          },
-          "previousStatus": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "paid",
-              "partially_refunded",
-              "refunded",
-              "canceled",
-              "payment_failed"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "status",
-          "previousStatus"
-        ]
-      },
-      "RefundOrderDto": {
-        "type": "object",
-        "properties": {
-          "reason": {
-            "type": "string"
-          },
-          "restock": {
-            "type": "boolean",
-            "default": true
-          },
-          "amountCents": {
-            "type": "number"
-          },
-          "lines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RefundLineDto"
-            }
-          }
-        }
-      },
-      "OrderRefund": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "orderId": {
-            "type": "number"
-          },
-          "amountCents": {
-            "type": "number"
-          },
-          "stripeRefundId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "paid",
-              "partially_refunded",
-              "refunded",
-              "canceled",
-              "payment_failed"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "orderId",
-          "amountCents",
-          "stripeRefundId",
-          "status"
-        ]
-      },
-      "RefundLineDto": {
-        "type": "object",
-        "properties": {
-          "orderItemId": {
-            "type": "number"
-          },
-          "quantity": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "orderItemId",
-          "quantity"
-        ]
-      },
-      "CancelOrderDto": {
-        "type": "object",
-        "properties": {
-          "reason": {
-            "type": "string"
-          }
-        }
-      },
-      "OrderCancellation": {
-        "type": "object",
-        "properties": {
-          "orderId": {
-            "type": "number"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "canceled"
-            ]
-          },
-          "refundIssued": {
-            "type": "boolean"
-          },
-          "refundAmountCents": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "orderId",
-          "status",
-          "refundIssued",
-          "refundAmountCents"
-        ]
-      },
-      "OrderEvent": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "status_changed",
-              "refund",
-              "cancellation",
-              "payment",
-              "fulfillment",
-              "note"
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "actorType": {
-            "type": "string",
-            "enum": [
-              "staff",
-              "system",
-              "customer"
-            ]
-          },
-          "actorName": {
-            "type": "string",
-            "nullable": true
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "type",
-          "message",
-          "actorType",
-          "actorName",
-          "createdAt"
-        ]
-      },
-      "CreateApiKeyDto": {
-        "type": "object",
-        "properties": {
-          "label": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "OnboardingStatus": {
-        "type": "object",
-        "properties": {
-          "stripeConnected": {
-            "type": "boolean"
-          },
-          "hasCompleteLocation": {
-            "type": "boolean"
-          },
-          "hasActiveProduct": {
-            "type": "boolean"
-          },
-          "complete": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "stripeConnected",
-          "hasCompleteLocation",
-          "hasActiveProduct",
-          "complete"
-        ]
-      },
-      "AuthMe": {
-        "type": "object",
-        "properties": {
-          "userId": {
-            "type": "number"
-          },
-          "email": {
-            "type": "string"
-          },
-          "firstName": {
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string"
-          },
-          "accountId": {
-            "type": "number"
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "userId",
-          "email",
-          "firstName",
-          "lastName",
-          "accountId",
-          "permissions"
-        ]
-      },
-      "UpdateUserProfileDto": {
-        "type": "object",
-        "properties": {
-          "firstName": {
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string"
-          },
-          "phone": {
-            "type": "string"
           }
         }
       }

@@ -22,5 +22,30 @@ export function createCategoriesResource(client: Client<paths>, doRequest: DoFn)
       unwrap(
         await doRequest(() => client.POST("/categories", { body: params })),
       ),
+
+    update: async (
+      id: number,
+      params: components["schemas"]["UpdateCategoryDto"],
+    ) => {
+      const path: paths["/categories/{id}"]["patch"]["parameters"]["path"] = {
+        id: String(id),
+      };
+      return unwrap(
+        await doRequest(() =>
+          client.PATCH("/categories/{id}", { params: { path }, body: params }),
+        ),
+      );
+    },
+
+    remove: async (id: number) => {
+      const path: paths["/categories/{id}"]["delete"]["parameters"]["path"] = {
+        id: String(id),
+      };
+      return unwrap(
+        await doRequest(() =>
+          client.DELETE("/categories/{id}", { params: { path } }),
+        ),
+      );
+    },
   };
 }
