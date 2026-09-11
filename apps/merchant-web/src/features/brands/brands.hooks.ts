@@ -39,3 +39,25 @@ export function useCreateBrandMutation() {
     },
   })
 }
+
+export function useUpdateBrandMutation() {
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...params
+    }: { id: number } & Parameters<typeof merchantApi.brands.update>[1]) =>
+      merchantApi.brands.update(id, params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["brands"] })
+    },
+  })
+}
+
+export function useDeleteBrandMutation() {
+  return useMutation({
+    mutationFn: (id: number) => merchantApi.brands.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["brands"] })
+    },
+  })
+}
