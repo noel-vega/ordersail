@@ -1,10 +1,20 @@
 import { useState } from "react";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { Button } from "ui/button";
-import { MoreVerticalIcon, PencilIcon, PlusIcon } from "lucide-react";
+import { MoreVerticalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { type ColumnDef, type Row } from "@tanstack/react-table";
 import type { Location } from "merchant-sdk";
 import { format } from "date-fns";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +27,7 @@ import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
 import { usePermissions } from "../../auth/permission-context";
-import { useListLocationsQuery } from "../locations.hooks";
+import { useDeleteLocationMutation, useListLocationsQuery } from "../locations.hooks";
 import { EditLocationSheet } from "./edit-location-sheet";
 
 const route = getRouteApi("/app/locations/");
@@ -29,7 +39,9 @@ function formatAddress(location: Location) {
 
 function getColumns(handlers: {
   onEdit: (location: Location) => void;
+  onDelete: (location: Location) => void;
   canWrite: boolean;
+  canDelete: boolean;
 }): ColumnDef<Location>[] {
   return [
     {
@@ -51,7 +63,7 @@ function getColumns(handlers: {
       cell: ({ row }) =>
         format(new Date(row.original.createdAt), "MM/dd/yyyy hh:mm a"),
     },
-    ...(handlers.canWrite
+    ...(handlers.canWrite || handlers.canDelete
       ? [
           {
             id: "actions",
@@ -70,9 +82,19 @@ function getColumns(handlers: {
                   <MoreVerticalIcon />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => handlers.onEdit(row.original)}>
-                    <PencilIcon /> Edit address
-                  </DropdownMenuItem>
+                  {handlers.canWrite && (
+                    <DropdownMenuItem onClick={() => handlers.onEdit(row.original)}>
+                      <PencilIcon /> Edit address
+                    </DropdownMenuItem>
+                  )}
+                  {handlers.canDelete && (
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => handlers.onDelete(row.original)}
+                    >
+                      <Trash2Icon /> Delete
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             ),
@@ -86,12 +108,18 @@ export function ListLocationsView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const locations = useListLocationsQuery(search);
-  const canWrite = usePermissions().has("locations:write");
+  const permissions = usePermissions();
+  const canWrite = permissions.has("locations:write");
+  const canDelete = permissions.has("locations:delete");
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
+  const [deletingLocation, setDeletingLocation] = useState<Location | null>(null);
+  const deleteLocation = useDeleteLocationMutation();
 
   const columns = getColumns({
     onEdit: (location) => setEditingLocation(location),
+    onDelete: (location) => setDeletingLocation(location),
     canWrite,
+    canDelete,
   });
 
   return (
@@ -131,6 +159,35 @@ export function ListLocationsView() {
         open={editingLocation !== null}
         onOpenChange={(open) => !open && setEditingLocation(null)}
       />
+
+      <AlertDialog
+        open={deletingLocation !== null}
+        onOpenChange={(open) => !open && setDeletingLocation(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{deletingLocation?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleteLocation.isPending}
+              onClick={() => {
+                if (!deletingLocation) return;
+                deleteLocation.mutate(deletingLocation.id, {
+                  onSuccess: () => setDeletingLocation(null),
+                });
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

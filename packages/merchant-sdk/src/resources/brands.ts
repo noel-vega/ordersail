@@ -20,5 +20,28 @@ export function createBrandsResource(client: Client<paths>, doRequest: DoFn) {
 
     create: async (params: components["schemas"]["CreateBrandDto"]) =>
       unwrap(await doRequest(() => client.POST("/brands", { body: params }))),
+
+    update: async (
+      id: number,
+      params: components["schemas"]["UpdateBrandDto"],
+    ) => {
+      const path: paths["/brands/{id}"]["patch"]["parameters"]["path"] = {
+        id: String(id),
+      };
+      return unwrap(
+        await doRequest(() =>
+          client.PATCH("/brands/{id}", { params: { path }, body: params }),
+        ),
+      );
+    },
+
+    remove: async (id: number) => {
+      const path: paths["/brands/{id}"]["delete"]["parameters"]["path"] = {
+        id: String(id),
+      };
+      return unwrap(
+        await doRequest(() => client.DELETE("/brands/{id}", { params: { path } })),
+      );
+    },
   };
 }

@@ -1,6 +1,7 @@
 import {
   Controller,
   DefaultValuePipe,
+  Delete,
   Get,
   Post,
   Patch,
@@ -70,6 +71,19 @@ export class LocationsController {
       updateLocationDto,
       user.accountId,
     );
+    if (!location) throw new NotFoundException();
+    return location;
+  }
+
+  @Delete(':id')
+  @RequirePermissions('locations:delete')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: Location })
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const location = await this.locationsService.remove(+id, user.accountId);
     if (!location) throw new NotFoundException();
     return location;
   }

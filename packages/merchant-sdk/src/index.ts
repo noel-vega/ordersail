@@ -39,6 +39,7 @@ export type CreateVariantsDto = components["schemas"]["CreateVariantsDto"];
 export type Brand = components["schemas"]["Brand"];
 export type PaginatedBrands = components["schemas"]["PaginatedBrands"];
 export type Category = components["schemas"]["Category"];
+export type CategoryListItem = components["schemas"]["CategoryListItem"];
 export type PaginatedCategories = components["schemas"]["PaginatedCategories"];
 export type Location = components["schemas"]["Location"];
 export type PaginatedLocations = components["schemas"]["PaginatedLocations"];

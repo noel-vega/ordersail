@@ -2,13 +2,18 @@ import {
   Body,
   Controller,
   DefaultValuePipe,
+  Delete,
   Get,
+  NotFoundException,
+  Param,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
 import { BrandsService } from './brands.service';
 import { CreateBrandDto } from './dto/create-brand.dto';
+import { UpdateBrandDto } from './dto/update-brand.dto';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -50,5 +55,36 @@ export class BrandsController {
     @Query('q') q?: string,
   ) {
     return this.brandsService.findAll(limit, offset, user.accountId, q);
+  }
+
+  @Patch(':id')
+  @RequirePermissions('products:write')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: Brand })
+  async update(
+    @Param('id') id: string,
+    @Body() updateBrandDto: UpdateBrandDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const brand = await this.brandsService.update(
+      +id,
+      updateBrandDto,
+      user.accountId,
+    );
+    if (!brand) throw new NotFoundException();
+    return brand;
+  }
+
+  @Delete(':id')
+  @RequirePermissions('products:write')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: Brand })
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const brand = await this.brandsService.remove(+id, user.accountId);
+    if (!brand) throw new NotFoundException();
+    return brand;
   }
 }
