@@ -79,7 +79,10 @@ export class CategoriesController {
   @RequirePermissions('products:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: Category })
-  async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     const category = await this.categoriesService.remove(+id, user.accountId);
     if (!category) throw new NotFoundException();
     return category;

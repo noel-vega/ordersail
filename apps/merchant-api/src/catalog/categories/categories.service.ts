@@ -77,7 +77,10 @@ export class CategoriesService {
       .update(categoriesTable)
       .set({ ...updateCategoryDto, updatedAt: new Date() })
       .where(
-        and(eq(categoriesTable.id, id), eq(categoriesTable.accountId, accountId)),
+        and(
+          eq(categoriesTable.id, id),
+          eq(categoriesTable.accountId, accountId),
+        ),
       )
       .returning();
     return category;
@@ -91,7 +94,10 @@ export class CategoriesService {
     const [category] = await this.db
       .delete(categoriesTable)
       .where(
-        and(eq(categoriesTable.id, id), eq(categoriesTable.accountId, accountId)),
+        and(
+          eq(categoriesTable.id, id),
+          eq(categoriesTable.accountId, accountId),
+        ),
       )
       .returning();
     return category;

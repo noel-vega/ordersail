@@ -37,8 +37,11 @@ describe('CategoriesService.findAll (OS-162)', () => {
 
   it('reports productCount per category (OS-187)', async () => {
     const account = await insertAccount(db);
-    const used = await insertCategory(db, { accountId: account.id, name: 'Used' });
-    const unused = await insertCategory(db, { accountId: account.id, name: 'Unused' });
+    const used = await insertCategory(db, {
+      accountId: account.id,
+      name: 'Used',
+    });
+    await insertCategory(db, { accountId: account.id, name: 'Unused' });
     await insertProduct(db, { accountId: account.id, categoryIds: [used.id] });
     await insertProduct(db, { accountId: account.id, categoryIds: [used.id] });
     const service = await build();
@@ -54,10 +57,17 @@ describe('CategoriesService.update (OS-187)', () => {
   it('renames a category, scoped to its account', async () => {
     const account = await insertAccount(db);
     const other = await insertAccount(db);
-    const category = await insertCategory(db, { accountId: account.id, name: 'Old' });
+    const category = await insertCategory(db, {
+      accountId: account.id,
+      name: 'Old',
+    });
     const service = await build();
 
-    const updated = await service.update(category.id, { name: 'New' }, account.id);
+    const updated = await service.update(
+      category.id,
+      { name: 'New' },
+      account.id,
+    );
     expect(updated?.name).toBe('New');
 
     expect(
@@ -70,7 +80,10 @@ describe('CategoriesService.remove (OS-187)', () => {
   it('deletes a category even when products still reference it (cascades the join)', async () => {
     const account = await insertAccount(db);
     const category = await insertCategory(db, { accountId: account.id });
-    await insertProduct(db, { accountId: account.id, categoryIds: [category.id] });
+    await insertProduct(db, {
+      accountId: account.id,
+      categoryIds: [category.id],
+    });
     const service = await build();
 
     const removed = await service.remove(category.id, account.id);
