@@ -68,6 +68,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AuthController_me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/logout": {
         parameters: {
             query?: never;
@@ -116,6 +132,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UsersController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["UsersController_update"];
+        trace?: never;
+    };
     "/users/{id}/roles": {
         parameters: {
             query?: never;
@@ -130,6 +162,70 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["UsersController_updateRoles"];
+        trace?: never;
+    };
+    "/users/{id}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UsersController_deactivate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UsersController_reactivate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/invite/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UsersController_resendInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["UsersController_revokeInvite"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/permissions": {
@@ -178,6 +274,54 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["RolesController_update"];
+        trace?: never;
+    };
+    "/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ApiKeysController_list"];
+        put?: never;
+        post: operations["ApiKeysController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api-keys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["ApiKeysController_revoke"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AccountController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["AccountController_update"];
         trace?: never;
     };
     "/products": {
@@ -372,6 +516,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/brands/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["BrandsController_remove"];
+        options?: never;
+        head?: never;
+        patch: operations["BrandsController_update"];
+        trace?: never;
+    };
     "/categories": {
         parameters: {
             query?: never;
@@ -382,6 +542,38 @@ export interface paths {
         get: operations["CategoriesController_findAll"];
         put?: never;
         post: operations["CategoriesController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["InventoryController_findAll"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/inventory/movements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["InventoryController_findMovements"];
+        put?: never;
+        post: operations["InventoryController_createMovement"];
         delete?: never;
         options?: never;
         head?: never;
@@ -418,118 +610,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["LocationsController_update"];
-        trace?: never;
-    };
-    "/inventory": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["InventoryController_findAll"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/inventory/movements": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["InventoryController_findMovements"];
-        put?: never;
-        post: operations["InventoryController_createMovement"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api-keys": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["ApiKeysController_list"];
-        put?: never;
-        post: operations["ApiKeysController_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/carts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["CartsController_findAll"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/carts/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["CartsController_findOne"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stripe-connect/account-session": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["StripeConnectController_createAccountSession"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stripe-connect/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["StripeConnectController_getStatus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/orders": {
@@ -612,6 +692,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stripe-connect/account-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["StripeConnectController_createAccountSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stripe-connect/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["StripeConnectController_getStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/fulfillments/rates": {
         parameters: {
             query?: never;
@@ -644,20 +756,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/account": {
+    "/carts": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["AccountController_findOne"];
+        get: operations["CartsController_findAll"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch: operations["AccountController_update"];
+        patch?: never;
+        trace?: never;
+    };
+    "/carts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CartsController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/failed-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["FailedOrdersController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/failed-orders/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["FailedOrdersController_retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/customers": {
@@ -700,6 +860,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["HealthController_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/onboarding/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["OnboardingController_getStatus"];
         put?: never;
         post?: never;
         delete?: never;
@@ -772,166 +948,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/failed-orders": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["FailedOrdersController_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/failed-orders/{id}/retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["FailedOrdersController_retry"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api-keys/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["ApiKeysController_revoke"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/onboarding/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["OnboardingController_getStatus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["AuthController_me"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/users/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["UsersController_findOne"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["UsersController_update"];
-        trace?: never;
-    };
-    "/users/{id}/deactivate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["UsersController_deactivate"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/users/{id}/reactivate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["UsersController_reactivate"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/users/{id}/invite/resend": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["UsersController_resendInvite"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/users/{id}/invite": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["UsersController_revokeInvite"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -955,6 +971,14 @@ export interface components {
             token: string;
             password: string;
         };
+        AuthMe: {
+            userId: number;
+            email: string;
+            firstName: string;
+            lastName: string;
+            accountId: number;
+            permissions: string[];
+        };
         CreateUserDto: {
             firstName: string;
             lastName: string;
@@ -969,6 +993,8 @@ export interface components {
         User: {
             id: number;
             accountId: number;
+            /** @enum {string} */
+            status: "active" | "invited" | "deactivated";
             firstName: string;
             lastName: string;
             phone: string | null;
@@ -978,14 +1004,17 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
-            /** @enum {string} */
-            status: "active" | "invited" | "deactivated";
         };
         PaginatedUsers: {
             items: components["schemas"]["User"][];
             total: number;
             limit: number;
             offset: number;
+        };
+        UpdateUserProfileDto: {
+            firstName?: string;
+            lastName?: string;
+            phone?: string;
         };
         AssignRolesDto: {
             roleIds: number[];
@@ -1032,6 +1061,30 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        ApiKeyDto: {
+            id: number;
+            key: string;
+            label: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CreateApiKeyDto: {
+            label?: string | null;
+        };
+        Account: {
+            id: number;
+            name: string;
+            phone: string;
+            email: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UpdateAccountDto: {
+            phone?: string;
+            email?: string;
+        };
         CreateProductDto: {
             name: string;
             description: string;
@@ -1074,12 +1127,6 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
-        };
-        PaginatedBrands: {
-            items: components["schemas"]["Brand"][];
-            total: number;
-            limit: number;
-            offset: number;
         };
         ProductImage: {
             id: number;
@@ -1176,6 +1223,15 @@ export interface components {
         CreateBrandDto: {
             name: string;
         };
+        PaginatedBrands: {
+            items: components["schemas"]["Brand"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        UpdateBrandDto: {
+            name?: string;
+        };
         CreateCategoryDto: {
             name: string;
         };
@@ -1193,38 +1249,6 @@ export interface components {
             total: number;
             limit: number;
             offset: number;
-        };
-        CreateLocationDto: {
-            name: string;
-        };
-        Location: {
-            id: number;
-            accountId: number;
-            name: string;
-            addressLine1: string | null;
-            addressLine2: string | null;
-            addressCity: string | null;
-            addressState: string | null;
-            addressPostalCode: string | null;
-            addressCountry: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        PaginatedLocations: {
-            items: components["schemas"]["Location"][];
-            total: number;
-            limit: number;
-            offset: number;
-        };
-        UpdateLocationDto: {
-            addressLine1?: string | null;
-            addressLine2?: string | null;
-            addressCity?: string | null;
-            addressState?: string | null;
-            addressPostalCode?: string | null;
-            addressCountry?: string | null;
         };
         InventoryRecord: {
             id: number;
@@ -1274,12 +1298,217 @@ export interface components {
             limit: number;
             offset: number;
         };
-        ApiKeyDto: {
+        CreateLocationDto: {
+            name: string;
+        };
+        Location: {
             id: number;
-            key: string;
-            label: string | null;
+            accountId: number;
+            name: string;
+            addressLine1: string | null;
+            addressLine2: string | null;
+            addressCity: string | null;
+            addressState: string | null;
+            addressPostalCode: string | null;
+            addressCountry: string | null;
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PaginatedLocations: {
+            items: components["schemas"]["Location"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        UpdateLocationDto: {
+            addressLine1?: string | null;
+            addressLine2?: string | null;
+            addressCity?: string | null;
+            addressState?: string | null;
+            addressPostalCode?: string | null;
+            addressCountry?: string | null;
+        };
+        OrderListItem: {
+            id: number;
+            /** @enum {string} */
+            channel: "web" | "pos";
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+            customerName: string | null;
+            customerEmail: string | null;
+            itemCount: number;
+            amountTotalCents: number;
+            /** @enum {string} */
+            fulfillmentStatus: "unfulfilled" | "partially_fulfilled" | "fulfilled";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PaginatedOrders: {
+            items: components["schemas"]["OrderListItem"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        OrderShippingInfo: {
+            line1: string;
+            line2: string | null;
+            city: string;
+            state: string | null;
+            postalCode: string;
+            country: string;
+            locationId: number | null;
+        };
+        OrderPayment: {
+            /** @enum {string} */
+            method: "stripe" | "cash" | "card";
+            amountCents: number;
+            amountTenderedCents: number | null;
+            stripeRefundId: string | null;
+            reason: string | null;
+        };
+        OrderItemAllocation: {
+            locationId: number;
+            locationName: string;
+            quantity: number;
+        };
+        OrderDetailItem: {
+            id: number;
+            variantId: number | null;
+            productName: string;
+            sku: string | null;
+            optionsLabel: string | null;
+            priceCents: number;
+            quantity: number;
+            fulfilledQuantity: number;
+            remainingQuantity: number;
+            refundedQuantity: number;
+            allocations: components["schemas"]["OrderItemAllocation"][];
+        };
+        FulfillmentItem: {
+            orderItemId: number;
+            quantity: number;
+        };
+        Fulfillment: {
+            id: number;
+            locationId: number;
+            locationName: string;
+            shippingCarrier: string | null;
+            shippingServiceLevel: string | null;
+            trackingNumber: string | null;
+            trackingUrl: string | null;
+            labelUrl: string | null;
+            amountCents: number;
+            /** Format: date-time */
+            createdAt: string;
+            items: components["schemas"]["FulfillmentItem"][];
+        };
+        OrderEvent: {
+            id: number;
+            /** @enum {string} */
+            type: "status_changed" | "refund" | "cancellation" | "payment" | "fulfillment" | "note";
+            message: string;
+            /** @enum {string} */
+            actorType: "staff" | "system" | "customer";
+            actorName: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        OrderDetail: {
+            id: number;
+            /** @enum {string} */
+            channel: "web" | "pos";
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+            customerName: string | null;
+            customerEmail: string | null;
+            shipping: components["schemas"]["OrderShippingInfo"] | null;
+            payments: components["schemas"]["OrderPayment"][];
+            subtotalCents: number;
+            amountTotalCents: number;
+            shippingCents: number;
+            /** @enum {string} */
+            fulfillmentStatus: "unfulfilled" | "partially_fulfilled" | "fulfilled";
+            /** Format: date-time */
+            createdAt: string;
+            items: components["schemas"]["OrderDetailItem"][];
+            fulfillments: components["schemas"]["Fulfillment"][];
+            events: components["schemas"]["OrderEvent"][];
+        };
+        UpdateOrderStatusDto: {
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+            reason?: string;
+        };
+        OrderStatusChange: {
+            id: number;
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+            /** @enum {string} */
+            previousStatus: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+        };
+        RefundLineDto: {
+            orderItemId: number;
+            quantity: number;
+        };
+        RefundOrderDto: {
+            reason?: string;
+            /** @default true */
+            restock: boolean;
+            amountCents?: number;
+            lines?: components["schemas"]["RefundLineDto"][];
+        };
+        OrderRefund: {
+            id: number;
+            orderId: number;
+            amountCents: number;
+            stripeRefundId: string;
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+        };
+        CancelOrderDto: {
+            reason?: string;
+        };
+        OrderCancellation: {
+            orderId: number;
+            /** @enum {string} */
+            status: "canceled";
+            refundIssued: boolean;
+            refundAmountCents: number;
+        };
+        AccountSessionResponse: {
+            clientSecret: string;
+        };
+        StripeConnectStatus: {
+            connected: boolean;
+            chargesEnabled: boolean;
+            detailsSubmitted: boolean;
+        };
+        FulfillmentItemInput: {
+            orderItemId: number;
+            quantity: number;
+        };
+        GetFulfillmentRatesDto: {
+            orderId: number;
+            locationId: number;
+            items: components["schemas"]["FulfillmentItemInput"][];
+        };
+        ShippingRate: {
+            objectId: string;
+            provider: string;
+            servicelevel: string;
+            amountCents: number;
+            estimatedDays: number | null;
+        };
+        CreateFulfillmentDto: {
+            orderId: number;
+            locationId: number;
+            items: components["schemas"]["FulfillmentItemInput"][];
+            rateObjectId: string;
+            provider: string;
+            servicelevel: string;
+            amountCents: number;
         };
         CartListItem: {
             id: number;
@@ -1322,147 +1551,27 @@ export interface components {
             subtotalCents: number;
             itemCount: number;
         };
-        AccountSessionResponse: {
-            clientSecret: string;
-        };
-        StripeConnectStatus: {
-            connected: boolean;
-            chargesEnabled: boolean;
-            detailsSubmitted: boolean;
-        };
-        OrderListItem: {
+        FailedOrder: {
             id: number;
-            /** @enum {string} */
-            channel: "web" | "pos";
-            customerName: string | null;
+            stripeCheckoutSessionId: string;
+            stripePaymentIntentId: string | null;
             customerEmail: string | null;
+            customerName: string | null;
             itemCount: number;
-            amountTotalCents: number;
-            /** @enum {string} */
-            fulfillmentStatus: "unfulfilled" | "partially_fulfilled" | "fulfilled";
+            amountTotalCents: number | null;
+            errorMessage: string;
+            attempts: number;
             /** Format: date-time */
-            createdAt: string;
-            /** @enum {string} */
-            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
-        };
-        PaginatedOrders: {
-            items: components["schemas"]["OrderListItem"][];
-            total: number;
-            limit: number;
-            offset: number;
-        };
-        OrderShippingInfo: {
-            line1: string;
-            line2: string | null;
-            city: string;
-            state: string | null;
-            postalCode: string;
-            country: string;
-            locationId: number | null;
-        };
-        OrderPayment: {
-            /** @enum {string} */
-            method: "stripe" | "cash" | "card";
-            amountCents: number;
-            amountTenderedCents: number | null;
-            stripeRefundId: string | null;
-            reason: string | null;
-        };
-        OrderItemAllocation: {
-            locationId: number;
-            locationName: string;
-            quantity: number;
-        };
-        OrderDetailItem: {
-            id: number;
-            variantId: number | null;
-            productName: string;
-            sku: string | null;
-            optionsLabel: string | null;
-            priceCents: number;
-            quantity: number;
-            fulfilledQuantity: number;
-            remainingQuantity: number;
-            allocations: components["schemas"]["OrderItemAllocation"][];
-            refundedQuantity: number;
-        };
-        FulfillmentItem: {
-            orderItemId: number;
-            quantity: number;
-        };
-        Fulfillment: {
-            id: number;
-            locationId: number;
-            locationName: string;
-            shippingCarrier: string | null;
-            shippingServiceLevel: string | null;
-            trackingNumber: string | null;
-            trackingUrl: string | null;
-            labelUrl: string | null;
-            amountCents: number;
-            /** Format: date-time */
-            createdAt: string;
-            items: components["schemas"]["FulfillmentItem"][];
-        };
-        OrderDetail: {
-            id: number;
-            /** @enum {string} */
-            channel: "web" | "pos";
-            customerName: string | null;
-            customerEmail: string | null;
-            shipping: components["schemas"]["OrderShippingInfo"] | null;
-            payments: components["schemas"]["OrderPayment"][];
-            subtotalCents: number;
-            amountTotalCents: number;
-            shippingCents: number;
-            /** @enum {string} */
-            fulfillmentStatus: "unfulfilled" | "partially_fulfilled" | "fulfilled";
-            /** Format: date-time */
-            createdAt: string;
-            items: components["schemas"]["OrderDetailItem"][];
-            fulfillments: components["schemas"]["Fulfillment"][];
-            /** @enum {string} */
-            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
-            events: components["schemas"]["OrderEvent"][];
-        };
-        FulfillmentItemInput: {
-            orderItemId: number;
-            quantity: number;
-        };
-        GetFulfillmentRatesDto: {
-            orderId: number;
-            locationId: number;
-            items: components["schemas"]["FulfillmentItemInput"][];
-        };
-        ShippingRate: {
-            objectId: string;
-            provider: string;
-            servicelevel: string;
-            amountCents: number;
-            estimatedDays: number | null;
-        };
-        CreateFulfillmentDto: {
-            orderId: number;
-            locationId: number;
-            items: components["schemas"]["FulfillmentItemInput"][];
-            rateObjectId: string;
-            provider: string;
-            servicelevel: string;
-            amountCents: number;
-        };
-        Account: {
-            id: number;
-            name: string;
-            phone: string;
-            email: string;
+            resolvedAt: string | null;
+            resolvedBy: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
         };
-        UpdateAccountDto: {
-            phone?: string;
-            email?: string;
+        FailedOrdersList: {
+            items: components["schemas"]["FailedOrder"][];
+            unresolvedCount: number;
         };
         Customer: {
             id: number;
@@ -1487,6 +1596,12 @@ export interface components {
             outOfStockCount: number;
             recentOrders: components["schemas"]["OrderListItem"][];
             recentCustomers: components["schemas"]["Customer"][];
+        };
+        OnboardingStatus: {
+            stripeConnected: boolean;
+            hasCompleteLocation: boolean;
+            hasActiveProduct: boolean;
+            complete: boolean;
         };
         CreatePosDeviceDto: {
             name: string;
@@ -1519,102 +1634,6 @@ export interface components {
         UpdatePosDeviceDto: {
             name?: string;
             locationId?: number;
-        };
-        FailedOrder: {
-            id: number;
-            stripeCheckoutSessionId: string;
-            stripePaymentIntentId: string | null;
-            customerEmail: string | null;
-            customerName: string | null;
-            itemCount: number;
-            amountTotalCents: number | null;
-            errorMessage: string;
-            attempts: number;
-            /** Format: date-time */
-            resolvedAt: string | null;
-            resolvedBy: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        FailedOrdersList: {
-            items: components["schemas"]["FailedOrder"][];
-            unresolvedCount: number;
-        };
-        UpdateOrderStatusDto: {
-            /** @enum {string} */
-            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
-            reason?: string;
-        };
-        OrderStatusChange: {
-            id: number;
-            /** @enum {string} */
-            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
-            /** @enum {string} */
-            previousStatus: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
-        };
-        RefundOrderDto: {
-            reason?: string;
-            /** @default true */
-            restock: boolean;
-            amountCents?: number;
-            lines?: components["schemas"]["RefundLineDto"][];
-        };
-        OrderRefund: {
-            id: number;
-            orderId: number;
-            amountCents: number;
-            stripeRefundId: string;
-            /** @enum {string} */
-            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
-        };
-        RefundLineDto: {
-            orderItemId: number;
-            quantity: number;
-        };
-        CancelOrderDto: {
-            reason?: string;
-        };
-        OrderCancellation: {
-            orderId: number;
-            /** @enum {string} */
-            status: "canceled";
-            refundIssued: boolean;
-            refundAmountCents: number;
-        };
-        OrderEvent: {
-            id: number;
-            /** @enum {string} */
-            type: "status_changed" | "refund" | "cancellation" | "payment" | "fulfillment" | "note";
-            message: string;
-            /** @enum {string} */
-            actorType: "staff" | "system" | "customer";
-            actorName: string | null;
-            /** Format: date-time */
-            createdAt: string;
-        };
-        CreateApiKeyDto: {
-            label?: string | null;
-        };
-        OnboardingStatus: {
-            stripeConnected: boolean;
-            hasCompleteLocation: boolean;
-            hasActiveProduct: boolean;
-            complete: boolean;
-        };
-        AuthMe: {
-            userId: number;
-            email: string;
-            firstName: string;
-            lastName: string;
-            accountId: number;
-            permissions: string[];
-        };
-        UpdateUserProfileDto: {
-            firstName?: string;
-            lastName?: string;
-            phone?: string;
         };
     };
     responses: never;
@@ -1729,6 +1748,31 @@ export interface operations {
             };
         };
     };
+    AuthController_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthMe"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     AuthController_logout: {
         parameters: {
             query?: never;
@@ -1818,6 +1862,52 @@ export interface operations {
             };
         };
     };
+    UsersController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    UsersController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserProfileDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
     UsersController_updateRoles: {
         parameters: {
             query?: never;
@@ -1832,6 +1922,90 @@ export interface operations {
                 "application/json": components["schemas"]["AssignRolesDto"];
             };
         };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    UsersController_deactivate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    UsersController_reactivate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    UsersController_resendInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    UsersController_revokeInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {
@@ -1967,6 +2141,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoleDetail"];
+                };
+            };
+        };
+    };
+    ApiKeysController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyDto"][];
+                };
+            };
+        };
+    };
+    ApiKeysController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateApiKeyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyDto"];
+                };
+            };
+        };
+    };
+    ApiKeysController_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyDto"];
+                };
+            };
+        };
+    };
+    AccountController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+        };
+    };
+    AccountController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAccountDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
                 };
             };
         };
@@ -2394,6 +2673,52 @@ export interface operations {
             };
         };
     };
+    BrandsController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Brand"];
+                };
+            };
+        };
+    };
+    BrandsController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBrandDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Brand"];
+                };
+            };
+        };
+    };
     CategoriesController_findAll: {
         parameters: {
             query: {
@@ -2437,78 +2762,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Category"];
-                };
-            };
-        };
-    };
-    LocationsController_findAll: {
-        parameters: {
-            query: {
-                limit: number;
-                offset: number;
-                /** @description name match */
-                q?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedLocations"];
-                };
-            };
-        };
-    };
-    LocationsController_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateLocationDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Location"];
-                };
-            };
-        };
-    };
-    LocationsController_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateLocationDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Location"];
                 };
             };
         };
@@ -2589,9 +2842,14 @@ export interface operations {
             };
         };
     };
-    ApiKeysController_list: {
+    LocationsController_findAll: {
         parameters: {
-            query?: never;
+            query: {
+                limit: number;
+                offset: number;
+                /** @description name match */
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2603,12 +2861,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiKeyDto"][];
+                    "application/json": components["schemas"]["PaginatedLocations"];
                 };
             };
         };
     };
-    ApiKeysController_create: {
+    LocationsController_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -2617,7 +2875,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateApiKeyDto"];
+                "application/json": components["schemas"]["CreateLocationDto"];
             };
         };
         responses: {
@@ -2626,34 +2884,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiKeyDto"];
+                    "application/json": components["schemas"]["Location"];
                 };
             };
         };
     };
-    CartsController_findAll: {
-        parameters: {
-            query: {
-                limit: number;
-                offset: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedCarts"];
-                };
-            };
-        };
-    };
-    CartsController_findOne: {
+    LocationsController_update: {
         parameters: {
             query?: never;
             header?: never;
@@ -2662,54 +2898,18 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLocationDto"];
+            };
+        };
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CartDetail"];
-                };
-            };
-        };
-    };
-    StripeConnectController_createAccountSession: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AccountSessionResponse"];
-                };
-            };
-        };
-    };
-    StripeConnectController_getStatus: {
-        parameters: {
-            query?: {
-                refresh?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StripeConnectStatus"];
+                    "application/json": components["schemas"]["Location"];
                 };
             };
         };
@@ -2832,6 +3032,46 @@ export interface operations {
             };
         };
     };
+    StripeConnectController_createAccountSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSessionResponse"];
+                };
+            };
+        };
+    };
+    StripeConnectController_getStatus: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StripeConnectStatus"];
+                };
+            };
+        };
+    };
     FulfillmentsController_getRates: {
         parameters: {
             query?: never;
@@ -2878,7 +3118,50 @@ export interface operations {
             };
         };
     };
-    AccountController_findOne: {
+    CartsController_findAll: {
+        parameters: {
+            query: {
+                limit: number;
+                offset: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedCarts"];
+                };
+            };
+        };
+    };
+    CartsController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CartDetail"];
+                };
+            };
+        };
+    };
+    FailedOrdersController_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -2892,30 +3175,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Account"];
+                    "application/json": components["schemas"]["FailedOrdersList"];
                 };
             };
         };
     };
-    AccountController_update: {
+    FailedOrdersController_retry: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                id: number;
+            };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateAccountDto"];
-            };
-        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Account"];
+                    "application/json": components["schemas"]["FailedOrder"];
                 };
             };
         };
@@ -3081,6 +3362,25 @@ export interface operations {
             };
         };
     };
+    OnboardingController_getStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingStatus"];
+                };
+            };
+        };
+    };
     PosDevicesController_findAll: {
         parameters: {
             query?: never;
@@ -3186,241 +3486,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PosDevicePairing"];
-                };
-            };
-        };
-    };
-    FailedOrdersController_list: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FailedOrdersList"];
-                };
-            };
-        };
-    };
-    FailedOrdersController_retry: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FailedOrder"];
-                };
-            };
-        };
-    };
-    ApiKeysController_revoke: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiKeyDto"];
-                };
-            };
-        };
-    };
-    OnboardingController_getStatus: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OnboardingStatus"];
-                };
-            };
-        };
-    };
-    AuthController_me: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuthMe"];
-                };
-            };
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    UsersController_findOne: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["User"];
-                };
-            };
-        };
-    };
-    UsersController_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateUserProfileDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["User"];
-                };
-            };
-        };
-    };
-    UsersController_deactivate: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["User"];
-                };
-            };
-        };
-    };
-    UsersController_reactivate: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["User"];
-                };
-            };
-        };
-    };
-    UsersController_resendInvite: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["User"];
-                };
-            };
-        };
-    };
-    UsersController_revokeInvite: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["User"];
                 };
             };
         };

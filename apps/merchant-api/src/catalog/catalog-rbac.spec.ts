@@ -61,4 +61,13 @@ describe('catalog RBAC (OS-175)', () => {
       'products:write',
     ]);
   });
+
+  it('gates brand update + delete with products:write (OS-186)', () => {
+    expect(perm(BrandsController.prototype, 'update')).toEqual([
+      'products:write',
+    ]);
+    expect(perm(BrandsController.prototype, 'remove')).toEqual([
+      'products:write',
+    ]);
+  });
 });
