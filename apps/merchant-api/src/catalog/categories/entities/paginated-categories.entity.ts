@@ -1,9 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Category } from './category.entity';
+import { CategoryListItem } from './category-list-item.entity';
 
 export class PaginatedCategories {
-  @ApiProperty({ type: () => [Category] })
-  items!: Category[];
+  @ApiProperty({ type: () => [CategoryListItem] })
+  items!: CategoryListItem[];
 
   @ApiProperty({ type: Number })
   total!: number;
