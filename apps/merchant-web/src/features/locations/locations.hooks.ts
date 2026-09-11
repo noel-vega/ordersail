@@ -60,3 +60,12 @@ export function useUpdateLocationMutation() {
     },
   })
 }
+
+export function useDeleteLocationMutation() {
+  return useMutation({
+    mutationFn: (id: number) => merchantApi.locations.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["locations"] })
+    },
+  })
+}

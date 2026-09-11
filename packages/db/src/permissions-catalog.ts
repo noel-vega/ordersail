@@ -35,6 +35,7 @@ export const PERMISSIONS_CATALOG: PermissionDef[] = [
 
   { key: "locations:read", resource: "locations", action: "read", description: "View locations" },
   { key: "locations:write", resource: "locations", action: "write", description: "Create and edit locations" },
+  { key: "locations:delete", resource: "locations", action: "delete", description: "Delete locations" },
 
   { key: "api_keys:read", resource: "api_keys", action: "read", description: "View API keys" },
   { key: "api_keys:write", resource: "api_keys", action: "write", description: "Create and revoke API keys" },

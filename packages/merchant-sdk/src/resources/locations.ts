@@ -36,5 +36,16 @@ export function createLocationsResource(client: Client<paths>, doRequest: DoFn) 
         ),
       );
     },
+
+    remove: async (id: number) => {
+      const path: paths["/locations/{id}"]["delete"]["parameters"]["path"] = {
+        id: String(id),
+      };
+      return unwrap(
+        await doRequest(() =>
+          client.DELETE("/locations/{id}", { params: { path } }),
+        ),
+      );
+    },
   };
 }
