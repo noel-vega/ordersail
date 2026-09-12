@@ -16,8 +16,9 @@ export async function signinAction({ request }: ActionFunctionArgs) {
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
 
-  const token = await storefrontApi.signIn({ email, password });
-  if (!token) {
+  try {
+    await storefrontApi.signIn({ email, password });
+  } catch {
     return { error: "Incorrect email or password." };
   }
 

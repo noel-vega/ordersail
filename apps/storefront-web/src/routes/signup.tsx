@@ -18,8 +18,9 @@ export async function signupAction({ request }: ActionFunctionArgs) {
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
 
-  const token = await storefrontApi.signUp({ firstName, lastName, email, password });
-  if (!token) {
+  try {
+    await storefrontApi.signUp({ firstName, lastName, email, password });
+  } catch {
     return { error: "Unable to create an account. This email may already be in use." };
   }
 
