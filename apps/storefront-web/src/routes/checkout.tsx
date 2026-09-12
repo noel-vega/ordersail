@@ -31,10 +31,11 @@ export function CheckoutPage() {
   }, [ready, stripeAccountId]);
 
   const fetchClientSecret = useCallback(async () => {
+    // createSession throws ApiError with the server's real message on
+    // failure — no need to check for a falsy session anymore
     const session = await storefrontApi.checkout.createSession({
       returnUrl: `${window.location.origin}/checkout/return`,
     });
-    if (!session) throw new Error("Failed to create checkout session");
     return session.clientSecret;
   }, []);
 

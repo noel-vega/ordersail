@@ -6,6 +6,7 @@ import {
   useNavigation,
   type ActionFunctionArgs,
 } from "react-router";
+import { ApiError } from "storefront-sdk";
 import { storefrontApi } from "../lib/storefront-api-client";
 import { Field, FieldLabel } from "ui/field";
 import { Input } from "ui/input";
@@ -36,9 +37,13 @@ export async function accountAction({ request }: ActionFunctionArgs) {
   const lastName = String(formData.get("lastName") ?? "");
   const email = String(formData.get("email") ?? "");
 
-  const updated = await storefrontApi.customer.update({ firstName, lastName, email });
-  if (!updated) {
-    return { error: "Unable to save changes. That email may already be in use." };
+  try {
+    await storefrontApi.customer.update({ firstName, lastName, email });
+  } catch (error) {
+    return {
+      error:
+        error instanceof ApiError ? error.message : "Unable to save changes.",
+    };
   }
 
   // a successful non-GET submission revalidates the loader automatically,
