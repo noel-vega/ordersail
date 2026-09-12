@@ -1,5 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { components, paths } from "../types.gen.js";
+import { unwrap } from "../http.js";
 
 const CART_TOKEN_HEADER = "x-cart-token";
 
@@ -25,11 +26,11 @@ export function createCartResource(
 
   return {
     addItem: async (body: components["schemas"]["AddCartItemDto"]) => {
-      const { data } = await client.POST("/cart/items", {
+      const result = await client.POST("/cart/items", {
         body,
         headers: cartHeaders(),
       });
-      return captureToken(data);
+      return captureToken(unwrap(result));
     },
 
     get: async () => {
@@ -43,27 +44,27 @@ export function createCartResource(
     ) => {
       const path: paths["/cart/items/{variantId}"]["patch"]["parameters"]["path"] =
         { variantId: String(variantId) };
-      const { data } = await client.PATCH("/cart/items/{variantId}", {
+      const result = await client.PATCH("/cart/items/{variantId}", {
         params: { path },
         body,
         headers: cartHeaders(),
       });
-      return data;
+      return unwrap(result);
     },
 
     removeItem: async (variantId: number) => {
       const path: paths["/cart/items/{variantId}"]["delete"]["parameters"]["path"] =
         { variantId: String(variantId) };
-      const { data } = await client.DELETE("/cart/items/{variantId}", {
+      const result = await client.DELETE("/cart/items/{variantId}", {
         params: { path },
         headers: cartHeaders(),
       });
-      return data;
+      return unwrap(result);
     },
 
     clear: async () => {
-      const { data } = await client.DELETE("/cart", { headers: cartHeaders() });
-      return data;
+      const result = await client.DELETE("/cart", { headers: cartHeaders() });
+      return unwrap(result);
     },
   };
 }
