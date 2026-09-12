@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { components, paths } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import { unwrap, type DoFn } from "../http.js";
 
 export function createCustomerResource(client: Client<paths>, doRequest: DoFn) {
   return {
@@ -10,10 +10,10 @@ export function createCustomerResource(client: Client<paths>, doRequest: DoFn) {
     },
 
     update: async (params: components["schemas"]["UpdateCustomerDto"]) => {
-      const { data } = await doRequest(() =>
+      const result = await doRequest(() =>
         client.PATCH("/customer", { body: params }),
       );
-      return data;
+      return unwrap(result);
     },
   };
 }
