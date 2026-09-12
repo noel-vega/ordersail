@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { storefrontApi } from "../lib/storefront-api-client";
 import { setStoredCartToken } from "../lib/cart-token";
-import { Button } from "ui/button";
+import { Button } from "../components/ui";
 
 // - complete    : paid — the order is on its way (webhook creates it)
 // - unconfirmed : checkout finished but the payment hasn't settled (a delayed

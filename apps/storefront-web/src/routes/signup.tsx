@@ -7,9 +7,7 @@ import {
   type ActionFunctionArgs,
 } from "react-router";
 import { storefrontApi } from "../lib/storefront-api-client";
-import { Field, FieldLabel } from "ui/field";
-import { Input } from "ui/input";
-import { Button } from "ui/button";
+import { Field, FieldLabel, Input, Button } from "../components/ui";
 
 export async function signupAction({ request }: ActionFunctionArgs) {
   const formData = await request.formData();

@@ -9,8 +9,7 @@ import { MinusIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import type { CartItem } from "storefront-sdk";
 import { storefrontApi } from "../lib/storefront-api-client";
 import { setStoredCartToken } from "../lib/cart-token";
-import { Button } from "ui/button";
-import { Separator } from "ui/separator";
+import { Button, Separator } from "../components/ui";
 
 export async function cartLoader() {
   const cart = await storefrontApi.cart.get();
