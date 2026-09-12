@@ -6,7 +6,7 @@ import {
   type ActionFunctionArgs,
 } from "react-router";
 import { MinusIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import type { CartItem } from "storefront-sdk";
+import type { CartItem } from "@ordersail/storefront-sdk";
 import { storefrontApi } from "../lib/storefront-api-client";
 import { setStoredCartToken } from "../lib/cart-token";
 import { Button, Separator } from "../components/ui";

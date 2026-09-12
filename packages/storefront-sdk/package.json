@@ -1,16 +1,27 @@
 {
-  "name": "storefront-sdk",
+  "name": "@ordersail/storefront-sdk",
+  "description": "Typed client for OrderSail's storefront-api — build and host your own storefront against the same API that powers OrderSail's reference storefront.",
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noel-vega/ordersail.git",
+    "directory": "packages/storefront-sdk"
+  },
   "scripts": {
     "generate": "openapi-typescript ../../apps/storefront-api/openapi.json -o ./src/types.gen.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
+  "keywords": ["ordersail", "storefront", "ecommerce", "sdk"],
   "author": "",
   "license": "ISC",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["dist"],
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
