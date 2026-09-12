@@ -6,7 +6,7 @@ import {
   useNavigation,
   type ActionFunctionArgs,
 } from "react-router";
-import { ApiError } from "storefront-sdk";
+import { ApiError } from "@ordersail/storefront-sdk";
 import { storefrontApi } from "../lib/storefront-api-client";
 import { Field, FieldLabel, Input, Button, Separator } from "../components/ui";
 

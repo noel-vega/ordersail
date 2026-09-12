@@ -1,4 +1,4 @@
-import { StorefrontClient } from "storefront-sdk";
+import { StorefrontClient } from "@ordersail/storefront-sdk";
 import { getStoredCartToken } from "./cart-token";
 
 export const storefrontApi = new StorefrontClient(
