@@ -8,17 +8,17 @@ import {
 } from "react-router";
 import { storefrontApi } from "../lib/storefront-api-client";
 import { setStoredCartToken } from "../lib/cart-token";
-import { Badge } from "ui/badge";
-import { Button } from "ui/button";
-import { Separator } from "ui/separator";
 import {
+  Badge,
+  Button,
+  Separator,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from "ui/table";
+} from "../components/ui";
 
 export async function productLoader({ params }: LoaderFunctionArgs) {
   const product = await storefrontApi.products.getById(Number(params.id));

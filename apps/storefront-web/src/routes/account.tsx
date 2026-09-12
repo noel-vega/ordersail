@@ -8,10 +8,7 @@ import {
 } from "react-router";
 import { ApiError } from "storefront-sdk";
 import { storefrontApi } from "../lib/storefront-api-client";
-import { Field, FieldLabel } from "ui/field";
-import { Input } from "ui/input";
-import { Button } from "ui/button";
-import { Separator } from "ui/separator";
+import { Field, FieldLabel, Input, Button, Separator } from "../components/ui";
 
 export async function accountLoader() {
   // customer.get() already retries once via a refresh (in-memory access

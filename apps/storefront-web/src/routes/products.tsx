@@ -1,7 +1,6 @@
 import { Link, useLoaderData } from "react-router";
 import { storefrontApi } from "../lib/storefront-api-client";
-import { Card, CardContent, CardHeader, CardTitle } from "ui/card";
-import { Badge } from "ui/badge";
+import { Card, CardContent, CardHeader, CardTitle, Badge } from "../components/ui";
 
 export async function productsLoader() {
   const products = await storefrontApi.products.list();
