@@ -1,5 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { components, paths } from "../types.gen.js";
+import { unwrap } from "../http.js";
 
 const CART_TOKEN_HEADER = "x-cart-token";
 
@@ -19,11 +20,11 @@ export function createCheckoutResource(
     },
 
     createSession: async (body: components["schemas"]["CreateCheckoutSessionDto"]) => {
-      const { data } = await client.POST("/checkout/session", {
+      const result = await client.POST("/checkout/session", {
         body,
         headers: cartHeaders(),
       });
-      return data;
+      return unwrap(result);
     },
 
     getSessionStatus: async (sessionId: string) => {
