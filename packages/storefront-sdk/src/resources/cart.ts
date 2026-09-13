@@ -18,9 +18,11 @@ export function createCartResource(
   }
 
   // addItem may create a cart server-side and hand back a new token — this
-  // captures it so the caller doesn't have to wire that up by hand
-  function captureToken(cart: components["schemas"]["Cart"] | undefined) {
-    if (cart) setCartToken(cart.token);
+  // captures it so the caller doesn't have to wire that up by hand. addItem
+  // always calls this with unwrap()'s result, which is defined or throws —
+  // never undefined — so this stays non-optional rather than re-widening it.
+  function captureToken(cart: components["schemas"]["Cart"]) {
+    setCartToken(cart.token);
     return cart;
   }
 
