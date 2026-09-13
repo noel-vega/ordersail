@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { QUEUE_NAMES, type EmailJobData } from 'queue';
+import { QUEUE_NAMES, withTimeout, type EmailJobData } from 'queue';
 import { Logger, getCorrelationId } from 'logging';
 
 // this no longer talks to SMTP at all — it enqueues a job for apps/worker
@@ -23,12 +23,16 @@ export class EmailService {
     params: { firstName: string; inviteUrl: string },
   ) {
     try {
-      await this.emailQueue.add('staff-invite', {
-        type: 'staff-invite',
-        correlationId: getCorrelationId() ?? randomUUID(),
-        to,
-        ...params,
-      });
+      await withTimeout(
+        this.emailQueue.add('staff-invite', {
+          type: 'staff-invite',
+          correlationId: getCorrelationId() ?? randomUUID(),
+          to,
+          ...params,
+        }),
+        5000,
+        'enqueue invite email',
+      );
     } catch (err) {
       this.logger.error(
         `Failed to enqueue invite email for ${to}`,

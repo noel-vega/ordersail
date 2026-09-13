@@ -106,6 +106,10 @@ describe('storefront-sdk contract', () => {
   });
 
   it('exercises every StorefrontClient resource against a real storefront-api', async () => {
+    // ~15 sequential real HTTP+DB round-trips through a fully booted app —
+    // the point of a consumer-contract test. Jest's 30s default is too
+    // tight for that in CI (this is the only DB-touching spec in this
+    // project, so Testcontainers Postgres cold-start isn't amortized).
     const account = await insertAccount(db);
     const apiKey = await insertApiKey(db, { accountId: account.id });
     await insertStripeAccount(db, { accountId: account.id });
@@ -176,7 +180,7 @@ describe('storefront-sdk contract', () => {
       email,
     });
     expect(updatedCustomer.firstName).toBe('Updated');
-  });
+  }, 90000);
 
   it('throws a typed ApiError with the real status on an invalid app key', async () => {
     const client = new StorefrontClient(baseUrl, 'sfk_not_a_real_key');
