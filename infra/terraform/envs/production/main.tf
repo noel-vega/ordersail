@@ -241,11 +241,12 @@ module "ecs_service_merchant_api" {
     # aggregates every frontend module as one map expression, so going through it would make a
     # -target apply of just this service also pull in the website's (unrelated) frontend.
     { name = "MERCHANT_WEB_URL", value = "https://${module.frontend_merchant_web.distribution_domain_name}" },
-    # placeholder subdomain (covered by the *.${domain} cert) — mirrors
-    # storefront-api below; carried into the order job so the worker can build
-    # the confirmation-email link. Revisit when the reference storefront gets a
-    # real home (see the "Extract storefront-web" Linear project).
-    { name = "STOREFRONT_WEB_URL", value = "https://storefront.${var.domain_name}" },
+    # STOREFRONT_WEB_URL removed (OS-440) — storefronts are hosted on
+    # arbitrary merchant-owned domains now, so there's no single canonical
+    # value to set here. CheckoutOrderService.resolveStorefrontUrl (OS-439)
+    # prefers the account's own registered storefront_origins row, falling
+    # back to the app's env default only when an account hasn't registered
+    # one yet.
     { name = "MINIO_ENDPOINT", value = "https://s3.${var.region}.amazonaws.com" },
     { name = "MINIO_BUCKET", value = module.secrets.product_images_bucket_name },
     { name = "MINIO_PUBLIC_BASE_URL", value = "https://${module.secrets.product_images_bucket_name}.s3.${var.region}.amazonaws.com" },
@@ -286,13 +287,11 @@ module "ecs_service_storefront_api" {
     { name = "PORT", value = "3001" },
     { name = "REDIS_HOST", value = local.redis_host },
     { name = "REDIS_PORT", value = local.redis_port },
-    # CORS allow-origin for the storefront. storefront-web is a reference client
-    # that merchants fork and host themselves (moving to its own public repo —
-    # see the "Extract storefront-web" Linear project), so there's no
-    # Ordersail-hosted storefront origin here yet. Placeholder subdomain (covered
-    # by the *.${domain} cert); revisit when the reference storefront gets a real
-    # home. No live client today, so this being a placeholder breaks nothing.
-    { name = "STOREFRONT_WEB_URL", value = "https://storefront.${var.domain_name}" },
+    # STOREFRONT_WEB_URL removed (OS-440) — CORS is a dynamic allowlist read
+    # from storefront_origins now (OS-437), not one hardcoded origin, and
+    # EmailService.resolveStorefrontUrl (OS-439) prefers the account's own
+    # registered origin, falling back to the app's env default only when an
+    # account hasn't registered one yet.
   ]
 
   secrets = [
