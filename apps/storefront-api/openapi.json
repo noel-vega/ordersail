@@ -427,7 +427,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccessTokenDto"
+                  "$ref": "#/components/schemas/TokenPairDto"
                 }
               }
             }
@@ -466,7 +466,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccessTokenDto"
+                  "$ref": "#/components/schemas/TokenPairDto"
                 }
               }
             }
@@ -485,29 +485,20 @@
         ]
       }
     },
-    "/auth/logout": {
-      "post": {
-        "operationId": "AuthController_logout",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "AppKey-auth": []
-          }
-        ],
-        "tags": [
-          "Auth"
-        ]
-      }
-    },
     "/auth/token/refresh": {
-      "get": {
+      "post": {
         "operationId": "AuthController_refreshToken",
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -1356,15 +1347,19 @@
           "password"
         ]
       },
-      "AccessTokenDto": {
+      "TokenPairDto": {
         "type": "object",
         "properties": {
           "access_token": {
             "type": "string"
+          },
+          "refresh_token": {
+            "type": "string"
           }
         },
         "required": [
-          "access_token"
+          "access_token",
+          "refresh_token"
         ]
       },
       "CustomerSignInDto": {
@@ -1380,6 +1375,28 @@
         "required": [
           "email",
           "password"
+        ]
+      },
+      "RefreshTokenDto": {
+        "type": "object",
+        "properties": {
+          "refresh_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ]
+      },
+      "AccessTokenDto": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token"
         ]
       },
       "Customer": {
