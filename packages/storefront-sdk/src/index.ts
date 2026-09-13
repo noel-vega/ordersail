@@ -29,9 +29,16 @@ export class StorefrontClient {
   // set automatically the first time cart.addItem() creates a cart — or
   // pass one in up front (e.g. restored from localStorage) to resume a cart
   cartToken: string | undefined;
-  // in-memory only, like merchant-sdk — a page refresh re-derives it from the
-  // httpOnly customer_refresh_token cookie via refreshAccessToken()
+  // set by signUp()/signIn() and by a successful refreshAccessToken() — not
+  // persisted by the SDK itself; a consuming app that wants a session to
+  // survive a page reload restores it from wherever it stored refreshToken
   accessToken: string | undefined;
+  // set by signUp()/signIn() — pass one in up front (e.g. restored from
+  // localStorage) to re-derive an accessToken via refreshAccessToken() on
+  // page load. Tokens live in the request/response body, not a cookie: a
+  // storefront can be hosted on any merchant-owned domain, and a cookie set
+  // by storefront-api never rides along on a genuinely cross-site fetch.
+  refreshToken: string | undefined;
   client: Client<paths>;
 
   products: ReturnType<typeof createProductsResource>;
@@ -39,19 +46,24 @@ export class StorefrontClient {
   checkout: ReturnType<typeof createCheckoutResource>;
   customer: ReturnType<typeof createCustomerResource>;
 
-  // every authenticated request needs the bearer token and the cross-origin
-  // cookie (for customer_refresh_token) — centralized here instead of at
-  // each call site, same pattern as merchant-sdk's AdminClient
+  // every authenticated request needs the bearer token — centralized here
+  // instead of at each call site, same pattern as merchant-sdk's AdminClient
   private authMiddleware: Middleware = {
     onRequest: ({ request }) => {
       request.headers.set("Authorization", `Bearer ${this.accessToken}`);
-      return new Request(request, { credentials: "include" });
+      return request;
     },
   };
 
-  constructor(baseUrl: string, appKey: string, cartToken?: string) {
+  constructor(
+    baseUrl: string,
+    appKey: string,
+    cartToken?: string,
+    refreshToken?: string,
+  ) {
     this.appKey = appKey;
     this.cartToken = cartToken;
+    this.refreshToken = refreshToken;
     this.client = createClient({ baseUrl });
     // the app key identifies the tenant on every request — read off `this`
     // rather than captured at construction, so reassigning `appKey` later
@@ -80,7 +92,9 @@ export class StorefrontClient {
 
   async signUp(signup: CustomerSignUpDto) {
     const result = await this.client.POST("/auth/signup", { body: signup });
-    this.accessToken = unwrap(result).access_token;
+    const tokens = unwrap(result);
+    this.accessToken = tokens.access_token;
+    this.refreshToken = tokens.refresh_token;
     return this.accessToken;
   }
 
@@ -91,24 +105,35 @@ export class StorefrontClient {
       body: credentials,
       headers: this.cartToken ? { "x-cart-token": this.cartToken } : {},
     });
-    this.accessToken = unwrap(result).access_token;
+    const tokens = unwrap(result);
+    this.accessToken = tokens.access_token;
+    this.refreshToken = tokens.refresh_token;
     return this.accessToken;
   }
 
-  // 401 = no valid session cookie, the expected "not signed in" outcome —
+  // no refreshToken (never signed in, or already logged out) — nothing to
+  // refresh with, the same "not signed in" outcome as an expected 401.
+  // Otherwise, a 401 means the refresh token itself is invalid/expired —
   // anything else (a real 500/network failure) should surface, not silently
   // leave accessToken unset
   async refreshAccessToken() {
-    const result = await this.client.GET("/auth/token/refresh");
+    if (!this.refreshToken) {
+      this.accessToken = undefined;
+      return undefined;
+    }
+    const result = await this.client.POST("/auth/token/refresh", {
+      body: { refresh_token: this.refreshToken },
+    });
     this.accessToken = unwrapOrUndefinedOn(result, 401)?.access_token;
+    if (this.accessToken === undefined) this.refreshToken = undefined;
     return this.accessToken;
   }
 
-  // clears the httpOnly customer_refresh_token cookie server-side — the
-  // client can't delete it itself — then drops the in-memory access token
-  async logout() {
-    await this.client.POST("/auth/logout");
+  // nothing server-side to clear (no cookie, and no revocation store for
+  // these short-lived JWTs) — just drop the tokens this client is holding
+  logout() {
     this.accessToken = undefined;
+    this.refreshToken = undefined;
   }
 
   // request is a thunk so the retry rebuilds headers off the refreshed accessToken, not a stale one

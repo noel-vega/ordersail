@@ -1,44 +1,39 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Res,
-  Req,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Controller, Post, Body } from '@nestjs/common';
 import {
   ApiOkResponse,
   ApiSecurity,
   ApiUnauthorizedResponse,
   ApiConflictResponse,
 } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { CustomerSignUpDto } from './dto/customer-signup.dto';
 import { CustomerSignInDto } from './dto/customer-signin.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
+import { TokenPairDto } from './dto/token-pair.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { CurrentAccountId } from '../app-key/app-key.decorators';
 import { CurrentCartToken } from '../cart/cart.decorators';
 
-const REFRESH_TOKEN_COOKIE = 'customer_refresh_token';
-
+// Tokens travel in the request/response body, not a cookie — a storefront
+// can be hosted on any merchant-owned domain, and a cookie set by
+// storefront-api (sameSite=lax, host-only) never rides along on a genuinely
+// cross-site fetch/XHR. @ordersail/storefront-sdk stores both tokens itself
+// and attaches the access token as `Authorization: Bearer <token>`.
 @ApiSecurity('AppKey-auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('signup')
-  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiOkResponse({ type: TokenPairDto })
   @ApiConflictResponse()
   async signup(
     @Body() dto: CustomerSignUpDto,
     @CurrentAccountId() accountId: number,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<AccessTokenDto> {
+  ): Promise<TokenPairDto> {
     const result = await this.authService.signup(dto, accountId);
 
-    const refreshToken = await this.authService.createRefreshToken(
+    const refresh_token = await this.authService.createRefreshToken(
       result.customerId,
       result.email,
       result.accountId,
@@ -46,28 +41,20 @@ export class AuthController {
       result.lastName,
     );
 
-    res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7 * 1000,
-    });
-
-    return { access_token: result.access_token };
+    return { access_token: result.access_token, refresh_token };
   }
 
   @Post('signin')
-  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiOkResponse({ type: TokenPairDto })
   @ApiUnauthorizedResponse()
   async signin(
     @Body() dto: CustomerSignInDto,
     @CurrentAccountId() accountId: number,
     @CurrentCartToken() cartToken: string | undefined,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<AccessTokenDto> {
+  ): Promise<TokenPairDto> {
     const result = await this.authService.signin(dto, accountId, cartToken);
 
-    const refreshToken = await this.authService.createRefreshToken(
+    const refresh_token = await this.authService.createRefreshToken(
       result.customerId,
       result.email,
       result.accountId,
@@ -75,34 +62,16 @@ export class AuthController {
       result.lastName,
     );
 
-    res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7 * 1000,
-    });
-
-    return { access_token: result.access_token };
+    return { access_token: result.access_token, refresh_token };
   }
 
-  @Post('logout')
-  @ApiOkResponse()
-  logout(@Res({ passthrough: true }) res: Response): void {
-    res.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
-  }
-
-  @Get('token/refresh')
+  @Post('token/refresh')
   @ApiOkResponse({ type: AccessTokenDto })
   @ApiUnauthorizedResponse()
-  async refreshToken(@Req() req: Request): Promise<AccessTokenDto> {
-    const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE] as
-      string | undefined;
-    if (!refreshToken) {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
-
-    const access_token =
-      await this.authService.refreshAccessToken(refreshToken);
+  async refreshToken(@Body() dto: RefreshTokenDto): Promise<AccessTokenDto> {
+    const access_token = await this.authService.refreshAccessToken(
+      dto.refresh_token,
+    );
     return { access_token };
   }
 }
