@@ -8,6 +8,7 @@ import {
   insertOrder,
   insertOrderPayment,
   insertProductWithVariants,
+  insertStorefrontOrigin,
   useTestDb,
 } from 'test-support';
 import { DRIZZLE } from 'src/shared/database/database.constants';
@@ -180,6 +181,21 @@ describe('CheckoutOrderService.resolveOrderPayload', () => {
         quantity: 2,
       },
     ]);
+  });
+
+  it("prefers the account's registered storefront origin over the env default (OS-439)", async () => {
+    const s = await seed();
+    await insertStorefrontOrigin(db, {
+      accountId: s.accountId,
+      origin: 'https://shop.example.com',
+    });
+    const { service } = await build();
+
+    const payload = await service.resolveOrderPayload(
+      event({ accountId: s.accountId }),
+    );
+
+    expect(payload?.storefrontUrl).toBe('https://shop.example.com');
   });
 
   it('falls back to the cart subtotal and empty address fields when the session omits them', async () => {
