@@ -2,6 +2,14 @@ name: Publish storefront-sdk
 
 # Manual trigger only — a broken public npm publish is hard to fully undo
 # (unpublish is heavily restricted after ~72h), so this never runs on merge.
+#
+# This job only stages a version (npm stage publish) — it can't make
+# anything public on its own, by design. A maintainer must separately
+# review and `npm stage approve <stage-id>` (2FA required, CLI or
+# npmjs.com's "Staged Packages" tab) before a version actually goes live.
+# That's why the npm Trusted Publisher config for this package has "Allow
+# npm publish" left unchecked — a compromised OIDC trust relationship or
+# workflow still can't publish anything without that separate human step.
 on:
   workflow_dispatch:
 
@@ -34,5 +42,5 @@ jobs:
       - name: Typecheck
         run: npm run typecheck -w @ordersail/storefront-sdk
 
-      - name: Publish
-        run: npm publish --access public -w @ordersail/storefront-sdk
+      - name: Stage
+        run: npm stage publish --access public -w @ordersail/storefront-sdk
