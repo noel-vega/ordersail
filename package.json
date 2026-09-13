@@ -12,7 +12,7 @@
     "seed": "npm run seed -w seed",
     "push": "npm run push -w db",
     "migrate": "npm run migrate -w db",
-    "dev": "nx run-many -t dev -p merchant-api,storefront-api,pos-api,worker,merchant-web,storefront-web --output-style=stream",
+    "dev": "nx run-many -t dev -p merchant-api,storefront-api,pos-api,worker,merchant-web --output-style=stream",
     "dev:website": "npm run dev -w website",
     "dev:pos": "npm run start -w pos",
     "build": "nx run-many -t build",

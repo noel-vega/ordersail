@@ -3,8 +3,8 @@
 A typed TypeScript client for OrderSail's public `storefront-api`. This is
 the thing a merchant (or their developer) uses to build and host their
 **own** storefront against OrderSail's catalog, cart, checkout, and customer
-account data — `storefront-web` is just the worked reference example of
-doing that.
+account data — [`storefront-web`](https://github.com/noel-vega/storefront-web)
+is just the worked reference example of doing that, in its own public repo.
 
 Generated types come straight from `storefront-api`'s OpenAPI spec
 (`src/types.gen.ts`); everything else is a thin, hand-written wrapper for
@@ -17,7 +17,7 @@ npm install @ordersail/storefront-sdk
 ```
 
 Inside this monorepo it's consumed via the npm workspace protocol instead
-(see `apps/storefront-web/package.json`).
+(see the consumer-contract spec, `apps/storefront-api/src/contract/storefront-sdk.contract.spec.ts`).
 
 ## Quickstart
 
@@ -102,8 +102,7 @@ export class ApiError extends Error {
 `` `Request failed (${status})` ``. Two exceptions worth knowing: `signIn`'s
 `401` and `signUp`'s `409` currently carry no response body at all, so
 `error.message` for those two is always the generic fallback — write your
-own copy for those cases rather than surfacing it (see
-`apps/storefront-web/src/routes/signin.tsx` for the pattern).
+own copy for those cases rather than surfacing it.
 
 ## Auth model
 

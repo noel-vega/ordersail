@@ -6,6 +6,10 @@ storefront-web, `payments/StripeWebhookController` → `checkout.session.paid` d
 event → `sales` → worker. (Originally OS-111, 2026-09-02, before M9 moved the
 webhook + order resolution storefront-api → merchant-api.)
 
+`storefront-web` was extracted to its own public repo (OS-429/430,
+[github.com/noel-vega/storefront-web](https://github.com/noel-vega/storefront-web)) — clone
+it separately alongside this monorepo to follow the steps below.
+
 ```
 storefront-web /checkout                         [storefront-api :3001]
   → GET  /checkout/config              gate on stripe_accounts.charges_enabled
@@ -38,8 +42,8 @@ Fill these in `.env` (already done if `apps/storefront-api/.env` etc. exist — 
 
 - `apps/storefront-api/.env`: `STRIPE_SECRET_KEY`, `SHIPPO_API_KEY`
 - `apps/merchant-api/.env`: `STRIPE_SECRET_KEY` (same), `STRIPE_WEBHOOK_SECRET`, `SHIPPO_API_KEY`
-- `apps/storefront-web/.env`: `VITE_STRIPE_PUBLISHABLE_KEY`, `VITE_STOREFRONT_APP_KEY` (the `sfk_…` from `npm run bootstrap`)
 - `apps/merchant-web/.env`: `VITE_STRIPE_PUBLISHABLE_KEY`
+- In the separately-cloned `storefront-web` repo, `.env.local` (see its own `.env.example`): `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_APP_KEY` (the `sfk_…` from `npm run bootstrap`), `NEXT_PUBLIC_STOREFRONT_API_URL=http://localhost:3001`
 
 > `STRIPE_WEBHOOK_SECRET` = the `whsec_…` line `stripe listen` prints at startup
 > (stable per CLI install). One endpoint, one secret — `account.updated` and
@@ -49,8 +53,11 @@ Fill these in `.env` (already done if `apps/storefront-api/.env` etc. exist — 
 
 ```bash
 npm run up          # postgres + redis + minio + mailpit
-npm run bootstrap   # drizzle push + seed — copy "Created storefront API key: sfk_…" into apps/storefront-web/.env
-npm run dev         # merchant-api :3000, storefront-api :3001, storefront-web :3002, worker :3003, merchant-web :5000
+npm run bootstrap   # drizzle push + seed — copy "Created storefront API key: sfk_…" into storefront-web's .env.local
+npm run dev         # merchant-api :3000, storefront-api :3001, worker :3003, merchant-web :5000
+
+# in the separately-cloned storefront-web repo:
+npm run dev         # defaults to :3000 — pick a free port (e.g. `-- -p 3010`) since merchant-api already owns :3000
 
 # in one more terminal — leave running:
 npm run stripe:listen -w merchant-api   # account.updated + checkout.session.* + charge.refunded/dispute.* → :3000/webhooks/stripe
@@ -58,6 +65,17 @@ npm run stripe:listen -w merchant-api   # account.updated + checkout.session.* +
 
 The seed's "Default" location ships from a real address and every variant has a weight,
 so Shippo can quote right away — no manual Locations step.
+
+`storefront-api`'s CORS only allows origins an account has explicitly registered
+(OS-431) — register wherever `storefront-web` is running before any cart/checkout
+call from its browser will work:
+
+```bash
+TOKEN=$(curl -s -X POST localhost:3000/auth/signin -H "content-type: application/json" \
+  -d '{"email":"owner@sneakerdepot.test","password":"password123"}' | jq -r .access_token)
+curl -s -X POST localhost:3000/storefront-origins -H "content-type: application/json" \
+  -H "authorization: Bearer $TOKEN" -d '{"origin":"http://localhost:3010"}'
+```
 
 ## Connect a Stripe account to the store
 
@@ -80,8 +98,8 @@ values (1, 'acct_XXXX', true, true);
 
 ## Run the purchase
 
-storefront-web `http://localhost:3002` → a product → **Add to cart** → **Cart** →
-**Checkout** → in the embedded Stripe form:
+storefront-web (whatever port you ran it on, e.g. `http://localhost:3010`) → a
+product → **Add to cart** → **Cart** → **Checkout** → in the embedded Stripe form:
 
 - Email: anything
 - Shipping address: any real US address (click "Enter address manually" if the

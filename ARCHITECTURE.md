@@ -13,7 +13,10 @@ flowchart TB
     subgraph FE["Frontends"]
         website["website<br/>Astro · :4321<br/><i>marketing, standalone</i>"]
         adminweb["merchant-web<br/>React 19 + Vite · :5000<br/><i>merchant dashboard</i>"]
-        storeweb["storefront-web<br/>React 19 + Vite · :3002<br/><i>customer storefront</i>"]
+    end
+
+    subgraph EXTFE["External (own repo, not deployed by this platform)"]
+        storeweb["storefront-web<br/>Next.js<br/><i>reference customer storefront —<br/>github.com/noel-vega/storefront-web</i>"]
     end
 
     subgraph SDK["Generated SDKs"]
@@ -50,11 +53,11 @@ flowchart TB
     end
 
     adminweb --> adminsdk --> adminapi
-    storeweb --> storesdk --> storeapi
+    storeweb -. "npm install<br/>@ordersail/storefront-sdk" .-> storesdk
+    storesdk --> storeapi
     adminweb -. "Stripe Connect JS<br/>(browser, direct)" .-> stripe
-    storeweb -. "Stripe Elements<br/>(browser, direct)" .-> stripe
+    storeweb -. "Stripe Embedded Checkout<br/>(browser, direct)" .-> stripe
     adminweb --> ui
-    storeweb --> ui
 
     adminapi --> db
     storeapi --> db
