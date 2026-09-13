@@ -25,6 +25,7 @@ import {
   productVariantsTable,
   rolePermissionsTable,
   rolesTable,
+  storefrontOriginsTable,
   stripeAccountsTable,
   userInvitesTable,
   userRolesTable,
@@ -206,6 +207,21 @@ export async function insertApiKey(
         key: opts.key ?? `sfk_test_${uniq()}`,
         label: opts.label ?? null,
         revokedAt: opts.revokedAt ?? null,
+      })
+      .returning(),
+  );
+}
+
+export async function insertStorefrontOrigin(
+  db: TestDb,
+  opts: { accountId: number; origin?: string },
+): Promise<Row<typeof storefrontOriginsTable>> {
+  return one(
+    await db
+      .insert(storefrontOriginsTable)
+      .values({
+        accountId: opts.accountId,
+        origin: opts.origin ?? `https://storefront-${uniq()}.test`,
       })
       .returning(),
   );
