@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { AppKeyModule } from './modules/app-key/app-key.module';
+import { CorsOriginsModule } from './modules/cors-origins/cors-origins.module';
 import { ProductsModule } from './modules/products/products.module';
 import { CartModule } from './modules/cart/cart.module';
 import { CheckoutModule } from './modules/checkout/checkout.module';
@@ -22,6 +23,7 @@ import { HealthModule } from './modules/health/health.module';
     }),
     DatabaseModule,
     AppKeyModule,
+    CorsOriginsModule,
     ProductsModule,
     CartModule,
     CheckoutModule,
