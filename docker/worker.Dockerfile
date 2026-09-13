@@ -14,7 +14,6 @@ COPY package.json package-lock.json ./
 COPY apps/merchant-api/package.json apps/merchant-api/package.json
 COPY apps/merchant-web/package.json apps/merchant-web/package.json
 COPY apps/storefront-api/package.json apps/storefront-api/package.json
-COPY apps/storefront-web/package.json apps/storefront-web/package.json
 COPY apps/website/package.json apps/website/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/merchant-sdk/package.json packages/merchant-sdk/package.json
@@ -43,7 +42,6 @@ COPY package.json package-lock.json ./
 COPY apps/merchant-api/package.json apps/merchant-api/package.json
 COPY apps/merchant-web/package.json apps/merchant-web/package.json
 COPY apps/storefront-api/package.json apps/storefront-api/package.json
-COPY apps/storefront-web/package.json apps/storefront-web/package.json
 COPY apps/website/package.json apps/website/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/merchant-sdk/package.json packages/merchant-sdk/package.json
