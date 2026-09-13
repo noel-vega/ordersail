@@ -20,7 +20,7 @@ function contextWithRequest(request: FakeRequest): {
   return { ctx, request };
 }
 
-function build(verifyAsync: JwtService['verifyAsync']) {
+function build(verifyAsync: (token: string) => Promise<AuthenticatedCustomer>) {
   return new CustomerAuthGuard({ verifyAsync } as unknown as JwtService);
 }
 
