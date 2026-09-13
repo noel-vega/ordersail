@@ -26,6 +26,10 @@ resource "aws_cloudwatch_metric_alarm" "elb_5xx" {
 
   alarm_actions = var.alarm_critical_topic_arns
   ok_actions    = var.alarm_critical_topic_arns
+
+  lifecycle {
+    ignore_changes = [actions_enabled]
+  }
 }
 
 # 5xx as a fraction of requests — catches app-level 500s under real traffic
@@ -77,6 +81,10 @@ resource "aws_cloudwatch_metric_alarm" "error_rate" {
 
   alarm_actions = var.alarm_critical_topic_arns
   ok_actions    = var.alarm_critical_topic_arns
+
+  lifecycle {
+    ignore_changes = [actions_enabled]
+  }
 }
 
 # p95 latency regression.
@@ -96,6 +104,10 @@ resource "aws_cloudwatch_metric_alarm" "p95_latency" {
 
   alarm_actions = var.alarm_warning_topic_arns
   ok_actions    = var.alarm_warning_topic_arns
+
+  lifecycle {
+    ignore_changes = [actions_enabled]
+  }
 }
 
 # No healthy targets behind the LB.
@@ -116,4 +128,8 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy_hosts" {
 
   alarm_actions = var.alarm_critical_topic_arns
   ok_actions    = var.alarm_critical_topic_arns
+
+  lifecycle {
+    ignore_changes = [actions_enabled]
+  }
 }
