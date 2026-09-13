@@ -191,5 +191,47 @@ describe('storefront-sdk contract', () => {
     await expect(
       client.cart.addItem({ variantId: 1, quantity: 1 }),
     ).rejects.toBeInstanceOf(ApiError);
+
+    // reads with no legitimate "empty" outcome — a bad app-key must surface
+    // as ApiError, not silently look like an empty catalog/unready checkout
+    await expect(client.products.list()).rejects.toMatchObject({ status: 401 });
+    await expect(client.checkout.getConfig()).rejects.toMatchObject({
+      status: 401,
+    });
+    await expect(
+      client.checkout.getShippingOptions({
+        checkoutSessionId: 'cs_fake',
+        shippingDetails: { name: 'x', address: { country: 'US' } },
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+
+    // reads with a genuine "empty" outcome (404) still throw for a bad
+    // app-key — only their own specific expected status is swallowed
+    await expect(client.products.getById(1)).rejects.toMatchObject({
+      status: 401,
+    });
+    await expect(client.cart.get()).rejects.toMatchObject({ status: 401 });
+    await expect(
+      client.checkout.getSessionStatus('cs_fake'),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('returns undefined only for the one expected outcome, not any failure', async () => {
+    const account = await insertAccount(db);
+    const apiKey = await insertApiKey(db, { accountId: account.id });
+    const client = new StorefrontClient(baseUrl, apiKey.key);
+
+    // genuine 404s, with a valid app-key
+    await expect(client.products.getById(999999)).resolves.toBeUndefined();
+    await expect(client.cart.get()).resolves.toBeUndefined();
+    // no connected Stripe account seeded for this test — getSessionStatus's
+    // own NotFoundException branch for that fires before it ever looks up a
+    // session id
+    await expect(
+      client.checkout.getSessionStatus('cs_fake'),
+    ).resolves.toBeUndefined();
+
+    // not currently signed in (no signUp/signIn called) — the 401 case
+    await expect(client.customer.get()).resolves.toBeUndefined();
   });
 });

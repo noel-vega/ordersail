@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { components, paths } from "../types.gen.js";
-import { unwrap } from "../http.js";
+import { unwrap, unwrapOrUndefinedOn } from "../http.js";
 
 const CART_TOKEN_HEADER = "x-cart-token";
 
@@ -14,9 +14,10 @@ export function createCheckoutResource(
   }
 
   return {
+    // no legitimate "empty" case — always returns a body (ready: boolean)
     getConfig: async () => {
-      const { data } = await client.GET("/checkout/config");
-      return data;
+      const result = await client.GET("/checkout/config");
+      return unwrap(result);
     },
 
     createSession: async (body: components["schemas"]["CreateCheckoutSessionDto"]) => {
@@ -27,20 +28,22 @@ export function createCheckoutResource(
       return unwrap(result);
     },
 
+    // 404 = no connected Stripe account, or an unknown/expired session id
     getSessionStatus: async (sessionId: string) => {
       const path: paths["/checkout/session/{sessionId}"]["get"]["parameters"]["path"] =
         { sessionId };
-      const { data } = await client.GET("/checkout/session/{sessionId}", {
+      const result = await client.GET("/checkout/session/{sessionId}", {
         params: { path },
       });
-      return data;
+      return unwrapOrUndefinedOn(result, 404);
     },
 
+    // no legitimate "empty" case — a computed result, not a lookup
     getShippingOptions: async (
       body: components["schemas"]["GetShippingOptionsDto"],
     ) => {
-      const { data } = await client.POST("/checkout/shipping-options", { body });
-      return data;
+      const result = await client.POST("/checkout/shipping-options", { body });
+      return unwrap(result);
     },
   };
 }

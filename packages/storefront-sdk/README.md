@@ -29,7 +29,9 @@ const storefrontApi = new StorefrontClient(
   "sfk_...", // your account's app key — see "Auth model" below
 );
 
-// reads return the data directly, or undefined if not found
+// reads return the data directly — most throw ApiError on failure just
+// like mutations; a few return undefined for one specific, expected
+// outcome (see "Resources" below)
 const products = await storefrontApi.products.list({ limit: 20 });
 
 // mutations throw a typed ApiError on failure
@@ -46,27 +48,38 @@ try {
 
 | Resource                      | Method                                  | Throws `ApiError`? |
 | ------------------------------ | ---------------------------------------- | ------------------- |
-| `storefrontApi.products`      | `list(query?)`                          | no                   |
-|                                | `getById(id)`                           | no                   |
-| `storefrontApi.cart`          | `get()`                                  | no                   |
+| `storefrontApi.products`      | `list(query?)`                          | **yes**              |
+|                                | `getById(id)`                           | only unexpectedly¹   |
+| `storefrontApi.cart`          | `get()`                                  | only unexpectedly¹   |
 |                                | `addItem(body)`                         | **yes**              |
 |                                | `updateItem(variantId, body)`           | **yes**              |
 |                                | `removeItem(variantId)`                 | **yes**              |
 |                                | `clear()`                                | **yes**              |
-| `storefrontApi.checkout`      | `getConfig()`                            | no                   |
+| `storefrontApi.checkout`      | `getConfig()`                            | **yes**              |
 |                                | `createSession(body)`                    | **yes**              |
-|                                | `getSessionStatus(sessionId)`            | no                   |
-|                                | `getShippingOptions(body)`               | no                   |
-| `storefrontApi.customer`      | `get()`                                  | no                   |
+|                                | `getSessionStatus(sessionId)`            | only unexpectedly¹   |
+|                                | `getShippingOptions(body)`               | **yes**              |
+| `storefrontApi.customer`      | `get()`                                  | only unexpectedly²   |
 |                                | `update(params)`                         | **yes**              |
 | `storefrontApi` (top level)   | `signUp(dto)`                            | **yes**              |
 |                                | `signIn(credentials)`                    | **yes**              |
-|                                | `refreshAccessToken()`                   | no                   |
+|                                | `refreshAccessToken()`                   | only unexpectedly²   |
 |                                | `logout()`                               | no                   |
 
-The convention throughout: a read returns the response body directly (or
-`undefined` on a non-2xx response), while a mutation throws `ApiError` so a
-failure can't be silently ignored.
+The convention throughout: a mutation always throws `ApiError` on a non-2xx
+response. A read does too, *unless* it has exactly one well-understood "no
+data" outcome, in which case it returns `undefined` for that one status and
+still throws for everything else:
+
+¹ `getById`/`cart.get`/`getSessionStatus` return `undefined` only on a `404`
+(a genuine lookup miss — no such product, no cart yet for this token, no
+such session) — a bad app-key, a `500`, or a network failure throws instead
+of looking identical to "not found."
+
+² `customer.get()`/`refreshAccessToken()` return `undefined` only on a `401`
+(not currently signed in — the everyday case for most visitors) — anything
+else, including a `404` (a customer row missing despite a valid token, which
+would be an anomaly, not a normal state), throws instead.
 
 Not yet supported: **order history** for customers (`storefront-api` has no
 customer-facing order endpoints yet — see Storefront Builder M5) and
@@ -105,13 +118,13 @@ Two independent layers, both handled for you by `StorefrontClient`:
   cookie the browser sends automatically (`credentials: "include"`). Call
   `refreshAccessToken()` on app start to restore a session from that cookie.
 
-**Known gap**: only `customer.get()`/`customer.update()` currently retry
-once on a `401` by calling `refreshAccessToken()` and re-issuing the
-request. `cart` and `checkout` methods do not — if you're calling them a
-long time after the last customer request, a stale in-memory token can
-produce an unhandled `401`. Call `refreshAccessToken()` proactively if this
-matters for your integration, or treat it as a signed-out state and prompt
-sign-in again.
+Only `customer.get()`/`customer.update()` retry once on a `401` by calling
+`refreshAccessToken()` and re-issuing the request — `cart` and `checkout`
+methods don't, and don't need to: they never check the customer JWT at all.
+Cart/checkout identity flows entirely through the `x-cart-token` header
+(guest checkout is fully supported), so the only thing that can produce a
+401 there is a missing/invalid/revoked `x-app-key` — an entirely different
+credential that refreshing the customer's access token can't fix.
 
 ## Regenerating after an API change
 
