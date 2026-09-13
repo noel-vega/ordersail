@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { QUEUE_NAMES, type EmailJobData } from 'queue';
+import { QUEUE_NAMES, withTimeout, type EmailJobData } from 'queue';
 import { Logger, getCorrelationId } from 'logging';
 import { env } from '../../env';
 
@@ -25,13 +25,17 @@ export class EmailService {
   ) {
     const storefrontUrl = env.STOREFRONT_WEB_URL;
     try {
-      await this.emailQueue.add('customer-thank-you', {
-        type: 'customer-thank-you',
-        correlationId: getCorrelationId() ?? randomUUID(),
-        to,
-        ...params,
-        storefrontUrl,
-      });
+      await withTimeout(
+        this.emailQueue.add('customer-thank-you', {
+          type: 'customer-thank-you',
+          correlationId: getCorrelationId() ?? randomUUID(),
+          to,
+          ...params,
+          storefrontUrl,
+        }),
+        5000,
+        'enqueue thank-you email',
+      );
     } catch (err) {
       this.logger.error(
         `Failed to enqueue thank-you email for ${to}`,

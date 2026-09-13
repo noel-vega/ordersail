@@ -22,6 +22,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
+    services:
+      # storefront-api/merchant-api/worker all connect to a real Redis for
+      # BullMQ (see packages/queue's createRedisConnection) — without this,
+      # any test that enqueues a job only ever exercises the
+      # timeout-then-catch fallback path, never the real one. GitHub-hosted
+      # runners publish service container ports to localhost, matching
+      # createRedisConnection's default host/port.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
         with:

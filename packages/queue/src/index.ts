@@ -136,3 +136,22 @@ export function createRedisConnection(options?: { commandTimeout?: number }): Re
     ...(options?.commandTimeout ? { commandTimeout: options.commandTimeout } : {}),
   });
 }
+
+// `commandTimeout` above only bounds a command's round trip once ioredis has
+// dispatched it — but BullMQ's Queue.add() first awaits the connection
+// reaching "ready", and if Redis is completely unreachable (not just slow),
+// that wait never resolves, so commandTimeout never even comes into play.
+// Callers that already treat a failed enqueue as non-fatal (both
+// EmailService.sendXEmail methods) need this to make good on that guarantee
+// — otherwise they hang forever instead of falling into their own catch.
+export async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer!: ReturnType<typeof setTimeout>;
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
