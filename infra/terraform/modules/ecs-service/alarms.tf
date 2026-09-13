@@ -30,4 +30,8 @@ resource "aws_cloudwatch_metric_alarm" "running_below_desired" {
 
   alarm_actions = var.alarm_critical_topic_arns
   ok_actions    = var.alarm_critical_topic_arns
+
+  lifecycle {
+    ignore_changes = [actions_enabled]
+  }
 }
