@@ -1,9 +1,10 @@
 // db/identity — the identity context's slice of the schema (accounts, users,
-// invites, API keys, RBAC). merchant-api's identity context imports ONLY this;
+// invites, API keys, storefront origins, RBAC). merchant-api's identity context imports ONLY this;
 // see apps/merchant-api/ARCHITECTURE.md. Root `db` is still the full export
 // for the dashboard read-model, drizzle-kit, and the other apps.
 export * from '../schema/accounts.js';
 export * from '../schema/account-api-keys.js';
+export * from '../schema/storefront-origins.js';
 export * from '../schema/users.js';
 export * from '../schema/user-invites.js';
 export * from '../schema/rbac.js';
