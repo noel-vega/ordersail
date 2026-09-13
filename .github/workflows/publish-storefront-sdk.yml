@@ -8,6 +8,12 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Trusted Publishing (OIDC) — id-token: write is what lets npm exchange
+    # this job's GitHub identity for a short-lived publish token. No
+    # NPM_TOKEN secret exists anywhere in this flow.
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +35,4 @@ jobs:
         run: npm run typecheck -w @ordersail/storefront-sdk
 
       - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public -w @ordersail/storefront-sdk
