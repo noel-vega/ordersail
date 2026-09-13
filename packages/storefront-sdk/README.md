@@ -12,15 +12,12 @@ ergonomics around [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/).
 
 ## Install
 
-This package isn't published yet — see the "Publishing" section of the
-Storefront Builder Linear project for status. Once it is:
-
 ```bash
 npm install @ordersail/storefront-sdk
 ```
 
-Until then, inside this monorepo it's consumed via the npm workspace
-protocol (see `apps/storefront-web/package.json`).
+Inside this monorepo it's consumed via the npm workspace protocol instead
+(see `apps/storefront-web/package.json`).
 
 ## Quickstart
 

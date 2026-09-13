@@ -1,8 +1,8 @@
 {
   "name": "@ordersail/storefront-sdk",
   "description": "Typed client for OrderSail's storefront-api — build and host your own storefront against the same API that powers OrderSail's reference storefront.",
-  "private": true,
-  "version": "0.0.1",
+  "private": false,
+  "version": "0.1.0",
   "type": "module",
   "repository": {
     "type": "git",
