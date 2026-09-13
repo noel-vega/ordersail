@@ -4,6 +4,7 @@ import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
+import { StorefrontOriginsModule } from './storefront-origins/storefront-origins.module';
 import { AccountModule } from './account/account.module';
 
 // Identity & access: authentication, the user/role/permission model, tenant
@@ -16,6 +17,7 @@ import { AccountModule } from './account/account.module';
     RolesModule,
     PermissionsModule,
     ApiKeysModule,
+    StorefrontOriginsModule,
     AccountModule,
   ],
 })
