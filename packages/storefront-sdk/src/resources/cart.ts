@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { components, paths } from "../types.gen.js";
-import { unwrap } from "../http.js";
+import { unwrap, unwrapOrUndefinedOn } from "../http.js";
 
 const CART_TOKEN_HEADER = "x-cart-token";
 
@@ -35,9 +35,10 @@ export function createCartResource(
       return captureToken(unwrap(result));
     },
 
+    // 404 = no cart yet for this token — the everyday first-visit case
     get: async () => {
-      const { data } = await client.GET("/cart", { headers: cartHeaders() });
-      return data;
+      const result = await client.GET("/cart", { headers: cartHeaders() });
+      return unwrapOrUndefinedOn(result, 404);
     },
 
     updateItem: async (
