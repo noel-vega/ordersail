@@ -1,0 +1,38 @@
+name: Publish storefront-sdk
+
+# Manual trigger only — a broken public npm publish is hard to fully undo
+# (unpublish is heavily restricted after ~72h), so this never runs on merge.
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Trusted Publishing (OIDC) — id-token: write is what lets npm exchange
+    # this job's GitHub identity for a short-lived publish token. No
+    # NPM_TOKEN secret exists anywhere in this flow.
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # honor packageManager (package.json) — node 22 ships npm 10, whose
+      # `npm ci` can't reconcile this lockfile's `overrides`
+      - run: npm install -g npm@11
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build -w @ordersail/storefront-sdk
+
+      - name: Typecheck
+        run: npm run typecheck -w @ordersail/storefront-sdk
+
+      - name: Publish
+        run: npm publish --access public -w @ordersail/storefront-sdk
