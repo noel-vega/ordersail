@@ -196,7 +196,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/logout": {
+    "/auth/token/refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -205,23 +205,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["AuthController_logout"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/token/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["AuthController_refreshToken"];
-        put?: never;
-        post?: never;
+        post: operations["AuthController_refreshToken"];
         delete?: never;
         options?: never;
         head?: never;
@@ -401,12 +385,19 @@ export interface components {
             email: string;
             password: string;
         };
-        AccessTokenDto: {
+        TokenPairDto: {
             access_token: string;
+            refresh_token: string;
         };
         CustomerSignInDto: {
             email: string;
             password: string;
+        };
+        RefreshTokenDto: {
+            refresh_token: string;
+        };
+        AccessTokenDto: {
+            access_token: string;
         };
         Customer: {
             id: number;
@@ -734,7 +725,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AccessTokenDto"];
+                    "application/json": components["schemas"]["TokenPairDto"];
                 };
             };
             409: {
@@ -763,27 +754,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AccessTokenDto"];
+                    "application/json": components["schemas"]["TokenPairDto"];
                 };
             };
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    AuthController_logout: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -798,7 +772,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshTokenDto"];
+            };
+        };
         responses: {
             200: {
                 headers: {

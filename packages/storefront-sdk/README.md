@@ -113,10 +113,15 @@ Two independent layers, both handled for you by `StorefrontClient`:
   account's app key, created in `merchant-web` under Settings → Developer
   API keys). Set once in the constructor; re-assign `client.appKey` later if
   you ever need to switch accounts.
-- **Customer auth** — a bearer JWT (`accessToken`), held in memory only (it
-  doesn't survive a page reload), plus an httpOnly `customer_refresh_token`
-  cookie the browser sends automatically (`credentials: "include"`). Call
-  `refreshAccessToken()` on app start to restore a session from that cookie.
+- **Customer auth** — a bearer access token and a refresh token, both
+  returned in the response body by `signUp()`/`signIn()` and held on
+  `client.accessToken`/`client.refreshToken`. Neither is persisted by the
+  SDK itself: a storefront can be hosted on any merchant-owned domain, and a
+  cookie set by `storefront-api` never rides along on a genuinely cross-site
+  request, so there's no cookie to rely on. To restore a session across a
+  page reload, persist `refreshToken` yourself (e.g. `localStorage`) and
+  pass it as the constructor's fourth argument, then call
+  `refreshAccessToken()` on app start.
 
 Only `customer.get()`/`customer.update()` retry once on a `401` by calling
 `refreshAccessToken()` and re-issuing the request — `cart` and `checkout`
