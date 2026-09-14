@@ -26,7 +26,7 @@ Started 2026-07-07. In active early development.
 - JWT-based sign in / sign up / logout / token refresh
 - Account profile management (name, shipping contact phone/email — required up front since some carriers reject label purchases without it)
 - User management (list, view, update, delete) within an account
-- Custom staff roles built from a 30-key permission catalog, enforced end-to-end (API guards + dashboard nav/action gating) — one fixed, non-editable `Owner` role per account, everything else account-defined
+- Custom staff roles built from a 28-key permission catalog, enforced end-to-end (API guards + dashboard nav/action gating) — one fixed, non-editable `Owner` role per account, everything else account-defined
 - Account-scoped developer API keys, issued and viewable from the merchant dashboard
 
 **Catalog**
@@ -66,7 +66,6 @@ Started 2026-07-07. In active early development.
 **Developer experience**
 - OpenAPI specs generated from every API, with typed SDKs (`merchant-sdk`, `storefront-sdk`, `pos-sdk`) generated from them and consumed directly by the client apps
 - `@ordersail/storefront-sdk` published publicly on npm — any merchant (or their developer) can build a custom storefront against `storefront-api`, hosted on any domain
-- Multi-tenant CORS: merchants register their storefront's origin(s) (`storefront_origins`), checked against `storefront-api`'s allowlist per account
 - Shared `ui` component package and Drizzle-based `db` schema package used across every app
 
 ## Architecture
@@ -91,7 +90,7 @@ An Nx-managed npm workspace monorepo.
 | `packages/seed` | Local dev seed — demo "Sneaker Depot" catalog + images | tsx |
 | `packages/ui` | Shared component library used by both React apps | React, Tailwind |
 
-**Data model highlights** (`packages/db/src/schema`): `accounts` and `users` anchor multi-tenancy; `products` → `product_options`/`product_option_values` → `product_variants` model catalog variation; `categories` and `brands` classify products; `locations` + `inventory` + `inventory_movements` track stock with history; `carts`/`cart_items` are ephemeral pre-purchase state while `orders`/`order_items` are permanent, snapshotted records; `stripe_accounts` links an account to its Stripe Connect account (a missing row simply means "not connected yet"); `account_api_keys` scopes storefront API access per account; `storefront_origins` is the per-account CORS allowlist a merchant-hosted storefront must be registered under.
+**Data model highlights** (`packages/db/src/schema`): `accounts` and `users` anchor multi-tenancy; `products` → `product_options`/`product_option_values` → `product_variants` model catalog variation; `categories` and `brands` classify products; `locations` + `inventory` + `inventory_movements` track stock with history; `carts`/`cart_items` are ephemeral pre-purchase state while `orders`/`order_items` are permanent, snapshotted records; `stripe_accounts` links an account to its Stripe Connect account (a missing row simply means "not connected yet"); `account_api_keys` scopes storefront API access per account.
 
 `storefront-web` isn't in the table above — it's an external consumer of `storefront-api` in its own repo, not part of this workspace. See [ARCHITECTURE.md](./ARCHITECTURE.md) for how it fits in the system map.
 
@@ -124,11 +123,8 @@ npm run dev         # the five coupled app servers, in parallel
 
 **Storefront is a separate clone.** `storefront-web` isn't part of this repo —
 clone [github.com/noel-vega/storefront-web](https://github.com/noel-vega/storefront-web)
-alongside this one, set its `.env.local` from the `sfk_…` key `bootstrap` printed
-(`NEXT_PUBLIC_APP_KEY`) plus `NEXT_PUBLIC_STOREFRONT_API_URL=http://localhost:3001`,
-and register wherever it runs with `storefront-api`'s CORS allowlist (`POST
-/storefront-origins` on merchant-api) before any cart/checkout call from its
-browser will work. See
+alongside this one and set its `.env.local` from the `sfk_…` key `bootstrap` printed
+(`NEXT_PUBLIC_APP_KEY`) plus `NEXT_PUBLIC_STOREFRONT_API_URL=http://localhost:3001`. See
 [docs/runbooks/web-checkout.md](./docs/runbooks/web-checkout.md) for the full,
 copy-pasteable local flow.
 

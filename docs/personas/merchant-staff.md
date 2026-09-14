@@ -1,6 +1,6 @@
 # Merchant Staff (custom roles)
 
-Everyone on a merchant's team who isn't the Owner. There is no hardcoded "Manager"/"Staff"/"Admin" role in the schema — every non-Owner role is a custom, account-defined bundle of permissions picked from the same 30-key catalog the Owner has access to. "Merchant Staff" as a persona is really a family of personas that varies per account; the two illustrative sub-profiles below are the common shapes, not fixed system roles.
+Everyone on a merchant's team who isn't the Owner. There is no hardcoded "Manager"/"Staff"/"Admin" role in the schema — every non-Owner role is a custom, account-defined bundle of permissions picked from the same 28-key catalog the Owner has access to. "Merchant Staff" as a persona is really a family of personas that varies per account; the two illustrative sub-profiles below are the common shapes, not fixed system roles.
 
 ## Who they are
 
@@ -17,7 +17,7 @@ Everyone on a merchant's team who isn't the Owner. There is no hardcoded "Manage
 ## Surfaces used
 
 - **`merchant-web`**, same as the Owner — there's no separate "staff app." What differs is which nav items and actions render, driven by `usePermissions`/`<Can>` reading their effective permission set from `GET /auth/me`.
-- May also be the person who pairs and manages POS devices (`pos_devices:write`) or configures storefront origins (`storefront_origins:write`) for the Storefront Developer, if their role includes those keys.
+- May also be the person who pairs and manages POS devices (`pos_devices:write`), if their role includes that key.
 
 ## Two illustrative example roles
 

@@ -40,9 +40,6 @@ export const PERMISSIONS_CATALOG: PermissionDef[] = [
   { key: "api_keys:read", resource: "api_keys", action: "read", description: "View API keys" },
   { key: "api_keys:write", resource: "api_keys", action: "write", description: "Create and revoke API keys" },
 
-  { key: "storefront_origins:read", resource: "storefront_origins", action: "read", description: "View registered storefront origins" },
-  { key: "storefront_origins:write", resource: "storefront_origins", action: "write", description: "Register and remove storefront origins" },
-
   { key: "pos_devices:read", resource: "pos_devices", action: "read", description: "View POS devices" },
   { key: "pos_devices:write", resource: "pos_devices", action: "write", description: "Pair, rename, and revoke POS devices" },
 

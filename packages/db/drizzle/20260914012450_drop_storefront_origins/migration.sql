@@ -1,0 +1,1 @@
+DROP TABLE "storefront_origins";

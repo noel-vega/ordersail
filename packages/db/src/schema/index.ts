@@ -1,6 +1,5 @@
 export * from './accounts.js';
 export * from './account-api-keys.js';
-export * from './storefront-origins.js';
 export * from './users.js';
 export * from './user-invites.js';
 export * from './customers.js';
