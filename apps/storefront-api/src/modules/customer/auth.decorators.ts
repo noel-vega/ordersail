@@ -7,6 +7,9 @@ export interface AuthenticatedCustomer {
   firstName: string;
   lastName: string;
   typ: 'access' | 'refresh';
+  // only present on refresh tokens — identifies the customer_refresh_tokens
+  // row this specific token corresponds to (rotation/reuse-detection, OS-457)
+  jti?: string;
 }
 
 // what CustomerAuthGuard stashes on the request object

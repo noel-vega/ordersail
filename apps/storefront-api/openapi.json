@@ -407,6 +407,72 @@
         ]
       }
     },
+    "/customer": {
+      "get": {
+        "operationId": "CustomerController_findOne",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Customer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CustomerJWT-auth": []
+          },
+          {
+            "AppKey-auth": []
+          }
+        ],
+        "tags": [
+          "Customer"
+        ]
+      },
+      "patch": {
+        "operationId": "CustomerController_update",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomerDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Customer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CustomerJWT-auth": []
+          },
+          {
+            "AppKey-auth": []
+          }
+        ],
+        "tags": [
+          "Customer"
+        ]
+      }
+    },
     "/auth/signup": {
       "post": {
         "operationId": "AuthController_signup",
@@ -505,7 +571,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccessTokenDto"
+                  "$ref": "#/components/schemas/TokenPairDto"
                 }
               }
             }
@@ -521,72 +587,6 @@
         ],
         "tags": [
           "Auth"
-        ]
-      }
-    },
-    "/customer": {
-      "get": {
-        "operationId": "CustomerController_findOne",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Customer"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "CustomerJWT-auth": []
-          },
-          {
-            "AppKey-auth": []
-          }
-        ],
-        "tags": [
-          "Customer"
-        ]
-      },
-      "patch": {
-        "operationId": "CustomerController_update",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCustomerDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Customer"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "CustomerJWT-auth": []
-          },
-          {
-            "AppKey-auth": []
-          }
-        ],
-        "tags": [
-          "Customer"
         ]
       }
     },
@@ -1324,6 +1324,57 @@
           "customerEmail"
         ]
       },
+      "Customer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "accountId": {
+            "type": "number"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "firstName",
+          "lastName",
+          "email",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpdateCustomerDto": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        }
+      },
       "CustomerSignUpDto": {
         "type": "object",
         "properties": {
@@ -1387,68 +1438,6 @@
         "required": [
           "refresh_token"
         ]
-      },
-      "AccessTokenDto": {
-        "type": "object",
-        "properties": {
-          "access_token": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "access_token"
-        ]
-      },
-      "Customer": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "accountId": {
-            "type": "number"
-          },
-          "firstName": {
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "accountId",
-          "firstName",
-          "lastName",
-          "email",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "UpdateCustomerDto": {
-        "type": "object",
-        "properties": {
-          "firstName": {
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          }
-        }
       }
     }
   }

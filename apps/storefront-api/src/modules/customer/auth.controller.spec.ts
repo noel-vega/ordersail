@@ -8,7 +8,7 @@ describe('AuthController', () => {
     signup: jest.Mock;
     signin: jest.Mock;
     createRefreshToken: jest.Mock;
-    refreshAccessToken: jest.Mock;
+    refreshTokens: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -16,7 +16,7 @@ describe('AuthController', () => {
       signup: jest.fn(),
       signin: jest.fn(),
       createRefreshToken: jest.fn(),
-      refreshAccessToken: jest.fn(),
+      refreshTokens: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -72,14 +72,20 @@ describe('AuthController', () => {
     });
   });
 
-  it('refreshToken passes the request-body refresh token to the service', async () => {
-    service.refreshAccessToken.mockResolvedValue('new-access-token');
+  it('refreshToken passes the request-body refresh token to the service and returns the rotated pair', async () => {
+    service.refreshTokens.mockResolvedValue({
+      access_token: 'new-access-token',
+      refresh_token: 'new-refresh-token',
+    });
 
     const result = await controller.refreshToken({
       refresh_token: 'a-refresh-token',
     });
 
-    expect(service.refreshAccessToken).toHaveBeenCalledWith('a-refresh-token');
-    expect(result).toEqual({ access_token: 'new-access-token' });
+    expect(service.refreshTokens).toHaveBeenCalledWith('a-refresh-token');
+    expect(result).toEqual({
+      access_token: 'new-access-token',
+      refresh_token: 'new-refresh-token',
+    });
   });
 });

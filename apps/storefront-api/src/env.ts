@@ -9,6 +9,10 @@ export const env = parseEnv(
     DATABASE_URL: z.url(),
     PORT: z.coerce.number().default(3001),
     CUSTOMER_JWT_SECRET: z.string().min(1),
+    // refresh tokens rotate on every use with reuse detection (OS-457), so
+    // the absolute TTL is a secondary defense — 7d keeps a customer signed
+    // in for a reasonable stretch without forcing frequent re-logins
+    CUSTOMER_REFRESH_TOKEN_TTL: z.string().default('7d'),
 
     // one platform-owned Stripe/Shippo account, shared with merchant-api.
     // The checkout webhook moved to merchant-api (M9) — no webhook secret here.
