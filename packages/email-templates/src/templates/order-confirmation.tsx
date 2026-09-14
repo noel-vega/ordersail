@@ -1,4 +1,4 @@
-import { Hr, Link, Text } from "@react-email/components";
+import { Hr, Text } from "@react-email/components";
 import { render } from "@react-email/render";
 import { EmailLayout } from "../components/layout.js";
 import { formatCents } from "../lib/currency.js";
@@ -25,7 +25,6 @@ export interface OrderConfirmationEmailProps {
   shippingState: string | null;
   shippingPostalCode: string;
   shippingCountry: string;
-  storefrontUrl: string;
 }
 
 export function OrderConfirmationEmail({
@@ -42,7 +41,6 @@ export function OrderConfirmationEmail({
   shippingState,
   shippingPostalCode,
   shippingCountry,
-  storefrontUrl,
 }: OrderConfirmationEmailProps) {
   const addressLines = [
     shippingLine1,
@@ -100,9 +98,6 @@ export function OrderConfirmationEmail({
             <br />
           </span>
         ))}
-      </Text>
-      <Text>
-        <Link href={`${storefrontUrl}/products`}>Continue shopping</Link>
       </Text>
     </EmailLayout>
   );

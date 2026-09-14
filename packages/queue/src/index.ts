@@ -8,7 +8,10 @@ export const QUEUE_NAMES = {
 
 // URLs are built by the producer (it already knows which frontend's env var
 // applies) and carried fully-formed in the payload — the worker never needs
-// to know about MERCHANT_WEB_URL/STOREFRONT_WEB_URL itself
+// to know about MERCHANT_WEB_URL itself. Storefront links were removed from
+// customer emails (OS-443/444/447) — there's no single correct storefront
+// URL in a multi-tenant, bring-your-own-domain system; revisit once there's
+// a real per-account deep-linking mechanism.
 //
 // correlationId rides along on every job so a worker log line can be traced
 // back to the request (or the upstream job) that produced it — see
@@ -21,7 +24,6 @@ export type EmailJobData =
       to: string;
       firstName: string;
       accountName: string;
-      storefrontUrl: string;
     }
   | {
       type: "order-confirmation";
@@ -46,7 +48,6 @@ export type EmailJobData =
       shippingState: string | null;
       shippingPostalCode: string;
       shippingCountry: string;
-      storefrontUrl: string;
     };
 
 // a flattened snapshot of everything the order-creation transaction needs
@@ -72,10 +73,6 @@ export type OrderJobData = {
   amountTotalCents: number;
   shippingCents: number;
   shippingLocationId: number | null;
-  // carried through so OrdersProcessor can build the order-confirmation
-  // email's link without guessing STOREFRONT_WEB_URL itself — same
-  // producer-builds-URLs convention as EmailJobData
-  storefrontUrl: string;
   items: {
     variantId: number;
     productName: string;

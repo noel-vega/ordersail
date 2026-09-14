@@ -34,7 +34,6 @@ function payload(over: Partial<OrderJobData> = {}): OrderJobData {
     amountTotalCents: 5500,
     shippingCents: 500,
     shippingLocationId: null,
-    storefrontUrl: 'http://localhost:3002',
     items: [
       {
         variantId: 1,

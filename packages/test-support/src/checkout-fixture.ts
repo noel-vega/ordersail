@@ -162,7 +162,6 @@ export function canonicalOrderJobData(s: CheckoutScenario, correlationId = 'corr
     amountTotalCents: AMOUNT_TOTAL_CENTS,
     shippingCents: SHIPPING_CENTS,
     shippingLocationId: s.shipFromLocationId,
-    storefrontUrl: 'http://localhost:3002',
     items: [
       {
         variantId: s.variantWithOptions,

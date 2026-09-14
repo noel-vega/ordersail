@@ -61,7 +61,6 @@ export class EmailProcessor extends WorkerHost {
           html: await renderCustomerThankYouEmail({
             firstName: data.firstName,
             accountName: data.accountName,
-            storefrontUrl: data.storefrontUrl,
           }),
         });
         return;
@@ -87,7 +86,6 @@ export class EmailProcessor extends WorkerHost {
             shippingState: data.shippingState,
             shippingPostalCode: data.shippingPostalCode,
             shippingCountry: data.shippingCountry,
-            storefrontUrl: data.storefrontUrl,
           }),
         });
         return;
