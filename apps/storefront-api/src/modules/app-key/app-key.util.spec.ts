@@ -1,17 +1,29 @@
-import { isLocalDevOrigin, LOCAL_DEV_ORIGIN, normalizeOrigin } from './app-key.util';
+import {
+  isLocalDevOrigin,
+  LOCAL_DEV_ORIGIN,
+  normalizeOrigin,
+} from './app-key.util';
 
 describe('normalizeOrigin', () => {
   it('lowercases the scheme and host', () => {
-    expect(normalizeOrigin('HTTPS://Shop.Example.com')).toBe('https://shop.example.com');
+    expect(normalizeOrigin('HTTPS://Shop.Example.com')).toBe(
+      'https://shop.example.com',
+    );
   });
 
   it('strips a trailing slash', () => {
-    expect(normalizeOrigin('https://shop.example.com/')).toBe('https://shop.example.com');
+    expect(normalizeOrigin('https://shop.example.com/')).toBe(
+      'https://shop.example.com',
+    );
   });
 
   it('strips the default port for the scheme', () => {
-    expect(normalizeOrigin('https://shop.example.com:443')).toBe('https://shop.example.com');
-    expect(normalizeOrigin('http://shop.example.com:80')).toBe('http://shop.example.com');
+    expect(normalizeOrigin('https://shop.example.com:443')).toBe(
+      'https://shop.example.com',
+    );
+    expect(normalizeOrigin('http://shop.example.com:80')).toBe(
+      'http://shop.example.com',
+    );
   });
 
   it('rejects a non-http(s) scheme', () => {
@@ -43,7 +55,11 @@ describe('isLocalDevOrigin', () => {
   });
 
   it('rejects any other origin regardless of env', () => {
-    expect(isLocalDevOrigin('https://shop.example.com', 'development')).toBe(false);
-    expect(isLocalDevOrigin('https://shop.example.com', 'production')).toBe(false);
+    expect(isLocalDevOrigin('https://shop.example.com', 'development')).toBe(
+      false,
+    );
+    expect(isLocalDevOrigin('https://shop.example.com', 'production')).toBe(
+      false,
+    );
   });
 });

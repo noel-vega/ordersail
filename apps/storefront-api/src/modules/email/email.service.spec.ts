@@ -4,7 +4,9 @@ import { EmailService } from './email.service';
 
 function build() {
   const emailQueue = { add: jest.fn() };
-  const service = new EmailService(emailQueue as unknown as Queue<EmailJobData>);
+  const service = new EmailService(
+    emailQueue as unknown as Queue<EmailJobData>,
+  );
   return { service, emailQueue };
 }
 
