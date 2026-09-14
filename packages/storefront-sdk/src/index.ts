@@ -24,22 +24,42 @@ export type UpdateCustomerDto = components["schemas"]["UpdateCustomerDto"];
 
 const APP_KEY_HEADER = "x-app-key";
 
+export interface StorefrontClientTokens {
+  accessToken: string | undefined;
+  refreshToken: string | undefined;
+}
+
+export interface StorefrontClientOptions {
+  // fired after signUp()/signIn()/refreshAccessToken()/logout() whenever
+  // either token changes, with the current values — the recommended way to
+  // keep a persisted copy (e.g. localStorage) in sync. Refresh tokens are
+  // single-use and rotate on every refreshAccessToken() call (OS-457): the
+  // value here after a refresh is the only one still valid going forward,
+  // and a logout call passes both as undefined so persisted storage can be
+  // cleared too.
+  onTokensChanged?: (tokens: StorefrontClientTokens) => void;
+}
+
 export class StorefrontClient {
   appKey: string;
   // set automatically the first time cart.addItem() creates a cart — or
   // pass one in up front (e.g. restored from localStorage) to resume a cart
   cartToken: string | undefined;
-  // set by signUp()/signIn() and by a successful refreshAccessToken() — not
-  // persisted by the SDK itself; a consuming app that wants a session to
-  // survive a page reload restores it from wherever it stored refreshToken
+  // set by signUp()/signIn() and by a successful refreshAccessToken() — see
+  // the onTokensChanged constructor option to persist this across reloads
   accessToken: string | undefined;
-  // set by signUp()/signIn() — pass one in up front (e.g. restored from
-  // localStorage) to re-derive an accessToken via refreshAccessToken() on
-  // page load. Tokens live in the request/response body, not a cookie: a
-  // storefront can be hosted on any merchant-owned domain, and a cookie set
-  // by storefront-api never rides along on a genuinely cross-site fetch.
+  // set by signUp()/signIn()/refreshAccessToken() — pass one in up front
+  // (e.g. restored from localStorage) to re-derive an accessToken via
+  // refreshAccessToken() on page load. Single-use: rotates on every
+  // refreshAccessToken() call, so a stale copy stops working the moment a
+  // newer one is issued — use onTokensChanged, not this field directly, to
+  // keep a persisted copy current. Tokens live in the request/response
+  // body, not a cookie: a storefront can be hosted on any merchant-owned
+  // domain, and a cookie set by storefront-api never rides along on a
+  // genuinely cross-site fetch.
   refreshToken: string | undefined;
   client: Client<paths>;
+  private onTokensChanged?: StorefrontClientOptions["onTokensChanged"];
 
   products: ReturnType<typeof createProductsResource>;
   cart: ReturnType<typeof createCartResource>;
@@ -60,10 +80,12 @@ export class StorefrontClient {
     appKey: string,
     cartToken?: string,
     refreshToken?: string,
+    options?: StorefrontClientOptions,
   ) {
     this.appKey = appKey;
     this.cartToken = cartToken;
     this.refreshToken = refreshToken;
+    this.onTokensChanged = options?.onTokensChanged;
     this.client = createClient({ baseUrl });
     // the app key identifies the tenant on every request — read off `this`
     // rather than captured at construction, so reassigning `appKey` later
@@ -95,6 +117,7 @@ export class StorefrontClient {
     const tokens = unwrap(result);
     this.accessToken = tokens.access_token;
     this.refreshToken = tokens.refresh_token;
+    this.emitTokensChanged();
     return this.accessToken;
   }
 
@@ -108,6 +131,7 @@ export class StorefrontClient {
     const tokens = unwrap(result);
     this.accessToken = tokens.access_token;
     this.refreshToken = tokens.refresh_token;
+    this.emitTokensChanged();
     return this.accessToken;
   }
 
@@ -115,25 +139,54 @@ export class StorefrontClient {
   // refresh with, the same "not signed in" outcome as an expected 401.
   // Otherwise, a 401 means the refresh token itself is invalid/expired —
   // anything else (a real 500/network failure) should surface, not silently
-  // leave accessToken unset
+  // leave accessToken unset. The server rotates on every call (OS-457) —
+  // the response's refresh_token replaces this.refreshToken, and the old
+  // value must not be reused, so onTokensChanged is the only reliable way
+  // to keep a persisted copy in sync.
   async refreshAccessToken() {
     if (!this.refreshToken) {
       this.accessToken = undefined;
+      this.emitTokensChanged();
       return undefined;
     }
     const result = await this.client.POST("/auth/token/refresh", {
       body: { refresh_token: this.refreshToken },
     });
-    this.accessToken = unwrapOrUndefinedOn(result, 401)?.access_token;
+    const tokens = unwrapOrUndefinedOn(result, 401);
+    this.accessToken = tokens?.access_token;
+    this.refreshToken = tokens?.refresh_token;
     if (this.accessToken === undefined) this.refreshToken = undefined;
+    this.emitTokensChanged();
     return this.accessToken;
   }
 
-  // nothing server-side to clear (no cookie, and no revocation store for
-  // these short-lived JWTs) — just drop the tokens this client is holding
-  logout() {
+  // Clears local state synchronously (so it's already gone by the time this
+  // returns control, even if the caller doesn't await it) before making a
+  // best-effort call to actually revoke the session server-side (OS-458) —
+  // a failed network call shouldn't trap the caller in a "can't log out"
+  // state, since the local tokens are dropped either way.
+  async logout(): Promise<void> {
+    const refreshToken = this.refreshToken;
     this.accessToken = undefined;
     this.refreshToken = undefined;
+    this.emitTokensChanged();
+
+    if (refreshToken) {
+      try {
+        await this.client.POST("/auth/logout", {
+          body: { refresh_token: refreshToken },
+        });
+      } catch {
+        // best-effort — local state is already cleared above regardless
+      }
+    }
+  }
+
+  private emitTokensChanged() {
+    this.onTokensChanged?.({
+      accessToken: this.accessToken,
+      refreshToken: this.refreshToken,
+    });
   }
 
   // request is a thunk so the retry rebuilds headers off the refreshed accessToken, not a stale one

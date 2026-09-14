@@ -164,6 +164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/customer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CustomerController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["CustomerController_update"];
+        trace?: never;
+    };
     "/auth/signup": {
         parameters: {
             query?: never;
@@ -212,20 +228,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/customer": {
+    "/auth/logout": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["CustomerController_findOne"];
+        get?: never;
         put?: never;
-        post?: never;
+        post: operations["AuthController_logout"];
         delete?: never;
         options?: never;
         head?: never;
-        patch: operations["CustomerController_update"];
+        patch?: never;
         trace?: never;
     };
     "/health": {
@@ -379,6 +395,22 @@ export interface components {
             paymentStatus: string;
             customerEmail: string | null;
         };
+        Customer: {
+            id: number;
+            accountId: number;
+            firstName: string;
+            lastName: string;
+            email: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UpdateCustomerDto: {
+            firstName?: string;
+            lastName?: string;
+            email?: string;
+        };
         CustomerSignUpDto: {
             firstName: string;
             lastName: string;
@@ -395,25 +427,6 @@ export interface components {
         };
         RefreshTokenDto: {
             refresh_token: string;
-        };
-        AccessTokenDto: {
-            access_token: string;
-        };
-        Customer: {
-            id: number;
-            accountId: number;
-            firstName: string;
-            lastName: string;
-            email: string;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        UpdateCustomerDto: {
-            firstName?: string;
-            lastName?: string;
-            email?: string;
         };
     };
     responses: never;
@@ -707,6 +720,48 @@ export interface operations {
             };
         };
     };
+    CustomerController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+        };
+    };
+    CustomerController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCustomerDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+        };
+    };
     AuthController_signup: {
         parameters: {
             query?: never;
@@ -783,7 +838,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AccessTokenDto"];
+                    "application/json": components["schemas"]["TokenPairDto"];
                 };
             };
             401: {
@@ -794,26 +849,7 @@ export interface operations {
             };
         };
     };
-    CustomerController_findOne: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Customer"];
-                };
-            };
-        };
-    };
-    CustomerController_update: {
+    AuthController_logout: {
         parameters: {
             query?: never;
             header?: never;
@@ -822,7 +858,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateCustomerDto"];
+                "application/json": components["schemas"]["RefreshTokenDto"];
             };
         };
         responses: {
@@ -830,9 +866,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["Customer"];
-                };
+                content?: never;
             };
         };
     };

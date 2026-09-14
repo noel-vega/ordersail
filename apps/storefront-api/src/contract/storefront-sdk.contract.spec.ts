@@ -182,6 +182,121 @@ describe('storefront-sdk contract', () => {
     expect(updatedCustomer.firstName).toBe('Updated');
   }, 90000);
 
+  // OS-459: refreshAccessToken() must capture the server's rotated
+  // refresh_token, not just access_token — otherwise every session breaks
+  // after its first refresh once the server rotates (OS-457)
+  it('rotates refresh tokens on refreshAccessToken() and fires onTokensChanged', async () => {
+    const account = await insertAccount(db);
+    const apiKey = await insertApiKey(db, { accountId: account.id });
+    const tokenChanges: Array<{
+      accessToken: string | undefined;
+      refreshToken: string | undefined;
+    }> = [];
+    const client = new StorefrontClient(
+      baseUrl,
+      apiKey.key,
+      undefined,
+      undefined,
+      { onTokensChanged: (tokens) => tokenChanges.push(tokens) },
+    );
+
+    await client.signUp({
+      firstName: 'Rotation',
+      lastName: 'Tester',
+      email: `rotation-${account.id}@buyer.test`,
+      password: 'a-real-password-123',
+    });
+    expect(tokenChanges).toHaveLength(1);
+    const firstRefreshToken = client.refreshToken;
+
+    const newAccessToken = await client.refreshAccessToken();
+
+    expect(newAccessToken).toEqual(expect.any(String));
+    expect(client.refreshToken).toEqual(expect.any(String));
+    expect(client.refreshToken).not.toBe(firstRefreshToken);
+    expect(tokenChanges).toHaveLength(2);
+    expect(tokenChanges[1]).toEqual({
+      accessToken: newAccessToken,
+      refreshToken: client.refreshToken,
+    });
+  }, 30000);
+
+  // the core OS-457 guarantee, exercised through the real published SDK:
+  // reusing a rotated-out refresh token doesn't just fail that one request —
+  // it kills the whole session, including the client that holds the
+  // currently-valid, never-reused token from the same family
+  it('reusing a rotated-out refresh token invalidates the whole session', async () => {
+    const account = await insertAccount(db);
+    const apiKey = await insertApiKey(db, { accountId: account.id });
+    const client = new StorefrontClient(baseUrl, apiKey.key);
+
+    await client.signUp({
+      firstName: 'Reuse',
+      lastName: 'Tester',
+      email: `reuse-${account.id}@buyer.test`,
+      password: 'a-real-password-123',
+    });
+    const staleRefreshToken = client.refreshToken;
+    await client.refreshAccessToken(); // rotates — staleRefreshToken is now dead
+
+    const attacker = new StorefrontClient(
+      baseUrl,
+      apiKey.key,
+      undefined,
+      staleRefreshToken,
+    );
+    await expect(attacker.refreshAccessToken()).resolves.toBeUndefined();
+
+    // the legitimate client's own (never-reused) current token is also dead
+    await expect(client.refreshAccessToken()).resolves.toBeUndefined();
+  }, 30000);
+
+  // OS-458: logout must actually revoke server-side, not just forget the
+  // tokens locally — verified by having a second client try to use the same
+  // refresh token afterward
+  it('logout revokes the session server-side', async () => {
+    const account = await insertAccount(db);
+    const apiKey = await insertApiKey(db, { accountId: account.id });
+    const tokenChanges: Array<{
+      accessToken: string | undefined;
+      refreshToken: string | undefined;
+    }> = [];
+    const client = new StorefrontClient(
+      baseUrl,
+      apiKey.key,
+      undefined,
+      undefined,
+      { onTokensChanged: (tokens) => tokenChanges.push(tokens) },
+    );
+
+    await client.signUp({
+      firstName: 'Logout',
+      lastName: 'Tester',
+      email: `logout-${account.id}@buyer.test`,
+      password: 'a-real-password-123',
+    });
+    const issuedRefreshToken = client.refreshToken;
+
+    await client.logout();
+
+    expect(client.accessToken).toBeUndefined();
+    expect(client.refreshToken).toBeUndefined();
+    expect(tokenChanges.at(-1)).toEqual({
+      accessToken: undefined,
+      refreshToken: undefined,
+    });
+
+    // still-usable client-side memory of the old token proves nothing on
+    // its own — confirm the server actually revoked it
+    const rehydrated = new StorefrontClient(
+      baseUrl,
+      apiKey.key,
+      undefined,
+      issuedRefreshToken,
+    );
+    await expect(rehydrated.refreshAccessToken()).resolves.toBeUndefined();
+  }, 30000);
+
   it('throws a typed ApiError with the real status on an invalid app key', async () => {
     const client = new StorefrontClient(baseUrl, 'sfk_not_a_real_key');
 
