@@ -3,7 +3,6 @@ import { signupUrl, signinUrl } from '../lib/urls';
 
 const year = new Date().getFullYear();
 
-// A "Legal" column (terms, privacy, acceptable-use) is added here in M3 (OS-298).
 const columns = [
 	{
 		title: 'Product',
@@ -13,6 +12,18 @@ const columns = [
 			{ href: '/how-it-works', label: 'How it works' },
 			{ href: '/faq', label: 'FAQ' },
 		],
+	},
+	{
+		title: 'Legal',
+		links: [
+			{ href: '/terms', label: 'Terms of Service' },
+			{ href: '/privacy', label: 'Privacy Policy' },
+			{ href: '/acceptable-use', label: 'Acceptable Use' },
+		],
+	},
+	{
+		title: 'Company',
+		links: [{ href: '/contact', label: 'Contact' }],
 	},
 	{
 		title: 'Get started',
@@ -43,8 +54,11 @@ const columns = [
 			}
 		</nav>
 		<div class="meta">
-			<span class="mark">OrderSail</span>
-			<span>&copy; {year} — charting commerce for small business</span>
+			<span>
+				<span class="mark">OrderSail</span>
+				<span>&copy; {year} — charting commerce for small business</span>
+			</span>
+			<a href="mailto:support@ordersail.com">support@ordersail.com</a>
 		</div>
 	</div>
 </footer>
@@ -92,13 +106,24 @@ const columns = [
 	.meta {
 		display: flex;
 		justify-content: space-between;
-		gap: 16px;
+		gap: 8px 16px;
 		flex-wrap: wrap;
 		padding-top: 24px;
 		border-top: 1px solid color-mix(in srgb, var(--line) 20%, transparent);
 	}
+	.meta > span {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 12px;
+	}
 	.meta .mark {
 		font-weight: 700;
 		color: var(--ink);
+	}
+	.meta a {
+		text-decoration: none;
+	}
+	.meta a:hover {
+		text-decoration: underline;
 	}
 </style>
