@@ -161,3 +161,62 @@ describe('AuthService refresh-token rotation (OS-457)', () => {
     );
   });
 });
+
+describe('AuthService.logout (OS-458)', () => {
+  it('revokes every token in the family', async () => {
+    const customer = await seed();
+    const service = build();
+    const token1 = await service.createRefreshToken(
+      customer.id,
+      customer.email,
+      customer.accountId,
+      customer.firstname,
+      customer.lastname,
+      'family-logout',
+    );
+    const { refresh_token: token2 } = await service.refreshTokens(token1);
+
+    await service.logout(token2);
+
+    // the just-issued, still-valid token2 is now dead
+    await expect(service.refreshTokens(token2)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
+  it('is a no-op for a well-formed but unknown jti', async () => {
+    const customer = await seed();
+    const service = build();
+    const forged = await jwtService.signAsync({
+      sub: customer.id,
+      email: customer.email,
+      accountId: customer.accountId,
+      firstName: customer.firstname,
+      lastName: customer.lastname,
+      typ: 'refresh',
+      jti: 'nonexistent-jti',
+    });
+
+    await expect(service.logout(forged)).resolves.toBeUndefined();
+  });
+
+  it('is a no-op for an access token presented as a refresh token', async () => {
+    const customer = await seed();
+    const service = build();
+    const accessToken = await service.createAccessToken(
+      customer.id,
+      customer.email,
+      customer.accountId,
+      customer.firstname,
+      customer.lastname,
+    );
+
+    await expect(service.logout(accessToken)).resolves.toBeUndefined();
+  });
+
+  it('is a no-op for an invalid or malformed token', async () => {
+    const service = build();
+
+    await expect(service.logout('not-a-jwt')).resolves.toBeUndefined();
+  });
+});

@@ -173,15 +173,7 @@ export class AuthService {
     }
 
     if (record.revokedAt) {
-      await this.db
-        .update(customerRefreshTokensTable)
-        .set({ revokedAt: new Date() })
-        .where(
-          and(
-            eq(customerRefreshTokensTable.familyId, record.familyId),
-            isNull(customerRefreshTokensTable.revokedAt),
-          ),
-        );
+      await this.revokeFamily(record.familyId);
       throw new UnauthorizedException('Invalid or expired token');
     }
 
@@ -207,5 +199,46 @@ export class AuthService {
     );
 
     return { access_token, refresh_token };
+  }
+
+  private async revokeFamily(familyId: string) {
+    await this.db
+      .update(customerRefreshTokensTable)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(customerRefreshTokensTable.familyId, familyId),
+          isNull(customerRefreshTokensTable.revokedAt),
+        ),
+      );
+  }
+
+  // Best-effort: an already-invalid/expired/unknown token is treated as a
+  // no-op success, not an error — logging out with a stale token shouldn't
+  // be a user-facing failure, since the end state ("this session is dead")
+  // is the same either way.
+  async logout(refreshToken: string): Promise<void> {
+    let payload: AuthenticatedCustomer;
+    try {
+      payload =
+        await this.jwtService.verifyAsync<AuthenticatedCustomer>(refreshToken);
+    } catch {
+      return;
+    }
+
+    if (payload.typ !== 'refresh' || !payload.jti) {
+      return;
+    }
+
+    const [record] = await this.db
+      .select()
+      .from(customerRefreshTokensTable)
+      .where(eq(customerRefreshTokensTable.jti, payload.jti));
+
+    if (!record) {
+      return;
+    }
+
+    await this.revokeFamily(record.familyId);
   }
 }
