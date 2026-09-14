@@ -1,0 +1,162 @@
+---
+// Merchant-facing DPA (OS-339). Source-of-truth content is mirrored in
+// docs/compliance/dpa-template.md — keep the two in sync. The SCC annex and
+// governing-law/liability terms are a placeholder pending legal review
+// before launch, same as /terms.
+import Layout from '../layouts/Layout.astro';
+
+const lastUpdated = 'September 13, 2026';
+---
+
+<Layout
+	title="Data Processing Agreement — OrderSail"
+	description="OrderSail's Data Processing Agreement for merchants who need one for their own compliance obligations."
+>
+	<section class="head">
+		<p class="eyebrow">Legal</p>
+		<h1>Data Processing Agreement</h1>
+		<p class="lede">Last updated {lastUpdated}.</p>
+	</section>
+
+	<article class="legal">
+		<p>
+			This Data Processing Agreement ("DPA") forms part of the <a
+				href="/terms">Terms of Service</a
+			> between OrderSail ("Processor," "we") and the merchant using OrderSail
+			("Controller," "you," "Merchant"). It applies where OrderSail processes
+			personal data on your behalf as described in our <a href="/privacy"
+				>Privacy Policy</a
+			>.
+		</p>
+
+		<h2 id="subject-matter">Subject matter & duration</h2>
+		<p>
+			OrderSail processes personal data as necessary to provide the Service —
+			hosting your storefront and dashboard, processing orders and payments,
+			arranging shipping, sending transactional email, and providing support —
+			for the duration of your account, plus any period required afterward for
+			legal, accounting, or fraud-prevention purposes.
+		</p>
+
+		<h2 id="processing-details">Nature, purpose & categories of processing</h2>
+		<ul>
+			<li>
+				<strong>Data subjects:</strong> your customers (buyers) and staff.
+			</li>
+			<li>
+				<strong>Personal data:</strong> name, email, shipping address, order
+				contents, and payment-transaction records. Cardholder data goes
+				directly to Stripe — OrderSail never receives it.
+			</li>
+		</ul>
+
+		<h2 id="processor-obligations">Processor obligations</h2>
+		<p>OrderSail will:</p>
+		<ol>
+			<li>
+				Process personal data only on your documented instructions (including
+				via your use of the dashboard and API), unless required otherwise by
+				law.
+			</li>
+			<li>Ensure personnel who process personal data are bound by confidentiality.</li>
+			<li>Apply appropriate technical and organizational security measures.</li>
+			<li>
+				Not engage a new subprocessor without prior notice through the
+				subprocessor list's change-notification mechanism, giving you an
+				opportunity to object.
+			</li>
+			<li>
+				Assist you, to the extent reasonably possible, with data subject
+				rights requests, breach notification, and data-protection-impact
+				assessments.
+			</li>
+			<li>Notify you without undue delay after becoming aware of a personal data breach affecting your data.</li>
+			<li>
+				At your choice, delete or return all personal data at the end of our
+				engagement, except where retention is required by law.
+			</li>
+			<li>Make available information reasonably necessary to demonstrate compliance with this DPA.</li>
+		</ol>
+
+		<h2 id="subprocessors">Subprocessors</h2>
+		<p>
+			Current subprocessors: Stripe (payments), Shippo (shipping labels and
+			rates), and Amazon Web Services (hosting and transactional email via
+			SES). We'll notify you in advance of any new subprocessor, with an
+			opportunity to object on reasonable data-protection grounds before it
+			takes effect.
+		</p>
+
+		<h2 id="international-transfers">International transfers</h2>
+		<p>
+			Where personal data is transferred outside a jurisdiction your law
+			recognizes as offering adequate protection, the transfer is governed by
+			the Standard Contractual Clauses, incorporated by reference.
+		</p>
+		<p>
+			<em
+				>[Placeholder — the SCC module/annex text and governing-law/liability
+				terms are pending legal review before launch.]</em
+			>
+		</p>
+
+		<h2 id="execution">How this DPA takes effect</h2>
+		<p>
+			Using OrderSail as a data processor under applicable data protection law
+			constitutes acceptance of this DPA. If you need a signed copy for your
+			own records or a vendor-review process, email <a
+				href="mailto:legal@ordersail.com">legal@ordersail.com</a
+			>.
+		</p>
+	</article>
+</Layout>
+
+<style>
+	.head {
+		padding: 40px 0 32px;
+	}
+	.head h1 {
+		font-family: Georgia, serif;
+		font-size: clamp(2rem, 5vw, 3rem);
+		line-height: 1.1;
+		font-weight: 400;
+		letter-spacing: -0.02em;
+		margin: 0 0 14px;
+	}
+	.lede {
+		font-family: ui-monospace, monospace;
+		font-size: 0.86rem;
+		color: var(--ink-dim);
+		margin: 0;
+	}
+
+	.legal {
+		max-width: 68ch;
+		padding-bottom: 90px;
+		font-family: system-ui, sans-serif;
+		font-size: 0.98rem;
+		line-height: 1.7;
+		color: var(--ink);
+	}
+	.legal h2 {
+		font-family: Georgia, serif;
+		font-size: 1.3rem;
+		font-weight: 400;
+		margin: 40px 0 12px;
+	}
+	.legal p {
+		margin: 0 0 16px;
+	}
+	.legal ul,
+	.legal ol {
+		margin: 0 0 16px;
+		padding-left: 1.2em;
+	}
+	.legal li {
+		margin: 0 0 8px;
+	}
+	.legal a {
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+</style>
