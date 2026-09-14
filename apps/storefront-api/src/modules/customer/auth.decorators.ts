@@ -6,6 +6,7 @@ export interface AuthenticatedCustomer {
   accountId: number;
   firstName: string;
   lastName: string;
+  typ: 'access' | 'refresh';
 }
 
 // what CustomerAuthGuard stashes on the request object

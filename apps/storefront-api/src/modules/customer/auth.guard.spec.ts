@@ -30,6 +30,7 @@ const payload: AuthenticatedCustomer = {
   accountId: 7,
   firstName: 'A',
   lastName: 'B',
+  typ: 'access',
 };
 
 describe('CustomerAuthGuard', () => {
@@ -75,6 +76,23 @@ describe('CustomerAuthGuard', () => {
     });
     const { ctx } = contextWithRequest({
       headers: { authorization: 'Bearer bad-token' },
+      accountId: 7,
+    });
+
+    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
+  // OS-455: access and refresh tokens share the same signature/claims shape
+  // except `typ` — without this check, a leaked refresh token would work as
+  // a full access token for its entire (much longer) lifetime
+  it('rejects a refresh token presented as an access token', async () => {
+    const guard = build(() =>
+      Promise.resolve({ ...payload, typ: 'refresh' as const }),
+    );
+    const { ctx } = contextWithRequest({
+      headers: { authorization: 'Bearer refresh-token' },
       accountId: 7,
     });
 

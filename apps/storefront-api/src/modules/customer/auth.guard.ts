@@ -42,6 +42,13 @@ export class CustomerAuthGuard implements CanActivate {
       throw new UnauthorizedException();
     }
 
+    // a refresh token shares the same signature/claims shape as an access
+    // token except for `typ` — without this check it would work as a full
+    // access token for its entire (much longer) lifetime
+    if (payload.typ !== 'access') {
+      throw new UnauthorizedException();
+    }
+
     request.customer = payload;
     return true;
   }
