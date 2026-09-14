@@ -8,7 +8,6 @@ import { AppKeyModule } from './modules/app-key/app-key.module';
 import { ProductsModule } from './modules/products/products.module';
 import { CartModule } from './modules/cart/cart.module';
 import { CheckoutModule } from './modules/checkout/checkout.module';
-import { AuthModule } from './modules/auth/auth.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { HealthModule } from './modules/health/health.module';
 
@@ -25,7 +24,6 @@ import { HealthModule } from './modules/health/health.module';
     ProductsModule,
     CartModule,
     CheckoutModule,
-    AuthModule,
     CustomerModule,
     HealthModule,
   ],
