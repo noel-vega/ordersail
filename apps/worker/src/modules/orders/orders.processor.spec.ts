@@ -127,7 +127,6 @@ function job(s: Scenario, over: Partial<OrderJobData> = {}): Job<OrderJobData> {
     amountTotalCents: 23845,
     shippingCents: 845,
     shippingLocationId: s.locationA,
-    storefrontUrl: 'http://localhost:3002',
     items: [
       {
         variantId: s.variantAf1,
@@ -334,7 +333,6 @@ describe('OrdersProcessor — checkout-completed', () => {
       amountTotalCents: 23845,
       shippingLine1: '1 Main St',
       shippingPostalCode: '94114',
-      storefrontUrl: 'http://localhost:3002',
     });
     expect(payload.items).toEqual(job(s).data.items);
     expect(order.confirmationEmailQueuedAt).toBeInstanceOf(Date);

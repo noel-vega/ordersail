@@ -289,7 +289,6 @@ export class OrdersProcessor extends WorkerHost {
         shippingState: data.shippingState,
         shippingPostalCode: data.shippingPostalCode,
         shippingCountry: data.shippingCountry,
-        storefrontUrl: data.storefrontUrl,
       });
 
       // if this update fails/crashes right after the add() above succeeds,

@@ -5,10 +5,8 @@ import type { Queue } from 'bullmq';
 import { Logger, getCorrelationId } from 'logging';
 import { QUEUE_NAMES, type OrderJobData } from 'queue';
 import { DRIZZLE } from 'src/shared/database/database.constants';
-import { env } from 'src/shared/env';
 import type { CheckoutSessionPaidPayload } from 'src/shared/events';
 import { type db as Db, eq, orderPaymentsTable } from 'db/sales';
-import { storefrontOriginsTable } from 'db/identity';
 import { CartsService } from '../carts/carts.service';
 
 type CartItemOptionValue = { optionName: string; value: string };
@@ -44,8 +42,6 @@ export class CheckoutOrderService {
       return null;
     }
 
-    const storefrontUrl = await this.resolveStorefrontUrl(event.accountId);
-
     const addr = event.shippingAddress;
     return {
       type: 'checkout-completed',
@@ -66,7 +62,6 @@ export class CheckoutOrderService {
       amountTotalCents: event.amountTotalCents ?? cart.subtotalCents,
       shippingCents: event.shippingAmountCents ?? 0,
       shippingLocationId: event.shippingLocationId,
-      storefrontUrl,
       items: cart.items.map((item) => ({
         variantId: item.variantId,
         productName: item.productName,
@@ -76,20 +71,6 @@ export class CheckoutOrderService {
         quantity: item.quantity,
       })),
     };
-  }
-
-  // storefronts can be hosted on any merchant-owned domain now (OS-431), so
-  // there's no single canonical STOREFRONT_WEB_URL to link to — prefer the
-  // account's own registered origin, falling back to the env default (local
-  // dev, or an account that hasn't registered one yet) so the link is never
-  // simply missing
-  private async resolveStorefrontUrl(accountId: number): Promise<string> {
-    const [registered] = await this.db
-      .select({ origin: storefrontOriginsTable.origin })
-      .from(storefrontOriginsTable)
-      .where(eq(storefrontOriginsTable.accountId, accountId))
-      .limit(1);
-    return registered?.origin ?? env.STOREFRONT_WEB_URL;
   }
 
   // Hands the resolved payload to apps/worker. Idempotency pre-check: the

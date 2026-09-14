@@ -9,7 +9,6 @@ export const env = parseEnv(
     DATABASE_URL: z.url(),
     PORT: z.coerce.number().default(3001),
     CUSTOMER_JWT_SECRET: z.string().min(1),
-    STOREFRONT_WEB_URL: z.url().default('http://localhost:3002'),
 
     // one platform-owned Stripe/Shippo account, shared with merchant-api.
     // The checkout webhook moved to merchant-api (M9) — no webhook secret here.

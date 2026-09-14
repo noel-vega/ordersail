@@ -9,10 +9,6 @@ export const env = parseEnv(
     DATABASE_URL: z.url(),
     STAFF_JWT_SECRET: z.string().min(1),
     MERCHANT_WEB_URL: z.url().default('http://localhost:5000'),
-    // the storefront a web order was placed on — carried into the order job
-    // so apps/worker can build the confirmation-email link (M9: order
-    // creation moved here from storefront-api)
-    STOREFRONT_WEB_URL: z.url().default('http://localhost:3002'),
 
     // one platform-owned Stripe/Shippo account, shared with storefront-api
     STRIPE_SECRET_KEY: z.string().startsWith('sk_'),
