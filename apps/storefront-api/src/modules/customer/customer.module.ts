@@ -1,11 +1,26 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { CustomerService } from './customer.service';
 import { CustomerController } from './customer.controller';
-import { CustomerAuthGuard } from '../auth/auth.guard';
+import { CustomerAuthGuard } from './auth.guard';
+import { AuthService } from './auth.service';
+import { AuthController } from './auth.controller';
+import { jwtConstants } from './auth.constants';
+import { CartModule } from '../cart/cart.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
-  controllers: [CustomerController],
-  providers: [CustomerService, CustomerAuthGuard],
+  imports: [
+    CartModule,
+    EmailModule,
+    JwtModule.register({
+      global: true,
+      secret: jwtConstants.secret,
+      signOptions: { expiresIn: '60s' },
+    }),
+  ],
+  controllers: [CustomerController, AuthController],
+  providers: [CustomerService, CustomerAuthGuard, AuthService],
   exports: [CustomerService],
 })
 export class CustomerModule {}

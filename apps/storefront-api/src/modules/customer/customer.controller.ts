@@ -3,11 +3,8 @@ import { ApiBearerAuth, ApiOkResponse, ApiSecurity } from '@nestjs/swagger';
 import { CustomerService } from './customer.service';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { Customer } from './entities/customer.entity';
-import { CustomerAuthGuard } from '../auth/auth.guard';
-import {
-  CurrentCustomer,
-  type AuthenticatedCustomer,
-} from '../auth/auth.decorators';
+import { CustomerAuthGuard } from './auth.guard';
+import { CurrentCustomer, type AuthenticatedCustomer } from './auth.decorators';
 
 @ApiSecurity('AppKey-auth')
 @ApiBearerAuth('CustomerJWT-auth')
