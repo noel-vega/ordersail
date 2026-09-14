@@ -73,4 +73,14 @@ export class AuthController {
   async refreshToken(@Body() dto: RefreshTokenDto): Promise<TokenPairDto> {
     return await this.authService.refreshTokens(dto.refresh_token);
   }
+
+  // Best-effort: an already-invalid/expired/unknown refresh token still
+  // returns 200 — see AuthService.logout. The customer's browser forgetting
+  // its tokens was always sufficient from their point of view; this just
+  // makes it true server-side too.
+  @Post('logout')
+  @ApiOkResponse()
+  async logout(@Body() dto: RefreshTokenDto): Promise<void> {
+    await this.authService.logout(dto.refresh_token);
+  }
 }

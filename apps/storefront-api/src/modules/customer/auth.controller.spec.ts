@@ -9,6 +9,7 @@ describe('AuthController', () => {
     signin: jest.Mock;
     createRefreshToken: jest.Mock;
     refreshTokens: jest.Mock;
+    logout: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -17,6 +18,7 @@ describe('AuthController', () => {
       signin: jest.fn(),
       createRefreshToken: jest.fn(),
       refreshTokens: jest.fn(),
+      logout: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -87,5 +89,13 @@ describe('AuthController', () => {
       access_token: 'new-access-token',
       refresh_token: 'new-refresh-token',
     });
+  });
+
+  it('logout passes the request-body refresh token to the service', async () => {
+    service.logout.mockResolvedValue(undefined);
+
+    await controller.logout({ refresh_token: 'a-refresh-token' });
+
+    expect(service.logout).toHaveBeenCalledWith('a-refresh-token');
   });
 });
