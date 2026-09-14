@@ -114,13 +114,54 @@ Two independent layers, both handled for you by `StorefrontClient`:
   you ever need to switch accounts.
 - **Customer auth** — a bearer access token and a refresh token, both
   returned in the response body by `signUp()`/`signIn()` and held on
-  `client.accessToken`/`client.refreshToken`. Neither is persisted by the
-  SDK itself: a storefront can be hosted on any merchant-owned domain, and a
-  cookie set by `storefront-api` never rides along on a genuinely cross-site
-  request, so there's no cookie to rely on. To restore a session across a
-  page reload, persist `refreshToken` yourself (e.g. `localStorage`) and
-  pass it as the constructor's fourth argument, then call
-  `refreshAccessToken()` on app start.
+  `client.accessToken`/`client.refreshToken`.
+
+The refresh token is **single-use**: every `refreshAccessToken()` call
+rotates it — the response carries a *new* refresh token alongside the new
+access token, and the one you presented stops working immediately.
+Presenting an already-used (rotated-out) refresh token again isn't just
+rejected — the server treats that as a sign the token was copied or stolen
+and revokes the customer's *entire* session, so even a different,
+still-unused refresh token from the same login is dead afterward too. In
+practice this means you can't read `client.refreshToken` once after
+`signIn()` and keep reusing that same string — you need to track whichever
+value is *current* the whole time a session is alive.
+
+Do that with the `onTokensChanged` constructor option, called after every
+`signUp()`/`signIn()`/`refreshAccessToken()`/`logout()` with the tokens'
+current values — this is the mechanism to persist a session across a page
+reload, not `client.refreshToken` read once:
+
+```ts
+const storefrontApi = new StorefrontClient(
+  "https://api.your-storefront-api-host.com",
+  "sfk_...",
+  undefined, // cartToken — restore the same way if you have one saved
+  localStorage.getItem("refreshToken") ?? undefined,
+  {
+    onTokensChanged: ({ refreshToken }) => {
+      if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
+      else localStorage.removeItem("refreshToken");
+    },
+  },
+);
+
+// on app start, if a refreshToken was restored above:
+await storefrontApi.refreshAccessToken();
+```
+
+Neither token is persisted by the SDK itself: a storefront can be hosted on
+any merchant-owned domain, and a cookie set by `storefront-api` never rides
+along on a genuinely cross-site request, so there's no cookie to rely on —
+`onTokensChanged` is the mechanism instead.
+
+`logout()` is `async` and does two things: clears `accessToken`/`refreshToken`
+locally — synchronously, before any network call, so they're already gone
+even if you don't `await` the returned promise — and makes a best-effort
+call to revoke the session server-side too. A failed network call there
+still leaves you logged out locally; it just means the now-orphaned refresh
+token stays valid until it expires on its own instead of being revoked
+immediately.
 
 Only `customer.get()`/`customer.update()` retry once on a `401` by calling
 `refreshAccessToken()` and re-issuing the request — `cart` and `checkout`
