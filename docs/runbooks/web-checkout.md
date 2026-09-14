@@ -66,17 +66,6 @@ npm run stripe:listen -w merchant-api   # account.updated + checkout.session.* +
 The seed's "Default" location ships from a real address and every variant has a weight,
 so Shippo can quote right away — no manual Locations step.
 
-`storefront-api`'s CORS only allows origins an account has explicitly registered
-(OS-431) — register wherever `storefront-web` is running before any cart/checkout
-call from its browser will work:
-
-```bash
-TOKEN=$(curl -s -X POST localhost:3000/auth/signin -H "content-type: application/json" \
-  -d '{"email":"owner@sneakerdepot.test","password":"password123"}' | jq -r .access_token)
-curl -s -X POST localhost:3000/storefront-origins -H "content-type: application/json" \
-  -H "authorization: Bearer $TOKEN" -d '{"origin":"http://localhost:3010"}'
-```
-
 ## Connect a Stripe account to the store
 
 merchant-web (`http://localhost:5000`, login `owner@sneakerdepot.test` / `password123`)
