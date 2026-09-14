@@ -8,7 +8,6 @@ import { CorrelatedLogger, runWithCorrelationId } from 'logging';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AppModule } from './app.module';
 import { createSwaggerConfig } from './swagger.config';
-import { CorsOriginsService } from './modules/cors-origins/cors-origins.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -33,25 +32,16 @@ async function bootstrap() {
 
   app.use(cookieParser());
 
-  // customer signin now sets an httpOnly refresh cookie, so this can no
-  // longer be a wildcard origin like it used to be. Storefronts can be
-  // hosted on any merchant-owned domain, so the allowed set is dynamic
-  // (registered storefront_origins rows), not one hardcoded value — see
-  // CorsOriginsService. Note: a CORS preflight never carries the actual
-  // x-app-key value, only Origin, so this can only confirm an origin is
-  // registered by *some* account, not that it belongs to *this* request's
-  // account — that cross-check happens separately (OS-438).
-  const corsOrigins = app.get(CorsOriginsService);
+  // Storefronts can be hosted on any merchant-owned domain, so there's no
+  // fixed origin (or DB-backed allowlist) to gate here — CORS preflight
+  // never carries x-app-key, only Origin, so it can never tell which
+  // account an origin needs to belong to (that's a coarse check at best).
+  // The real tenant-scoping check — this origin must belong to *this*
+  // request's account, not just be registered by someone — happens once
+  // x-app-key resolves an accountId, in AppKeyGuard. CORS itself just
+  // reflects whatever Origin was sent.
   app.enableCors({
-    origin: (
-      origin: string | undefined,
-      callback: (err: Error | null, allow?: boolean) => void,
-    ) => {
-      // no Origin header — not a browser CORS request (curl, health checks,
-      // server-to-server); nothing for CORS to gate
-      if (!origin) return callback(null, true);
-      callback(null, corsOrigins.isAllowed(origin));
-    },
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: [

@@ -1,7 +1,8 @@
 // Normalizes a merchant-submitted origin to scheme+host only (drops any
 // path/query/hash) and rejects anything that isn't a well-formed http(s)
 // origin — this string is checked verbatim against the request's Origin
-// header in storefront-api's CORS allowlist, so it must be exact.
+// header in storefront-api's AppKeyGuard tenant-scoping check, so it must
+// be exact.
 export function normalizeOrigin(input: string): string | null {
   let url: URL;
   try {
