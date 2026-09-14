@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Controller, Post, Body } from '@nestjs/common';
 import {
   ApiOkResponse,
@@ -8,7 +9,6 @@ import {
 import { AuthService } from './auth.service';
 import { CustomerSignUpDto } from './dto/customer-signup.dto';
 import { CustomerSignInDto } from './dto/customer-signin.dto';
-import { AccessTokenDto } from './dto/access-token.dto';
 import { TokenPairDto } from './dto/token-pair.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { CurrentAccountId } from '../app-key/app-key.decorators';
@@ -39,6 +39,7 @@ export class AuthController {
       result.accountId,
       result.firstName,
       result.lastName,
+      randomUUID(),
     );
 
     return { access_token: result.access_token, refresh_token };
@@ -60,18 +61,16 @@ export class AuthController {
       result.accountId,
       result.firstName,
       result.lastName,
+      randomUUID(),
     );
 
     return { access_token: result.access_token, refresh_token };
   }
 
   @Post('token/refresh')
-  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiOkResponse({ type: TokenPairDto })
   @ApiUnauthorizedResponse()
-  async refreshToken(@Body() dto: RefreshTokenDto): Promise<AccessTokenDto> {
-    const access_token = await this.authService.refreshAccessToken(
-      dto.refresh_token,
-    );
-    return { access_token };
+  async refreshToken(@Body() dto: RefreshTokenDto): Promise<TokenPairDto> {
+    return await this.authService.refreshTokens(dto.refresh_token);
   }
 }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
@@ -8,7 +9,15 @@ import { CustomerService } from './customer.service';
 import { CartService } from '../cart/cart.service';
 import { EmailService } from '../email/email.service';
 import { DRIZZLE } from '../../database/database.constants';
-import { accountsTable, eq, type db as Db } from 'db';
+import { env } from '../../env';
+import {
+  accountsTable,
+  and,
+  customerRefreshTokensTable,
+  eq,
+  isNull,
+  type db as Db,
+} from 'db';
 
 @Injectable()
 export class AuthService {
@@ -93,16 +102,10 @@ export class AuthService {
     };
   }
 
-  private async createToken(
-    sub: number,
-    email: string,
-    accountId: number,
-    firstName: string,
-    lastName: string,
-    typ: 'access' | 'refresh',
+  private async sign(
+    payload: Record<string, unknown>,
     expiresIn: JwtSignOptions['expiresIn'],
   ) {
-    const payload = { sub, email, accountId, firstName, lastName, typ };
     return await this.jwtService.signAsync(payload, { expiresIn });
   }
 
@@ -113,36 +116,41 @@ export class AuthService {
     firstName: string,
     lastName: string,
   ) {
-    return await this.createToken(
-      sub,
-      email,
-      accountId,
-      firstName,
-      lastName,
-      'access',
+    return await this.sign(
+      { sub, email, accountId, firstName, lastName, typ: 'access' },
       '8h',
     );
   }
 
+  // familyId is fresh (randomUUID()) for a brand-new session (signup/signin)
+  // and carried through unchanged on every rotation (refreshTokens) — it's
+  // the unit reuse detection revokes as a whole
   async createRefreshToken(
     sub: number,
     email: string,
     accountId: number,
     firstName: string,
     lastName: string,
+    familyId: string,
   ) {
-    return await this.createToken(
-      sub,
-      email,
-      accountId,
-      firstName,
-      lastName,
-      'refresh',
-      '7d',
+    const jti = randomUUID();
+    await this.db
+      .insert(customerRefreshTokensTable)
+      .values({ customerId: sub, jti, familyId });
+
+    return await this.sign(
+      { sub, email, accountId, firstName, lastName, typ: 'refresh', jti },
+      env.CUSTOMER_REFRESH_TOKEN_TTL as JwtSignOptions['expiresIn'],
     );
   }
 
-  async refreshAccessToken(refreshToken: string) {
+  // Single-use: every call revokes the presented refresh token and issues a
+  // fresh access+refresh pair in the same family. Presenting a token that's
+  // already been rotated out is a theft signal — the legitimate holder and
+  // an attacker holding a stolen copy can't both redeem the same token, so
+  // whichever redeems second looks like reuse and kills the whole family,
+  // forcing a real re-login rather than silently trusting either side.
+  async refreshTokens(refreshToken: string) {
     let payload: AuthenticatedCustomer;
     try {
       payload =
@@ -151,18 +159,53 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    // a token that verifies but isn't actually a refresh token (e.g. an
-    // access token replayed here) must not be treated as one
-    if (payload.typ !== 'refresh') {
+    if (payload.typ !== 'refresh' || !payload.jti) {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    return await this.createAccessToken(
+    const [record] = await this.db
+      .select()
+      .from(customerRefreshTokensTable)
+      .where(eq(customerRefreshTokensTable.jti, payload.jti));
+
+    if (!record) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    if (record.revokedAt) {
+      await this.db
+        .update(customerRefreshTokensTable)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(customerRefreshTokensTable.familyId, record.familyId),
+            isNull(customerRefreshTokensTable.revokedAt),
+          ),
+        );
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    await this.db
+      .update(customerRefreshTokensTable)
+      .set({ revokedAt: new Date() })
+      .where(eq(customerRefreshTokensTable.id, record.id));
+
+    const access_token = await this.createAccessToken(
       payload.sub,
       payload.email,
       payload.accountId,
       payload.firstName,
       payload.lastName,
     );
+    const refresh_token = await this.createRefreshToken(
+      payload.sub,
+      payload.email,
+      payload.accountId,
+      payload.firstName,
+      payload.lastName,
+      record.familyId,
+    );
+
+    return { access_token, refresh_token };
   }
 }
