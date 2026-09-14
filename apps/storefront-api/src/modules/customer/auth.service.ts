@@ -99,9 +99,10 @@ export class AuthService {
     accountId: number,
     firstName: string,
     lastName: string,
+    typ: 'access' | 'refresh',
     expiresIn: JwtSignOptions['expiresIn'],
   ) {
-    const payload = { sub, email, accountId, firstName, lastName };
+    const payload = { sub, email, accountId, firstName, lastName, typ };
     return await this.jwtService.signAsync(payload, { expiresIn });
   }
 
@@ -118,6 +119,7 @@ export class AuthService {
       accountId,
       firstName,
       lastName,
+      'access',
       '8h',
     );
   }
@@ -135,23 +137,32 @@ export class AuthService {
       accountId,
       firstName,
       lastName,
+      'refresh',
       '7d',
     );
   }
 
   async refreshAccessToken(refreshToken: string) {
+    let payload: AuthenticatedCustomer;
     try {
-      const payload =
+      payload =
         await this.jwtService.verifyAsync<AuthenticatedCustomer>(refreshToken);
-      return await this.createAccessToken(
-        payload.sub,
-        payload.email,
-        payload.accountId,
-        payload.firstName,
-        payload.lastName,
-      );
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
+
+    // a token that verifies but isn't actually a refresh token (e.g. an
+    // access token replayed here) must not be treated as one
+    if (payload.typ !== 'refresh') {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    return await this.createAccessToken(
+      payload.sub,
+      payload.email,
+      payload.accountId,
+      payload.firstName,
+      payload.lastName,
+    );
   }
 }
