@@ -1,0 +1,237 @@
+---
+// Draft Privacy Policy (OS-294). Kept truthful to the current stack — no
+// claims about capabilities (e.g. self-serve export/erasure) we don't have
+// yet. The analytics/cookies section is a placeholder until OS-281 (M5)
+// picks a tool; revisit alongside OS-297.
+import Layout from '../layouts/Layout.astro';
+
+const lastUpdated = 'September 13, 2026';
+
+const sections = [
+	{ id: 'scope', label: 'Scope' },
+	{ id: 'what-we-collect', label: 'What we collect' },
+	{ id: 'how-we-use-it', label: 'How we use it' },
+	{ id: 'who-we-share-it-with', label: 'Who we share it with' },
+	{ id: 'cookies', label: 'Cookies & similar technologies' },
+	{ id: 'retention', label: 'Data retention' },
+	{ id: 'your-rights', label: 'Your rights' },
+	{ id: 'children', label: 'Children' },
+	{ id: 'international-transfer', label: 'International transfer' },
+	{ id: 'changes', label: 'Changes to this policy' },
+	{ id: 'contact', label: 'Contact' },
+];
+---
+
+<Layout
+	title="Privacy Policy — OrderSail"
+	description="What OrderSail collects, why, who it's shared with, and how to exercise your privacy rights."
+>
+	<section class="head">
+		<p class="eyebrow">Legal</p>
+		<h1>Privacy Policy</h1>
+		<p class="lede">Last updated {lastUpdated}.</p>
+	</section>
+
+	<nav class="toc" aria-label="Sections on this page">
+		<ol>
+			{
+				sections.map((s) => (
+					<li>
+						<a href={`#${s.id}`}>{s.label}</a>
+					</li>
+				))
+			}
+		</ol>
+	</nav>
+
+	<article class="legal">
+		<h2 id="scope">Scope</h2>
+		<p>
+			This policy covers the OrderSail marketing site (ordersail.com), the
+			merchant dashboard, the storefront and point-of-sale apps, and the API —
+			together, the "Service." It describes what we collect from merchants who
+			run a shop on OrderSail and from their customers ("buyers") who place
+			orders through it.
+		</p>
+
+		<h2 id="what-we-collect">What we collect</h2>
+		<p>
+			<strong>Merchant account data:</strong> name, email, business details, and
+			staff you invite to your account.
+		</p>
+		<p>
+			<strong>Buyer & order data, via merchants:</strong> when someone places an
+			order on a merchant's storefront, we process the buyer's name, email,
+			and shipping address, and the order/cart contents, on that merchant's
+			behalf.
+		</p>
+		<p>
+			<strong>Payment data:</strong> card details go directly to Stripe — we
+			never see or store them. We keep records of the transaction (amount,
+			status, payout) but no cardholder data.
+		</p>
+		<p>
+			<strong>Usage data:</strong> standard web server logs (IP address,
+			timestamps, requests) across the Service.
+		</p>
+
+		<h2 id="how-we-use-it">How we use it</h2>
+		<p>
+			To operate the Service: creating accounts, processing orders and
+			payments, arranging shipping, sending transactional email (order
+			confirmations, receipts, account notices), and providing support.
+		</p>
+
+		<h2 id="who-we-share-it-with">Who we share it with</h2>
+		<p>We share data with the processors that make the Service work:</p>
+		<ul>
+			<li><strong>Stripe</strong> — payment processing and payouts.</li>
+			<li><strong>Shippo</strong> — shipping labels and carrier rates, which requires full pickup/delivery addresses.</li>
+			<li><strong>Amazon Web Services (SES)</strong> — sending transactional email.</li>
+			<li><strong>Amazon Web Services</strong> — hosting for the Service and its data.</li>
+		</ul>
+		<p>
+			We don't sell personal data, and we don't share it with anyone else
+			except to comply with the law or protect the Service from fraud and
+			abuse.
+		</p>
+
+		<h2 id="cookies">Cookies & similar technologies</h2>
+		<p>
+			The marketing site (ordersail.com) does not currently set any cookies,
+			including for analytics — we haven't added a web analytics tool yet.
+			When we do, this section and our cookie disclosure will be updated
+			before it ships.
+		</p>
+		<p>
+			The merchant dashboard uses one strictly-necessary, HTTP-only session
+			cookie to keep you signed in. It isn't used for tracking or
+			advertising. Other parts of the Service (the storefront and API) use
+			bearer tokens instead of cookies.
+		</p>
+
+		<h2 id="retention">Data retention</h2>
+		<p>
+			We keep account and order data for as long as an account is active, and
+			for a reasonable period afterward for legal, accounting, and fraud-prevention
+			purposes. We're a small team without automated data-aging yet — if
+			you'd like something deleted sooner, contact us (below) and we'll
+			handle it manually.
+		</p>
+
+		<h2 id="your-rights">Your rights</h2>
+		<p>
+			Depending on where you live, you may have the right to access, correct,
+			export, or delete your personal data, or to object to certain
+			processing. We don't yet have a self-service tool for this — email <a
+				href="/contact">privacy@ordersail.com</a
+			> and we'll fulfill the request directly. Merchants can already pull
+			their catalog, orders, and customer data through the API at any time.
+		</p>
+
+		<h2 id="children">Children</h2>
+		<p>
+			The Service isn't directed at children, and you must be at least 18 (or
+			the age of majority where you live) to hold an OrderSail account. We
+			don't knowingly collect data from children.
+		</p>
+
+		<h2 id="international-transfer">International transfer</h2>
+		<p>
+			OrderSail and its processors are based in the United States. If you're
+			accessing the Service from outside the U.S., your data will be
+			transferred to and processed in the U.S. Merchants who need a formal
+			transfer mechanism for their own compliance can request our Data
+			Processing Agreement (contact below).
+		</p>
+
+		<h2 id="changes">Changes to this policy</h2>
+		<p>
+			We may update this policy as the Service changes. We'll update the "last
+			updated" date above, and for material changes we'll make a reasonable
+			effort to notify account owners directly.
+		</p>
+
+		<h2 id="contact">Contact</h2>
+		<p>
+			Privacy questions or requests: <a href="mailto:privacy@ordersail.com"
+				>privacy@ordersail.com</a
+			>, or use the <a href="/contact">contact page</a> for any other channel.
+		</p>
+	</article>
+</Layout>
+
+<style>
+	.head {
+		padding: 40px 0 32px;
+	}
+	.head h1 {
+		font-family: Georgia, serif;
+		font-size: clamp(2rem, 5vw, 3rem);
+		line-height: 1.1;
+		font-weight: 400;
+		letter-spacing: -0.02em;
+		margin: 0 0 14px;
+	}
+	.lede {
+		font-family: ui-monospace, monospace;
+		font-size: 0.86rem;
+		color: var(--ink-dim);
+		margin: 0;
+	}
+
+	.toc {
+		padding: 24px 0 32px;
+		border-top: 1px solid var(--line);
+		border-bottom: 1px solid var(--line);
+		margin-bottom: 40px;
+	}
+	.toc ol {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px 28px;
+	}
+	.toc a {
+		font-family: ui-monospace, monospace;
+		font-size: 0.82rem;
+		text-decoration: none;
+		color: var(--ink-dim);
+	}
+	.toc a:hover {
+		color: var(--ink);
+		text-decoration: underline;
+	}
+
+	.legal {
+		max-width: 68ch;
+		padding-bottom: 90px;
+		font-family: system-ui, sans-serif;
+		font-size: 0.98rem;
+		line-height: 1.7;
+		color: var(--ink);
+	}
+	.legal h2 {
+		font-family: Georgia, serif;
+		font-size: 1.3rem;
+		font-weight: 400;
+		margin: 40px 0 12px;
+		scroll-margin-top: 24px;
+	}
+	.legal p {
+		margin: 0 0 16px;
+	}
+	.legal ul {
+		margin: 0 0 16px;
+		padding-left: 1.2em;
+	}
+	.legal li {
+		margin: 0 0 8px;
+	}
+	.legal a {
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+</style>
