@@ -1,0 +1,204 @@
+---
+// Draft ToS from a standard SaaS template (OS-293). Needs a lawyer review pass
+// before launch — see the governing-law section for the one open placeholder.
+import Layout from '../layouts/Layout.astro';
+
+const lastUpdated = 'September 13, 2026';
+
+const sections = [
+	{ id: 'the-service', label: 'The service' },
+	{ id: 'your-account', label: 'Your account' },
+	{ id: 'acceptable-use', label: 'Acceptable use' },
+	{ id: 'payments', label: 'Payments' },
+	{ id: 'your-data', label: 'Your content & data' },
+	{ id: 'termination', label: 'Termination' },
+	{ id: 'disclaimers', label: 'Disclaimers & limitation of liability' },
+	{ id: 'governing-law', label: 'Governing law' },
+	{ id: 'changes', label: 'Changes to these terms' },
+	{ id: 'contact', label: 'Contact' },
+];
+---
+
+<Layout
+	title="Terms of Service — OrderSail"
+	description="The terms that govern use of OrderSail: accounts, acceptable use, payments through Stripe Connect, and how the beta service works."
+>
+	<section class="head">
+		<p class="eyebrow">Legal</p>
+		<h1>Terms of Service</h1>
+		<p class="lede">Last updated {lastUpdated}.</p>
+	</section>
+
+	<nav class="toc" aria-label="Sections on this page">
+		<ol>
+			{
+				sections.map((s) => (
+					<li>
+						<a href={`#${s.id}`}>{s.label}</a>
+					</li>
+				))
+			}
+		</ol>
+	</nav>
+
+	<article class="legal">
+		<p>
+			These Terms of Service ("Terms") govern access to and use of OrderSail
+			("OrderSail," "we," "us"), including the dashboard, storefront, point-of-sale
+			app, and API (together, the "Service"). By creating an account or using the
+			Service you agree to these Terms. If you're accepting on behalf of a
+			business, you're confirming you have the authority to do so.
+		</p>
+
+		<h2 id="the-service">1. The service</h2>
+		<p>
+			OrderSail is currently in <strong>beta</strong>. Features may change, break,
+			or be removed with little notice, and we don't guarantee uptime or data
+			retention during this period. We'll aim to give notice of breaking changes
+			where practical.
+		</p>
+
+		<h2 id="your-account">2. Your account</h2>
+		<p>
+			You must provide accurate account information and are responsible for
+			activity under your account, including staff you invite. You must be at
+			least 18 years old, or the age of majority in your jurisdiction, to hold an
+			account. Notify us promptly of any unauthorized use.
+		</p>
+
+		<h2 id="acceptable-use">3. Acceptable use</h2>
+		<p>
+			Use of the Service is subject to our <a href="/acceptable-use">Acceptable
+			Use Policy</a>, which covers prohibited businesses, prohibited activities,
+			and enforcement. We may suspend or terminate accounts that violate it.
+		</p>
+
+		<h2 id="payments">4. Payments</h2>
+		<p>
+			OrderSail uses <strong>Stripe</strong> (via Stripe Connect) to process
+			payments and pay out merchants. Stripe's own terms and fees apply to
+			payment processing, and Stripe — not OrderSail — holds and moves the
+			funds. OrderSail doesn't add a per-transaction fee on top of Stripe's
+			processing fee; see <a href="/pricing">pricing</a> for subscription costs,
+			if any apply.
+		</p>
+
+		<h2 id="your-data">5. Your content & data</h2>
+		<p>
+			You own your catalog, order, and customer data. You grant OrderSail a
+			license to process it solely to provide the Service. Our handling of
+			personal data is described in the <a href="/privacy">Privacy Policy</a>.
+			A Data Processing Agreement is available for merchants who need one for
+			their own compliance obligations — contact us to request it.
+		</p>
+
+		<h2 id="termination">6. Termination</h2>
+		<p>
+			You can close your account at any time. We may suspend or terminate an
+			account for a violation of these Terms or the Acceptable Use Policy, or
+			with notice for any other reason during the beta period. On termination,
+			you can export your data through the API for a reasonable period
+			beforehand.
+		</p>
+
+		<h2 id="disclaimers">7. Disclaimers & limitation of liability</h2>
+		<p>
+			The Service is provided "as is," especially during beta, without
+			warranties of any kind, express or implied. To the maximum extent
+			permitted by law, OrderSail isn't liable for indirect, incidental, or
+			consequential damages arising from use of the Service, and our total
+			liability for any claim is limited to the amount you paid OrderSail in the
+			twelve months before the claim arose.
+		</p>
+
+		<h2 id="governing-law">8. Governing law</h2>
+		<p>
+			<em
+				>[Placeholder — governing law and jurisdiction to be finalized during
+				legal review before launch.]</em
+			>
+		</p>
+
+		<h2 id="changes">9. Changes to these terms</h2>
+		<p>
+			We may update these Terms as the Service changes. We'll update the "last
+			updated" date above, and for material changes we'll make a reasonable
+			effort to notify account owners directly.
+		</p>
+
+		<h2 id="contact">10. Contact</h2>
+		<p>
+			Questions about these Terms can be sent through the <a href="/contact"
+				>contact page</a
+			>.
+		</p>
+	</article>
+</Layout>
+
+<style>
+	.head {
+		padding: 40px 0 32px;
+	}
+	.head h1 {
+		font-family: Georgia, serif;
+		font-size: clamp(2rem, 5vw, 3rem);
+		line-height: 1.1;
+		font-weight: 400;
+		letter-spacing: -0.02em;
+		margin: 0 0 14px;
+	}
+	.lede {
+		font-family: ui-monospace, monospace;
+		font-size: 0.86rem;
+		color: var(--ink-dim);
+		margin: 0;
+	}
+
+	.toc {
+		padding: 24px 0 32px;
+		border-top: 1px solid var(--line);
+		border-bottom: 1px solid var(--line);
+		margin-bottom: 40px;
+	}
+	.toc ol {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px 28px;
+	}
+	.toc a {
+		font-family: ui-monospace, monospace;
+		font-size: 0.82rem;
+		text-decoration: none;
+		color: var(--ink-dim);
+	}
+	.toc a:hover {
+		color: var(--ink);
+		text-decoration: underline;
+	}
+
+	.legal {
+		max-width: 68ch;
+		padding-bottom: 90px;
+		font-family: system-ui, sans-serif;
+		font-size: 0.98rem;
+		line-height: 1.7;
+		color: var(--ink);
+	}
+	.legal h2 {
+		font-family: Georgia, serif;
+		font-size: 1.3rem;
+		font-weight: 400;
+		margin: 40px 0 12px;
+		scroll-margin-top: 24px;
+	}
+	.legal p {
+		margin: 0 0 16px;
+	}
+	.legal a {
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+</style>
