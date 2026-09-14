@@ -1,0 +1,122 @@
+---
+// OS-296: static mailto contacts to start. A hosted form needs a backend and
+// is out of scope for now — confirm these mailboxes are actually routed
+// before launch.
+import Layout from '../layouts/Layout.astro';
+
+const channels = [
+	{
+		label: 'General & support',
+		email: 'support@ordersail.com',
+		note: 'Questions about your account, billing, or how something works. We read every message and aim to reply within 1–2 business days.',
+	},
+	{
+		label: 'Privacy requests',
+		email: 'privacy@ordersail.com',
+		note: 'Data access, deletion, or portability requests, or questions about the Privacy Policy.',
+	},
+	{
+		label: 'Legal notices',
+		email: 'legal@ordersail.com',
+		note: 'Terms of Service or Acceptable Use Policy questions, and Data Processing Agreement requests.',
+	},
+	{
+		label: 'Security',
+		email: 'security@ordersail.com',
+		note: 'Report a suspected vulnerability. Please don’t test against production data you don’t own.',
+	},
+];
+---
+
+<Layout
+	title="Contact — OrderSail"
+	description="How to reach OrderSail for support, privacy requests, legal notices, and security reports."
+>
+	<section class="head">
+		<p class="eyebrow">Contact</p>
+		<h1>Get in touch.</h1>
+		<p class="lede">
+			OrderSail is a small team, so email is the fastest way to reach us —
+			pick the channel below that fits.
+		</p>
+	</section>
+
+	<div class="channels">
+		{
+			channels.map((c) => (
+				<div class="channel">
+					<h2>{c.label}</h2>
+					<a class="mail" href={`mailto:${c.email}`}>
+						{c.email}
+					</a>
+					<p>{c.note}</p>
+				</div>
+			))
+		}
+	</div>
+</Layout>
+
+<style>
+	.head {
+		padding: 40px 0 32px;
+	}
+	.head h1 {
+		font-family: Georgia, serif;
+		font-size: clamp(2rem, 5vw, 3rem);
+		line-height: 1.1;
+		font-weight: 400;
+		letter-spacing: -0.02em;
+		margin: 0 0 18px;
+	}
+	.lede {
+		font-family: system-ui, sans-serif;
+		font-size: 1.05rem;
+		line-height: 1.6;
+		color: var(--ink-dim);
+		max-width: 54ch;
+		margin: 0;
+	}
+
+	.channels {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 28px;
+		padding: 8px 0 90px;
+	}
+	@media (max-width: 640px) {
+		.channels {
+			grid-template-columns: 1fr;
+		}
+	}
+	.channel {
+		padding: 24px;
+		border: 1px solid var(--line);
+	}
+	.channel h2 {
+		font-family: ui-monospace, monospace;
+		font-size: 0.78rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		font-weight: 400;
+		color: var(--ink-dim);
+		margin: 0 0 12px;
+	}
+	.channel .mail {
+		display: inline-block;
+		font-family: Georgia, serif;
+		font-size: 1.15rem;
+		text-decoration: none;
+		border-bottom: 1px solid var(--line);
+		margin: 0 0 12px;
+	}
+	.channel .mail:hover {
+		color: var(--ink-dim);
+	}
+	.channel p {
+		font-family: system-ui, sans-serif;
+		font-size: 0.92rem;
+		line-height: 1.6;
+		color: var(--ink-dim);
+		margin: 0;
+	}
+</style>
