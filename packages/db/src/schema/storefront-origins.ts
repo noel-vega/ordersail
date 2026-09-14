@@ -12,7 +12,9 @@ export const storefrontOriginsTable = pgTable(
       .notNull()
       .references(() => accountsTable.id, { onDelete: "cascade" }),
     // scheme+host only (e.g. "https://shop.example.com") — checked against
-    // the request's Origin header for storefront-api's CORS allowlist. An
+    // the request's Origin header to confirm it belongs to the account
+    // whose x-app-key made the request (storefront-api's AppKeyGuard); this
+    // is the real tenant boundary, CORS itself is permissive (OS-448). An
     // account can register multiple (prod/staging/localhost).
     origin: text("origin").notNull(),
     createdAt: timestampAt("created_at"),

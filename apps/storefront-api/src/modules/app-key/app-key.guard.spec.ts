@@ -1,8 +1,14 @@
 import type { ExecutionContext } from '@nestjs/common';
 import { UnauthorizedException } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
-import { insertAccount, insertApiKey, useTestDb } from 'test-support';
+import {
+  insertAccount,
+  insertApiKey,
+  insertStorefrontOrigin,
+  useTestDb,
+} from 'test-support';
 import { AppKeyGuard } from './app-key.guard';
+import { LOCAL_DEV_ORIGIN } from './app-key.util';
 
 const db = useTestDb();
 
@@ -67,5 +73,78 @@ describe('AppKeyGuard (OS-170)', () => {
     const { ctx } = contextWithHeaders({});
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+
+  describe('origin tenant-scoping (OS-448)', () => {
+    it('allows a request with no Origin header regardless of registered origins', async () => {
+      const account = await insertAccount(db);
+      const key = await insertApiKey(db, { accountId: account.id });
+      const guard = build();
+      const { ctx } = contextWithHeaders({ 'x-app-key': key.key });
+
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+
+    it("allows an Origin registered to this request's account", async () => {
+      const account = await insertAccount(db);
+      const key = await insertApiKey(db, { accountId: account.id });
+      await insertStorefrontOrigin(db, {
+        accountId: account.id,
+        origin: 'https://shop.example.com',
+      });
+      const guard = build();
+      const { ctx, request } = contextWithHeaders({
+        'x-app-key': key.key,
+        origin: 'https://shop.example.com',
+      });
+
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+      expect(request.accountId).toBe(account.id);
+    });
+
+    it('rejects an Origin registered to a different account', async () => {
+      const account = await insertAccount(db);
+      const otherAccount = await insertAccount(db);
+      const key = await insertApiKey(db, { accountId: account.id });
+      await insertStorefrontOrigin(db, {
+        accountId: otherAccount.id,
+        origin: 'https://shop.example.com',
+      });
+      const guard = build();
+      const { ctx } = contextWithHeaders({
+        'x-app-key': key.key,
+        origin: 'https://shop.example.com',
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('rejects an Origin registered to no account', async () => {
+      const account = await insertAccount(db);
+      const key = await insertApiKey(db, { accountId: account.id });
+      const guard = build();
+      const { ctx } = contextWithHeaders({
+        'x-app-key': key.key,
+        origin: 'https://not-registered.example.com',
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('allows the local dev origin regardless of registration', async () => {
+      const account = await insertAccount(db);
+      const key = await insertApiKey(db, { accountId: account.id });
+      const guard = build();
+      const { ctx } = contextWithHeaders({
+        'x-app-key': key.key,
+        origin: LOCAL_DEV_ORIGIN,
+      });
+
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
   });
 });
