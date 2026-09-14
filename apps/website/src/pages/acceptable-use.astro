@@ -1,0 +1,133 @@
+---
+// Draft AUP (OS-295). The prohibited-business list is a standard-template
+// starting point aligned with Stripe Connect's category of restrictions —
+// confirm it against Stripe's current published list during legal review
+// before launch.
+import Layout from '../layouts/Layout.astro';
+
+const lastUpdated = 'September 13, 2026';
+
+const prohibitedBusinesses = [
+	'Illegal goods or services under applicable law, including controlled substances and drug paraphernalia',
+	'Firearms, ammunition, and weapons, including parts and accessories',
+	'Counterfeit or unauthorized-replica goods, or goods that infringe someone else’s intellectual property',
+	'Adult content or services without verified age-gating and required licensing',
+	'Gambling, betting, or sweepstakes without the required licenses in every jurisdiction served',
+	'Multi-level marketing, pyramid, or Ponzi-style schemes',
+	'Unregistered securities, investment or credit-repair schemes, or debt collection without required licensing',
+	'Sale of hazardous materials, or products subject to recall',
+];
+
+const prohibitedActivities = [
+	'Fraud, or facilitating fraud, including misrepresenting what’s being sold or who’s selling it',
+	'Money laundering or structuring transactions to evade reporting requirements',
+	'Circumventing or attempting to circumvent Stripe’s or OrderSail’s risk and compliance controls',
+	'Infringing another party’s intellectual property, trademark, or publicity rights',
+	'Abusing the OrderSail API: excessive request rates, scraping, or attempting to access data outside your account',
+	'Probing, scanning, or testing the vulnerability of OrderSail systems without authorization',
+	'Reselling or sublicensing access to the Service without our written agreement',
+];
+---
+
+<Layout
+	title="Acceptable Use Policy — OrderSail"
+	description="Prohibited businesses, prohibited activities, and enforcement terms for using OrderSail."
+>
+	<section class="head">
+		<p class="eyebrow">Legal</p>
+		<h1>Acceptable Use Policy</h1>
+		<p class="lede">Last updated {lastUpdated}.</p>
+	</section>
+
+	<article class="legal">
+		<p>
+			This Acceptable Use Policy applies to everyone using OrderSail and is
+			part of the <a href="/terms">Terms of Service</a>. Because OrderSail
+			moves payments on your behalf through Stripe Connect, this list also
+			reflects the categories Stripe requires its platforms to enforce.
+		</p>
+
+		<h2 id="prohibited-businesses">Prohibited businesses & goods</h2>
+		<p>You may not use OrderSail to sell, list, or facilitate the sale of:</p>
+		<ul>
+			{prohibitedBusinesses.map((item) => <li>{item}</li>)}
+		</ul>
+		<p>
+			This list is a starting point, not exhaustive — it's checked against
+			Stripe's own published restricted-businesses list, which controls where
+			the two differ.
+		</p>
+
+		<h2 id="prohibited-activities">Prohibited activities</h2>
+		<p>Regardless of what you sell, you may not:</p>
+		<ul>
+			{prohibitedActivities.map((item) => <li>{item}</li>)}
+		</ul>
+
+		<h2 id="enforcement">Enforcement</h2>
+		<p>
+			Violating this policy can result in a warning, a temporary suspension, or
+			permanent termination of your account, at OrderSail's discretion and
+			depending on severity. Payment-related violations may also be reported
+			to Stripe, which can independently restrict or terminate the connected
+			Stripe account. Where practical, we'll tell you what triggered the
+			action and how to appeal it.
+		</p>
+
+		<h2 id="contact">Contact</h2>
+		<p>
+			To report a suspected violation or ask about this policy, use the <a
+				href="/contact">contact page</a
+			>.
+		</p>
+	</article>
+</Layout>
+
+<style>
+	.head {
+		padding: 40px 0 32px;
+	}
+	.head h1 {
+		font-family: Georgia, serif;
+		font-size: clamp(2rem, 5vw, 3rem);
+		line-height: 1.1;
+		font-weight: 400;
+		letter-spacing: -0.02em;
+		margin: 0 0 14px;
+	}
+	.lede {
+		font-family: ui-monospace, monospace;
+		font-size: 0.86rem;
+		color: var(--ink-dim);
+		margin: 0;
+	}
+
+	.legal {
+		max-width: 68ch;
+		padding-bottom: 90px;
+		font-family: system-ui, sans-serif;
+		font-size: 0.98rem;
+		line-height: 1.7;
+		color: var(--ink);
+	}
+	.legal h2 {
+		font-family: Georgia, serif;
+		font-size: 1.3rem;
+		font-weight: 400;
+		margin: 40px 0 12px;
+	}
+	.legal p {
+		margin: 0 0 16px;
+	}
+	.legal ul {
+		margin: 0 0 16px;
+		padding-left: 1.2em;
+	}
+	.legal li {
+		margin: 0 0 8px;
+	}
+	.legal a {
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+</style>
