@@ -19,7 +19,7 @@ export class ListProductsQueryDto {
   offset: number = 0;
 
   @ApiPropertyOptional({
-    description: 'Text search over name, description, SKU, and barcode',
+    description: 'Text search over name, SKU, and barcode',
   })
   @IsOptional()
   @IsString()

@@ -132,17 +132,11 @@ describe('ProductsService', () => {
   });
 
   describe('q (text search)', () => {
-    it('matches on name or description, case-insensitively', async () => {
+    it('matches on name, case-insensitively', async () => {
       const account = await insertAccount(db);
       await insertProduct(db, {
         accountId: account.id,
         name: 'Trail Runner',
-        description: 'Lightweight shoe',
-      });
-      await insertProduct(db, {
-        accountId: account.id,
-        name: 'Umbrella',
-        description: 'Keeps you dry on the trail',
       });
       await insertProduct(db, { accountId: account.id, name: 'Backpack' });
       const service = await build();
@@ -151,10 +145,23 @@ describe('ProductsService', () => {
         { limit: 20, offset: 0, q: 'trail' },
         account.id,
       );
-      expect(byName.items.map((i) => i.name).sort()).toEqual([
-        'Trail Runner',
-        'Umbrella',
-      ]);
+      expect(byName.items.map((i) => i.name)).toEqual(['Trail Runner']);
+    });
+
+    it('does not match on description', async () => {
+      const account = await insertAccount(db);
+      await insertProduct(db, {
+        accountId: account.id,
+        name: 'Umbrella',
+        description: 'Keeps you dry on the trail',
+      });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, q: 'trail' },
+        account.id,
+      );
+      expect(result.items).toEqual([]);
     });
 
     it('matches on a variant SKU without narrowing the price range to only the matching variant', async () => {

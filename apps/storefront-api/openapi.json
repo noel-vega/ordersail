@@ -41,7 +41,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "Text search over name, description, SKU, and barcode",
+            "description": "Text search over name, SKU, and barcode",
             "schema": {
               "type": "string"
             }

@@ -98,10 +98,11 @@ export class ProductsService {
     return { items, total, limit: take, offset: skip };
   }
 
-  // Matches on the product's own name/description, or — via correlated
-  // EXISTS subqueries, so the price-aggregation join in findAll still sees
-  // *all* of a matching product's variants, not just the one whose SKU/code
-  // matched — a variant's SKU or one of its barcodes.
+  // Matches on the product's own name, or — via correlated EXISTS
+  // subqueries, so the price-aggregation join in findAll still sees *all*
+  // of a matching product's variants, not just the one whose SKU/code
+  // matched — a variant's SKU or one of its barcodes. Description search is
+  // deliberately left out for now.
   private searchFilter(q: string | undefined): SQL | undefined {
     const term = q?.trim();
     if (!term) return undefined;
@@ -109,7 +110,6 @@ export class ProductsService {
     const like = `%${term}%`;
     return or(
       ilike(productsTable.name, like),
-      ilike(productsTable.description, like),
       exists(
         this.db
           .select({ one: sql`1` })
