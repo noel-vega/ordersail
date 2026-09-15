@@ -2,12 +2,19 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
   Max,
   Min,
 } from 'class-validator';
+
+export const PRODUCT_SORT_BY = ['price', 'newest', 'name'] as const;
+export type ProductSortBy = (typeof PRODUCT_SORT_BY)[number];
+
+export const SORT_DIRECTIONS = ['asc', 'desc'] as const;
+export type SortDirection = (typeof SORT_DIRECTIONS)[number];
 
 export class ListProductsQueryDto {
   @ApiPropertyOptional({ default: 20 })
@@ -69,4 +76,14 @@ export class ListProductsQueryDto {
   )
   @IsBoolean()
   inStock?: boolean;
+
+  @ApiPropertyOptional({ enum: PRODUCT_SORT_BY })
+  @IsOptional()
+  @IsIn(PRODUCT_SORT_BY)
+  sortBy?: ProductSortBy;
+
+  @ApiPropertyOptional({ enum: SORT_DIRECTIONS, default: 'asc' })
+  @IsOptional()
+  @IsIn(SORT_DIRECTIONS)
+  sortDir?: SortDirection;
 }
