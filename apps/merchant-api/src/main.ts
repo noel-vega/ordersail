@@ -17,7 +17,11 @@ import { createSwaggerConfig } from './swagger.config';
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    // trustProxy: 1 trusts exactly one hop of X-Forwarded-For — the ALB,
+    // which is the only way to reach this task (private subnet). This is
+    // what makes req.ip resolve to the real client IP instead of the ALB's,
+    // which the throttler guard keys rate limits on.
+    new FastifyAdapter({ trustProxy: 1 }),
     {
       rawBody: true,
       logger: new CorrelatedLogger(undefined, {
