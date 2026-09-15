@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE } from '../../database/database.constants';
+import { resolvePageParams } from '../../shared/pagination';
 import {
   and,
   brandsTable,
@@ -33,6 +34,8 @@ export class ProductsService {
     { limit, offset }: ListProductsQueryDto,
     accountId: number,
   ): Promise<PaginatedProducts> {
+    const { limit: take, offset: skip } = resolvePageParams(limit, offset);
+
     // only "active" products are ever visible through the storefront —
     // draft/archived are admin-only
     const where = and(
@@ -63,8 +66,8 @@ export class ProductsService {
         .where(where)
         .groupBy(productsTable.id)
         .orderBy(productsTable.id)
-        .limit(limit)
-        .offset(offset),
+        .limit(take)
+        .offset(skip),
       this.db
         .select({ total: sql<number>`count(*)::int` })
         .from(productsTable)
@@ -87,7 +90,7 @@ export class ProductsService {
       thumbnailUrl: thumbnailByProduct.get(row.id) ?? null,
     }));
 
-    return { items, total, limit, offset };
+    return { items, total, limit: take, offset: skip };
   }
 
   async findOne(
