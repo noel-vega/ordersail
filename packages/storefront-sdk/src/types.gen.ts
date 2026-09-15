@@ -52,6 +52,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CategoriesController_findAll"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/categories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CategoriesController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cart/items": {
         parameters: {
             query?: never;
@@ -332,6 +364,22 @@ export interface components {
             variants: components["schemas"]["ProductDetailVariant"][];
             images: components["schemas"]["ProductImage"][];
         };
+        Category: {
+            id: number;
+            name: string;
+            productCount: number;
+        };
+        PaginatedCategories: {
+            items: components["schemas"]["Category"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        CategoryDetail: {
+            id: number;
+            name: string;
+            products: components["schemas"]["PaginatedProducts"];
+        };
         AddCartItemDto: {
             variantId: number;
             /** @default 1 */
@@ -507,6 +555,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CategoriesController_findAll: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedCategories"];
+                };
+            };
+        };
+    };
+    CategoriesController_findOne: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                /** @description Text search over name, SKU, and barcode */
+                q?: string;
+                /** @description Filter to products in this category */
+                categoryId?: number;
+                /** @description Filter to products of this brand */
+                brandId?: number;
+                /** @description Minimum variant price, in cents */
+                minPriceCents?: number;
+                /** @description Maximum variant price, in cents */
+                maxPriceCents?: number;
+                /** @description Only include products with at least one variant in stock */
+                inStock?: boolean;
+                sortBy?: "price" | "newest" | "name";
+                sortDir?: "asc" | "desc";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryDetail"];
                 };
             };
             404: {
