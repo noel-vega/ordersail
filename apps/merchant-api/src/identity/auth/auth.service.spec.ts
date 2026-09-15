@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { ConflictException } from '@nestjs/common';
@@ -10,6 +11,7 @@ import {
   permissionsTable,
   rolePermissionsTable,
   rolesTable,
+  userRefreshTokensTable,
   userRolesTable,
   usersTable,
 } from 'db/identity';
@@ -133,6 +135,7 @@ describe('AuthService.me (OS-180)', () => {
       accountId,
       firstName: signupDto.firstName,
       lastName: signupDto.lastName,
+      typ: 'access',
     });
 
     expect(me).toMatchObject({
@@ -149,45 +152,117 @@ describe('AuthService.me (OS-180)', () => {
   });
 });
 
-describe('AuthService.refreshAccessToken (OS-184)', () => {
-  it('mints a new access token for an active user', async () => {
+describe('AuthService.refreshTokens (OS-467)', () => {
+  async function seedSession() {
     await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
     const service = await build();
     const { userId, accountId } = await service.signup(signupDto);
-
-    const refresh = await service.createRefreshToken(
+    const refreshToken = await service.createRefreshToken(
       userId,
       signupDto.email,
       accountId,
       signupDto.firstName,
       signupDto.lastName,
+      randomUUID(),
     );
+    return { service, userId, accountId, refreshToken };
+  }
 
-    await expect(service.refreshAccessToken(refresh)).resolves.toEqual(
-      expect.any(String),
-    );
+  it('mints a new access + refresh pair for an active user', async () => {
+    const { service, refreshToken } = await seedSession();
+
+    const result = await service.refreshTokens(refreshToken);
+    expect(typeof result.access_token).toBe('string');
+    expect(typeof result.refresh_token).toBe('string');
   });
 
   it('rejects the refresh token of a deactivated user', async () => {
-    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
-    const service = await build();
-    const { userId, accountId } = await service.signup(signupDto);
-
-    const refresh = await service.createRefreshToken(
-      userId,
-      signupDto.email,
-      accountId,
-      signupDto.firstName,
-      signupDto.lastName,
-    );
+    const { service, userId, refreshToken } = await seedSession();
 
     await db
       .update(usersTable)
       .set({ deactivatedAt: new Date() })
       .where(eq(usersTable.id, userId));
 
-    await expect(service.refreshAccessToken(refresh)).rejects.toThrow(
+    await expect(service.refreshTokens(refreshToken)).rejects.toThrow(
       'Invalid or expired token',
     );
+  });
+
+  it('is single-use: the redeemed token is revoked and cannot be reused after the grace window', async () => {
+    const { service, refreshToken } = await seedSession();
+
+    const { refresh_token: rotated } =
+      await service.refreshTokens(refreshToken);
+    expect(rotated).not.toBe(refreshToken);
+
+    // simulate the grace window having elapsed by backdating revokedAt,
+    // rather than sleeping in the test — no WHERE needed, this test's
+    // seedSession() is the only row in the (per-test, truncated) table
+    await db
+      .update(userRefreshTokensTable)
+      .set({ revokedAt: new Date(Date.now() - 60_000) });
+
+    await expect(service.refreshTokens(refreshToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+    // and reuse revokes the whole family — the token that *did* rotate
+    // successfully is now dead too
+    await expect(service.refreshTokens(rotated)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+
+  it('replays the same pair for a just-rotated-out token within the grace window (concurrent legitimate retry)', async () => {
+    const { service, refreshToken } = await seedSession();
+
+    const first = await service.refreshTokens(refreshToken);
+    // presenting the now-superseded token again immediately (e.g. a second
+    // concurrent tab) gets the same replacement pair back, not a rejection
+    const second = await service.refreshTokens(refreshToken);
+
+    expect(second).toEqual(first);
+  });
+
+  it('rejects an access token presented to the refresh flow (typ mismatch)', async () => {
+    const { service, userId, accountId } = await seedSession();
+    const accessToken = await service.createAccessToken(
+      userId,
+      signupDto.email,
+      accountId,
+      signupDto.firstName,
+      signupDto.lastName,
+    );
+
+    await expect(service.refreshTokens(accessToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+});
+
+describe('AuthService.logout (OS-467)', () => {
+  it('revokes the refresh token family so it can no longer be redeemed', async () => {
+    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+    const service = await build();
+    const { userId, accountId } = await service.signup(signupDto);
+    const refreshToken = await service.createRefreshToken(
+      userId,
+      signupDto.email,
+      accountId,
+      signupDto.firstName,
+      signupDto.lastName,
+      randomUUID(),
+    );
+
+    await service.logout(refreshToken);
+
+    await expect(service.refreshTokens(refreshToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+
+  it('is a no-op for an unknown/invalid token (best-effort)', async () => {
+    const service = await build();
+    await expect(service.logout('not-a-real-token')).resolves.toBeUndefined();
   });
 });

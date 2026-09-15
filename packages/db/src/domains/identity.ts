@@ -6,6 +6,7 @@ export * from '../schema/accounts.js';
 export * from '../schema/account-api-keys.js';
 export * from '../schema/users.js';
 export * from '../schema/user-invites.js';
+export * from '../schema/user-refresh-tokens.js';
 export * from '../schema/rbac.js';
 export * from '../permissions-catalog.js';
 export {

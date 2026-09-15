@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   Controller,
   Get,
@@ -19,6 +20,7 @@ import {
   Public,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
+import { env } from 'src/shared/env';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ApiBearerAuth,
@@ -32,6 +34,16 @@ const REFRESH_TOKEN_COOKIE = 'refresh_token';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  private setRefreshCookie(res: FastifyReply, refreshToken: string): void {
+    res.setCookie(REFRESH_TOKEN_COOKIE, refreshToken, {
+      httpOnly: true, // Prevents client-side JS from accessing the cookie
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'lax', // Helps protect against CSRF attacks
+      path: '/', // Scopes the cookie to the entire domain
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+    });
+  }
 
   @Public()
   // brute-force/credential-stuffing protection — tighter than the 100/min
@@ -52,15 +64,10 @@ export class AuthController {
       result.accountId,
       result.firstName,
       result.lastName,
+      randomUUID(),
     );
 
-    res.setCookie(REFRESH_TOKEN_COOKIE, refreshToken, {
-      httpOnly: true, // Prevents client-side JS from accessing the cookie
-      // secure: true, // Required for HTTPS environments
-      sameSite: 'lax', // Helps protect against CSRF attacks
-      path: '/', // Scopes the cookie to the entire domain
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-    });
+    this.setRefreshCookie(res, refreshToken);
 
     return { access_token: result.access_token };
   }
@@ -83,14 +90,10 @@ export class AuthController {
       result.accountId,
       result.firstName,
       result.lastName,
+      randomUUID(),
     );
 
-    res.setCookie(REFRESH_TOKEN_COOKIE, refreshToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7,
-    });
+    this.setRefreshCookie(res, refreshToken);
 
     return { access_token: result.access_token };
   }
@@ -113,14 +116,10 @@ export class AuthController {
       result.accountId,
       result.firstName,
       result.lastName,
+      randomUUID(),
     );
 
-    res.setCookie(REFRESH_TOKEN_COOKIE, refreshToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7,
-    });
+    this.setRefreshCookie(res, refreshToken);
 
     return { access_token: result.access_token };
   }
@@ -138,7 +137,14 @@ export class AuthController {
   @Public()
   @Post('logout')
   @ApiOkResponse()
-  logout(@Res({ passthrough: true }) res: FastifyReply): void {
+  async logout(
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<void> {
+    const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
+    if (refreshToken) {
+      await this.authService.logout(refreshToken);
+    }
     // refresh_token is httpOnly, so it can only be cleared by the server —
     // the client can't just delete it itself
     res.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
@@ -148,15 +154,19 @@ export class AuthController {
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: AccessTokenDto })
   @ApiUnauthorizedResponse()
-  @Get('token/refresh')
-  async refreshToken(@Req() req: FastifyRequest): Promise<AccessTokenDto> {
+  @Post('token/refresh')
+  async refreshToken(
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
     const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
     if (!refreshToken) {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    const access_token =
-      await this.authService.refreshAccessToken(refreshToken);
+    const { access_token, refresh_token } =
+      await this.authService.refreshTokens(refreshToken);
+    this.setRefreshCookie(res, refresh_token);
     return { access_token };
   }
 }

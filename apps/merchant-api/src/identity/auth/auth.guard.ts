@@ -38,6 +38,12 @@ export class AuthGuard implements CanActivate {
       // is the key that was passed in the JwtModule
       const payload =
         await this.jwtService.verifyAsync<AuthenticatedUser>(token);
+      // a refresh token shares the same signature/claims shape as an
+      // access token except for `typ` — without this check it would work
+      // as a full access token for its entire (much longer) lifetime
+      if (payload.typ !== 'access') {
+        throw new UnauthorizedException();
+      }
       // 💡 We're assigning the payload to the request object here
       // so that we can access it in our route handlers
       request.user = payload;
