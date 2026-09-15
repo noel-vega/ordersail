@@ -6,9 +6,13 @@ import {
   brandsTable,
   categoriesTable,
   eq,
+  exists,
+  ilike,
   inArray,
   inventoryTable,
   isNull,
+  or,
+  productBarcodesTable,
   productCategoriesTable,
   productImagesTable,
   productOptionsTable,
@@ -31,7 +35,7 @@ export class ProductsService {
   constructor(@Inject(DRIZZLE) private readonly db: typeof Db) {}
 
   async findAll(
-    { limit, offset }: ListProductsQueryDto,
+    { limit, offset, q }: ListProductsQueryDto,
     accountId: number,
   ): Promise<PaginatedProducts> {
     const { limit: take, offset: skip } = resolvePageParams(limit, offset);
@@ -41,6 +45,7 @@ export class ProductsService {
     const where = and(
       eq(productsTable.accountId, accountId),
       eq(productsTable.status, 'active'),
+      this.searchFilter(q),
     );
 
     const [rows, [{ total }]] = await Promise.all([
@@ -91,6 +96,47 @@ export class ProductsService {
     }));
 
     return { items, total, limit: take, offset: skip };
+  }
+
+  // Matches on the product's own name, or — via correlated EXISTS
+  // subqueries, so the price-aggregation join in findAll still sees *all*
+  // of a matching product's variants, not just the one whose SKU/code
+  // matched — a variant's SKU or one of its barcodes. Description search is
+  // deliberately left out for now.
+  private searchFilter(q: string | undefined): SQL | undefined {
+    const term = q?.trim();
+    if (!term) return undefined;
+
+    const like = `%${term}%`;
+    return or(
+      ilike(productsTable.name, like),
+      exists(
+        this.db
+          .select({ one: sql`1` })
+          .from(productVariantsTable)
+          .where(
+            and(
+              eq(productVariantsTable.productId, productsTable.id),
+              ilike(productVariantsTable.sku, like),
+            ),
+          ),
+      ),
+      exists(
+        this.db
+          .select({ one: sql`1` })
+          .from(productBarcodesTable)
+          .innerJoin(
+            productVariantsTable,
+            eq(productVariantsTable.id, productBarcodesTable.variantId),
+          )
+          .where(
+            and(
+              eq(productVariantsTable.productId, productsTable.id),
+              ilike(productBarcodesTable.code, like),
+            ),
+          ),
+      ),
+    );
   }
 
   async findOne(

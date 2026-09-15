@@ -8,6 +8,7 @@ import {
   insertProductWithVariants,
   useTestDb,
 } from 'test-support';
+import { productBarcodesTable } from 'db';
 import { ProductsService } from './products.service';
 import { DRIZZLE } from '../../database/database.constants';
 
@@ -128,5 +129,119 @@ describe('ProductsService', () => {
     const service = await build();
 
     expect(await service.findOne(999, account.id)).toBeUndefined();
+  });
+
+  describe('q (text search)', () => {
+    it('matches on name, case-insensitively', async () => {
+      const account = await insertAccount(db);
+      await insertProduct(db, {
+        accountId: account.id,
+        name: 'Trail Runner',
+      });
+      await insertProduct(db, { accountId: account.id, name: 'Backpack' });
+      const service = await build();
+
+      const byName = await service.findAll(
+        { limit: 20, offset: 0, q: 'trail' },
+        account.id,
+      );
+      expect(byName.items.map((i) => i.name)).toEqual(['Trail Runner']);
+    });
+
+    it('does not match on description', async () => {
+      const account = await insertAccount(db);
+      await insertProduct(db, {
+        accountId: account.id,
+        name: 'Umbrella',
+        description: 'Keeps you dry on the trail',
+      });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, q: 'trail' },
+        account.id,
+      );
+      expect(result.items).toEqual([]);
+    });
+
+    it('matches on a variant SKU without narrowing the price range to only the matching variant', async () => {
+      const account = await insertAccount(db);
+      const product = await insertProduct(db, {
+        accountId: account.id,
+        name: 'Shoe',
+      });
+      await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: product.id,
+        variants: [
+          { sku: 'SHOE-RED-9', priceCents: 1000 },
+          { sku: 'SHOE-BLUE-9', priceCents: 2000 },
+        ],
+      });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, q: 'red-9' },
+        account.id,
+      );
+
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          id: product.id,
+          minPriceCents: 1000,
+          maxPriceCents: 2000,
+        }),
+      ]);
+    });
+
+    it('matches on a variant barcode', async () => {
+      const account = await insertAccount(db);
+      const product = await insertProduct(db, {
+        accountId: account.id,
+        name: 'Shoe',
+      });
+      const [variant] = await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: product.id,
+        variants: [{ priceCents: 1000 }],
+      });
+      await db
+        .insert(productBarcodesTable)
+        .values({ variantId: variant.id, code: '012345678905' });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, q: '012345678905' },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.id)).toEqual([product.id]);
+    });
+
+    it('returns no items when nothing matches', async () => {
+      const account = await insertAccount(db);
+      await insertProduct(db, { accountId: account.id, name: 'Shoe' });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, q: 'nonexistent' },
+        account.id,
+      );
+
+      expect(result).toMatchObject({ items: [], total: 0 });
+    });
+
+    it('treats a blank q the same as no filter', async () => {
+      const account = await insertAccount(db);
+      await insertProduct(db, { accountId: account.id, name: 'Shoe' });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, q: '   ' },
+        account.id,
+      );
+
+      expect(result.total).toBe(1);
+    });
   });
 });
