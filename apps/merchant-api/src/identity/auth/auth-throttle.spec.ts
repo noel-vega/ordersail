@@ -13,15 +13,13 @@ const THROTTLER_LIMIT_DEFAULT = 'THROTTLER:LIMITdefault';
 const THROTTLER_TTL_DEFAULT = 'THROTTLER:TTLdefault';
 
 const reflector = new Reflector();
+const controller = AuthController.prototype as unknown as Record<
+  string,
+  () => unknown
+>;
 const throttle = (method: string): { limit?: number; ttl?: number } => ({
-  limit: reflector.get(
-    THROTTLER_LIMIT_DEFAULT,
-    (AuthController.prototype as Record<string, () => unknown>)[method],
-  ),
-  ttl: reflector.get(
-    THROTTLER_TTL_DEFAULT,
-    (AuthController.prototype as Record<string, () => unknown>)[method],
-  ),
+  limit: reflector.get(THROTTLER_LIMIT_DEFAULT, controller[method]),
+  ttl: reflector.get(THROTTLER_TTL_DEFAULT, controller[method]),
 });
 
 describe('auth throttle buckets (OS-314)', () => {
