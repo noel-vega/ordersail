@@ -7,6 +7,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
@@ -33,6 +34,9 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  // brute-force/credential-stuffing protection — tighter than the 100/min
+  // global default
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('signin')
   @ApiOkResponse({ type: AccessTokenDto })
   @ApiUnauthorizedResponse()
@@ -62,6 +66,8 @@ export class AuthController {
   }
 
   @Public()
+  // limits automated account-creation spam
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('signup')
   @ApiOkResponse({ type: AccessTokenDto })
   @ApiConflictResponse()
@@ -90,6 +96,8 @@ export class AuthController {
   }
 
   @Public()
+  // invite tokens are 32 bytes and single-use, but keep guessing attempts bounded
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('accept-invite')
   @ApiOkResponse({ type: AccessTokenDto })
   @ApiUnauthorizedResponse()
