@@ -45,6 +45,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "categoryId",
+            "required": false,
+            "in": "query",
+            "description": "Filter to products in this category",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "brandId",
+            "required": false,
+            "in": "query",
+            "description": "Filter to products of this brand",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "minPriceCents",
+            "required": false,
+            "in": "query",
+            "description": "Minimum variant price, in cents",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "maxPriceCents",
+            "required": false,
+            "in": "query",
+            "description": "Maximum variant price, in cents",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "inStock",
+            "required": false,
+            "in": "query",
+            "description": "Only include products with at least one variant in stock",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

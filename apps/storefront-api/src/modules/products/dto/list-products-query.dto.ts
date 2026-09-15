@@ -1,6 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class ListProductsQueryDto {
   @ApiPropertyOptional({ default: 20 })
@@ -24,4 +31,42 @@ export class ListProductsQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  @ApiPropertyOptional({ description: 'Filter to products in this category' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  categoryId?: number;
+
+  @ApiPropertyOptional({ description: 'Filter to products of this brand' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  brandId?: number;
+
+  @ApiPropertyOptional({ description: 'Minimum variant price, in cents' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  minPriceCents?: number;
+
+  @ApiPropertyOptional({ description: 'Maximum variant price, in cents' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxPriceCents?: number;
+
+  @ApiPropertyOptional({
+    description: 'Only include products with at least one variant in stock',
+  })
+  @IsOptional()
+  // a query string is always "true"/"false" — plain `Type(() => Boolean)`
+  // would coerce the string "false" to `true`, so map it explicitly
+  @Transform(({ value }: { value: unknown }): boolean | undefined =>
+    value === undefined ? undefined : value === true || value === 'true',
+  )
+  @IsBoolean()
+  inStock?: boolean;
 }

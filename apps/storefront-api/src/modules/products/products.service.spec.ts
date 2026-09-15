@@ -3,6 +3,7 @@ import {
   insertAccount,
   insertBrand,
   insertCategory,
+  insertLocation,
   insertProduct,
   insertProductImage,
   insertProductWithVariants,
@@ -238,6 +239,147 @@ describe('ProductsService', () => {
 
       const result = await service.findAll(
         { limit: 20, offset: 0, q: '   ' },
+        account.id,
+      );
+
+      expect(result.total).toBe(1);
+    });
+  });
+
+  describe('filters', () => {
+    it('filters by categoryId', async () => {
+      const account = await insertAccount(db);
+      const shoes = await insertCategory(db, { accountId: account.id });
+      const hats = await insertCategory(db, { accountId: account.id });
+      await insertProduct(db, {
+        accountId: account.id,
+        name: 'Shoe',
+        categoryIds: [shoes.id],
+      });
+      await insertProduct(db, {
+        accountId: account.id,
+        name: 'Hat',
+        categoryIds: [hats.id],
+      });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, categoryId: shoes.id },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.name)).toEqual(['Shoe']);
+    });
+
+    it('filters by brandId', async () => {
+      const account = await insertAccount(db);
+      const acme = await insertBrand(db, { accountId: account.id });
+      const other = await insertBrand(db, { accountId: account.id });
+      await insertProduct(db, {
+        accountId: account.id,
+        name: 'Acme Shoe',
+        brandId: acme.id,
+      });
+      await insertProduct(db, {
+        accountId: account.id,
+        name: 'Other Shoe',
+        brandId: other.id,
+      });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, brandId: acme.id },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.name)).toEqual(['Acme Shoe']);
+    });
+
+    it('filters by price range without narrowing the price range of a matching product', async () => {
+      const account = await insertAccount(db);
+      const cheap = await insertProduct(db, {
+        accountId: account.id,
+        name: 'Cheap',
+      });
+      await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: cheap.id,
+        variants: [{ priceCents: 500 }, { priceCents: 5000 }],
+      });
+      const expensive = await insertProduct(db, {
+        accountId: account.id,
+        name: 'Expensive',
+      });
+      await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: expensive.id,
+        variants: [{ priceCents: 9000 }],
+      });
+      const service = await build();
+
+      // matches "Cheap" via its 500-cent variant, even though it also has a
+      // 5000-cent variant outside the range
+      const result = await service.findAll(
+        { limit: 20, offset: 0, minPriceCents: 100, maxPriceCents: 1000 },
+        account.id,
+      );
+
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          name: 'Cheap',
+          minPriceCents: 500,
+          maxPriceCents: 5000,
+        }),
+      ]);
+    });
+
+    it('filters by inStock', async () => {
+      const account = await insertAccount(db);
+      const location = await insertLocation(db, { accountId: account.id });
+      const inStock = await insertProduct(db, {
+        accountId: account.id,
+        name: 'In stock',
+      });
+      await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: inStock.id,
+        variants: [{ stock: [{ locationId: location.id, stock: 5 }] }],
+      });
+      const outOfStock = await insertProduct(db, {
+        accountId: account.id,
+        name: 'Out of stock',
+      });
+      await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: outOfStock.id,
+        variants: [{ stock: [{ locationId: location.id, stock: 0 }] }],
+      });
+      const noInventoryRow = await insertProduct(db, {
+        accountId: account.id,
+        name: 'No inventory row',
+      });
+      await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: noInventoryRow.id,
+        variants: [{}],
+      });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, inStock: true },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.name)).toEqual(['In stock']);
+    });
+
+    it('omitting inStock does not filter by stock', async () => {
+      const account = await insertAccount(db);
+      await insertProduct(db, { accountId: account.id, name: 'Shoe' });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0 },
         account.id,
       );
 

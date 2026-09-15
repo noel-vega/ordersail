@@ -461,6 +461,16 @@ export interface operations {
                 offset?: number;
                 /** @description Text search over name, SKU, and barcode */
                 q?: string;
+                /** @description Filter to products in this category */
+                categoryId?: number;
+                /** @description Filter to products of this brand */
+                brandId?: number;
+                /** @description Minimum variant price, in cents */
+                minPriceCents?: number;
+                /** @description Maximum variant price, in cents */
+                maxPriceCents?: number;
+                /** @description Only include products with at least one variant in stock */
+                inStock?: boolean;
             };
             header?: never;
             path?: never;
