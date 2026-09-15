@@ -7,6 +7,7 @@ import { DatabaseModule } from './database/database.module';
 import { AppKeyModule } from './modules/app-key/app-key.module';
 import { ProductsModule } from './modules/products/products.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { BrandsModule } from './modules/brands/brands.module';
 import { CartModule } from './modules/cart/cart.module';
 import { CheckoutModule } from './modules/checkout/checkout.module';
 import { CustomerModule } from './modules/customer/customer.module';
@@ -24,6 +25,7 @@ import { HealthModule } from './modules/health/health.module';
     AppKeyModule,
     ProductsModule,
     CategoriesModule,
+    BrandsModule,
     CartModule,
     CheckoutModule,
     CustomerModule,

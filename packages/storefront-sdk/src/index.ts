@@ -4,6 +4,7 @@ import { unwrap, unwrapOrUndefinedOn, type DoFn } from "./http.js";
 export { ApiError } from "./http.js";
 import { createProductsResource } from "./resources/products.js";
 import { createCategoriesResource } from "./resources/categories.js";
+import { createBrandsResource } from "./resources/brands.js";
 import { createCartResource } from "./resources/cart.js";
 import { createCheckoutResource } from "./resources/checkout.js";
 import { createCustomerResource } from "./resources/customer.js";
@@ -16,6 +17,9 @@ export type ProductDetailVariant = components["schemas"]["ProductDetailVariant"]
 export type Category = components["schemas"]["Category"];
 export type PaginatedCategories = components["schemas"]["PaginatedCategories"];
 export type CategoryDetail = components["schemas"]["CategoryDetail"];
+export type Brand = components["schemas"]["Brand"];
+export type PaginatedBrands = components["schemas"]["PaginatedBrands"];
+export type BrandDetail = components["schemas"]["BrandDetail"];
 export type Cart = components["schemas"]["Cart"];
 export type CartItem = components["schemas"]["CartItem"];
 export type CheckoutSession = components["schemas"]["CheckoutSession"];
@@ -67,6 +71,7 @@ export class StorefrontClient {
 
   products: ReturnType<typeof createProductsResource>;
   categories: ReturnType<typeof createCategoriesResource>;
+  brands: ReturnType<typeof createBrandsResource>;
   cart: ReturnType<typeof createCartResource>;
   checkout: ReturnType<typeof createCheckoutResource>;
   customer: ReturnType<typeof createCustomerResource>;
@@ -107,6 +112,7 @@ export class StorefrontClient {
 
     this.products = createProductsResource(this.client);
     this.categories = createCategoriesResource(this.client);
+    this.brands = createBrandsResource(this.client);
     this.cart = createCartResource(
       this.client,
       () => this.cartToken,
