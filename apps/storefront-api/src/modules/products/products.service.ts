@@ -7,10 +7,12 @@ import {
   categoriesTable,
   eq,
   exists,
+  gte,
   ilike,
   inArray,
   inventoryTable,
   isNull,
+  lte,
   or,
   productBarcodesTable,
   productCategoriesTable,
@@ -35,7 +37,16 @@ export class ProductsService {
   constructor(@Inject(DRIZZLE) private readonly db: typeof Db) {}
 
   async findAll(
-    { limit, offset, q }: ListProductsQueryDto,
+    {
+      limit,
+      offset,
+      q,
+      categoryId,
+      brandId,
+      minPriceCents,
+      maxPriceCents,
+      inStock,
+    }: ListProductsQueryDto,
     accountId: number,
   ): Promise<PaginatedProducts> {
     const { limit: take, offset: skip } = resolvePageParams(limit, offset);
@@ -46,6 +57,22 @@ export class ProductsService {
       eq(productsTable.accountId, accountId),
       eq(productsTable.status, 'active'),
       this.searchFilter(q),
+      categoryId !== undefined
+        ? exists(
+            this.db
+              .select({ one: sql`1` })
+              .from(productCategoriesTable)
+              .where(
+                and(
+                  eq(productCategoriesTable.productId, productsTable.id),
+                  eq(productCategoriesTable.categoryId, categoryId),
+                ),
+              ),
+          )
+        : undefined,
+      brandId !== undefined ? eq(productsTable.brandId, brandId) : undefined,
+      this.priceRangeFilter(minPriceCents, maxPriceCents),
+      inStock ? this.inStockFilter() : undefined,
     );
 
     const [rows, [{ total }]] = await Promise.all([
@@ -96,6 +123,50 @@ export class ProductsService {
     }));
 
     return { items, total, limit: take, offset: skip };
+  }
+
+  // True if the product has at least one variant priced within
+  // [minCents, maxCents]. An EXISTS subquery, not a filter on the outer
+  // leftJoin, so findAll's min/max price aggregation still sees every
+  // variant rather than only the ones inside the requested range.
+  private priceRangeFilter(
+    minCents: number | undefined,
+    maxCents: number | undefined,
+  ): SQL | undefined {
+    if (minCents === undefined && maxCents === undefined) return undefined;
+
+    return exists(
+      this.db
+        .select({ one: sql`1` })
+        .from(productVariantsTable)
+        .where(
+          and(
+            eq(productVariantsTable.productId, productsTable.id),
+            minCents !== undefined
+              ? gte(productVariantsTable.priceCents, minCents)
+              : undefined,
+            maxCents !== undefined
+              ? lte(productVariantsTable.priceCents, maxCents)
+              : undefined,
+          ),
+        ),
+    );
+  }
+
+  // True if at least one variant's stock (summed across locations) is > 0.
+  private inStockFilter(): SQL {
+    return exists(
+      this.db
+        .select({ one: sql`1` })
+        .from(productVariantsTable)
+        .leftJoin(
+          inventoryTable,
+          eq(inventoryTable.variantId, productVariantsTable.id),
+        )
+        .where(eq(productVariantsTable.productId, productsTable.id))
+        .groupBy(productVariantsTable.id)
+        .having(sql`coalesce(sum(${inventoryTable.stock}), 0) > 0`),
+    );
   }
 
   // Matches on the product's own name, or — via correlated EXISTS
