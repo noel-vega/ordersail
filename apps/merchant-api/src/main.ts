@@ -8,6 +8,7 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
+import fastifyHelmet from '@fastify/helmet';
 import { SwaggerModule } from '@nestjs/swagger';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { CorrelatedLogger, runWithCorrelationId } from 'logging';
@@ -50,6 +51,23 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   });
   await app.register(fastifyCookie);
+  await app.register(fastifyHelmet, {
+    // CSP is left off this pass: merchant-api mostly serves JSON to merchant-web
+    // (a separate origin, unaffected by CSP), but it also serves the Swagger UI
+    // at /swagger, which relies on inline scripts helmet's default CSP would
+    // break. Revisit with a scoped policy if Swagger UI needs hardening later.
+    contentSecurityPolicy: false,
+    // merchant-web calls this API cross-origin with credentials; the default
+    // 'same-origin' policy would make browsers reject those responses outright.
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    strictTransportSecurity: {
+      maxAge: 63072000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    xFrameOptions: { action: 'deny' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  });
   // Fastify defaults to binding 'localhost' (loopback only) when no host is given — fine for
   // local dev (same machine), but unreachable from the ALB in ECS, which connects to the
   // task's real VPC IP, not loopback.
