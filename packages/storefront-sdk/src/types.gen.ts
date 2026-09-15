@@ -471,6 +471,8 @@ export interface operations {
                 maxPriceCents?: number;
                 /** @description Only include products with at least one variant in stock */
                 inStock?: boolean;
+                sortBy?: "price" | "newest" | "name";
+                sortDir?: "asc" | "desc";
             };
             header?: never;
             path?: never;

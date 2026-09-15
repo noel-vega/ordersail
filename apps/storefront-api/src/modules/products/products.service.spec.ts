@@ -386,4 +386,133 @@ describe('ProductsService', () => {
       expect(result.total).toBe(1);
     });
   });
+
+  describe('sort', () => {
+    async function makeThree(account: { id: number }) {
+      const cheap = await insertProduct(db, {
+        accountId: account.id,
+        name: 'Banana',
+      });
+      await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: cheap.id,
+        variants: [{ priceCents: 500 }],
+      });
+      const mid = await insertProduct(db, {
+        accountId: account.id,
+        name: 'Apple',
+      });
+      await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: mid.id,
+        variants: [{ priceCents: 1500 }],
+      });
+      const expensive = await insertProduct(db, {
+        accountId: account.id,
+        name: 'Cherry',
+      });
+      await insertProductWithVariants(db, {
+        accountId: account.id,
+        productId: expensive.id,
+        variants: [{ priceCents: 2500 }],
+      });
+      return { cheap, mid, expensive };
+    }
+
+    it('sorts by price ascending by default', async () => {
+      const account = await insertAccount(db);
+      await makeThree(account);
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, sortBy: 'price' },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.name)).toEqual([
+        'Banana',
+        'Apple',
+        'Cherry',
+      ]);
+    });
+
+    it('sorts by price descending', async () => {
+      const account = await insertAccount(db);
+      await makeThree(account);
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, sortBy: 'price', sortDir: 'desc' },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.name)).toEqual([
+        'Cherry',
+        'Apple',
+        'Banana',
+      ]);
+    });
+
+    it('sorts by name', async () => {
+      const account = await insertAccount(db);
+      await makeThree(account);
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, sortBy: 'name' },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.name)).toEqual([
+        'Apple',
+        'Banana',
+        'Cherry',
+      ]);
+    });
+
+    it('sorts by newest descending (most recently created first)', async () => {
+      const account = await insertAccount(db);
+      await insertProduct(db, { accountId: account.id, name: 'First' });
+      await insertProduct(db, { accountId: account.id, name: 'Second' });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, sortBy: 'newest', sortDir: 'desc' },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.name)).toEqual(['Second', 'First']);
+    });
+
+    it('sorts by newest ascending (oldest first)', async () => {
+      const account = await insertAccount(db);
+      await insertProduct(db, { accountId: account.id, name: 'First' });
+      await insertProduct(db, { accountId: account.id, name: 'Second' });
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0, sortBy: 'newest', sortDir: 'asc' },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.name)).toEqual(['First', 'Second']);
+    });
+
+    it('with no sortBy, keeps the original id-ascending order', async () => {
+      const account = await insertAccount(db);
+      await makeThree(account);
+      const service = await build();
+
+      const result = await service.findAll(
+        { limit: 20, offset: 0 },
+        account.id,
+      );
+
+      expect(result.items.map((i) => i.name)).toEqual([
+        'Banana',
+        'Apple',
+        'Cherry',
+      ]);
+    });
+  });
 });

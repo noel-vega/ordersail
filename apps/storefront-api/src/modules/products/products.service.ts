@@ -3,8 +3,10 @@ import { DRIZZLE } from '../../database/database.constants';
 import { resolvePageParams } from '../../shared/pagination';
 import {
   and,
+  asc,
   brandsTable,
   categoriesTable,
+  desc,
   eq,
   exists,
   gte,
@@ -26,7 +28,11 @@ import {
   type db as Db,
   type SQL,
 } from 'db';
-import { ListProductsQueryDto } from './dto/list-products-query.dto';
+import {
+  ListProductsQueryDto,
+  type ProductSortBy,
+  type SortDirection,
+} from './dto/list-products-query.dto';
 import { ProductListItem } from './entities/product-list-item.entity';
 import { PaginatedProducts } from './entities/paginated-products.entity';
 import { ProductDetail } from './entities/product-detail.entity';
@@ -46,6 +52,8 @@ export class ProductsService {
       minPriceCents,
       maxPriceCents,
       inStock,
+      sortBy,
+      sortDir,
     }: ListProductsQueryDto,
     accountId: number,
   ): Promise<PaginatedProducts> {
@@ -97,7 +105,7 @@ export class ProductsService {
         )
         .where(where)
         .groupBy(productsTable.id)
-        .orderBy(productsTable.id)
+        .orderBy(...this.sortColumns(sortBy, sortDir))
         .limit(take)
         .offset(skip),
       this.db
@@ -123,6 +131,28 @@ export class ProductsService {
     }));
 
     return { items, total, limit: take, offset: skip };
+  }
+
+  // 'price' sorts on the same min(priceCents) aggregate the select already
+  // computes — recomputing it here is fine, it's grouped the same way.
+  // Always appends id as a tiebreaker so pagination stays stable when the
+  // primary key has duplicates (e.g. two products with the same name).
+  // No sortBy at all keeps the original id-only ordering, unchanged.
+  private sortColumns(
+    sortBy: ProductSortBy | undefined,
+    sortDir: SortDirection | undefined,
+  ): SQL[] {
+    if (!sortBy) return [asc(productsTable.id)];
+
+    const dir = sortDir === 'desc' ? desc : asc;
+    const primary =
+      sortBy === 'price'
+        ? sql`min(${productVariantsTable.priceCents})`
+        : sortBy === 'newest'
+          ? productsTable.createdAt
+          : productsTable.name;
+
+    return [dir(primary), asc(productsTable.id)];
   }
 
   // True if the product has at least one variant priced within
