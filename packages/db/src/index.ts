@@ -11,7 +11,7 @@ if (!DATABASE_URL) {
 
 export const db = drizzle(DATABASE_URL);
 
-export { eq, ne, and, or, gt, inArray, notInArray, isNull, isNotNull, ilike, sql, asc, desc } from 'drizzle-orm';
+export { eq, ne, and, or, gt, inArray, notInArray, isNull, isNotNull, ilike, exists, sql, asc, desc } from 'drizzle-orm';
 export type { SQL } from 'drizzle-orm';
 
 export * from './schema/index.js';

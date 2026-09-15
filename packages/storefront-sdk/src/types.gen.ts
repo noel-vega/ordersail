@@ -459,6 +459,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                /** @description Text search over name, description, SKU, and barcode */
+                q?: string;
             };
             header?: never;
             path?: never;
