@@ -186,7 +186,9 @@ export class AdminClient {
   }
 
   async refreshAccessToken() {
-    const { data } = await this.client.GET("/auth/token/refresh");
+    // POST, not GET — this now mutates server-side refresh-token state
+    // (rotation), so it shouldn't be reachable via prefetch/link-scanning
+    const { data } = await this.client.POST("/auth/token/refresh");
     this.accessToken = data?.access_token;
     return this.accessToken;
   }

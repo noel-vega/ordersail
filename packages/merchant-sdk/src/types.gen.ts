@@ -107,9 +107,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: operations["AuthController_refreshToken"];
+        get?: never;
         put?: never;
-        post?: never;
+        post: operations["AuthController_refreshToken"];
         delete?: never;
         options?: never;
         head?: never;

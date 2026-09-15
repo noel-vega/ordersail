@@ -19,6 +19,10 @@ export interface AuthenticatedUser {
   accountId: number;
   firstName: string;
   lastName: string;
+  typ: 'access' | 'refresh';
+  // only present on refresh tokens — identifies the user_refresh_tokens row
+  // this specific token corresponds to (rotation/reuse-detection, OS-467)
+  jti?: string;
 }
 
 // what AuthGuard / PermissionsGuard stash on the request object for

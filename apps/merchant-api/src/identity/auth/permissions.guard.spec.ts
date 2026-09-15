@@ -59,6 +59,7 @@ const asUser = (sub: number): AuthenticatedRequest['user'] => ({
   accountId: 1,
   firstName: 'X',
   lastName: 'Y',
+  typ: 'access',
 });
 
 describe('PermissionsGuard (OS-182)', () => {
