@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse } from '@nestjs/swagger';
 import {
+  AuthenticatedOnly,
   CurrentUser,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
@@ -11,8 +12,9 @@ import { OnboardingStatus } from './entities/onboarding-status.entity';
 export class OnboardingController {
   constructor(private readonly onboardingService: OnboardingService) {}
 
-  // no @RequirePermissions — parity with GET /dashboard; any authenticated
-  // member of the account can see their own onboarding state
+  // any authenticated member of the account can see their own onboarding
+  // state — it backs the ungated home page, not the (now gated) dashboard
+  @AuthenticatedOnly()
   @Get('status')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: OnboardingStatus })

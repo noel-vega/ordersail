@@ -3,6 +3,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import {
   BookUserIcon,
   CreditCardIcon,
+  HomeIcon,
   KeyRoundIcon,
   LayoutDashboardIcon,
   LibraryIcon,
@@ -34,14 +35,22 @@ import { NavUser } from "./nav-user";
 import { navItemVisible, useVisibleNavItems } from "./use-visible-nav-items";
 
 // `permission` hides the item unless the current user holds that key.
-// undefined = always visible (Dashboard only).
+// undefined = always visible (Home only — every role lands there post-login).
 export const NAV_ITEMS = [
   {
     key: "home",
-    label: "Dashboard",
-    icon: LayoutDashboardIcon,
+    label: "Home",
+    icon: HomeIcon,
     to: "/app",
     permission: undefined,
+    children: undefined,
+  },
+  {
+    key: "dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboardIcon,
+    to: "/app/dashboard",
+    permission: "dashboard:read",
     children: undefined,
   },
   {
