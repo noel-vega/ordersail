@@ -19,7 +19,7 @@ export function RecoveryCodesReveal(props: {
       await navigator.clipboard.writeText(props.codes.join("\n"));
       toast.success("Recovery codes copied");
     } catch {
-      // clipboard can be unavailable (insecure context / denied permission)
+      toast.error("Couldn't copy recovery codes");
     }
   }
 
