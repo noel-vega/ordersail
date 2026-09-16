@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsStrongPassword } from 'password-policy';
 
 export class SignUpDto {
   @ApiProperty()
@@ -30,7 +31,8 @@ export class SignUpDto {
 
   @ApiProperty()
   @IsString()
-  @MinLength(8)
+  @MinLength(12)
+  @IsStrongPassword(['email', 'firstName', 'lastName', 'businessName'])
   password: string;
 
   constructor(
