@@ -1,5 +1,5 @@
-import { ChevronsUpDownIcon, LogOutIcon } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
+import { ChevronsUpDownIcon, LogOutIcon, ShieldIcon } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,6 +70,11 @@ export function NavUser() {
                 </div>
               </DropdownMenuLabel>
             </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem render={<Link to="/app/settings/security" />}>
+              <ShieldIcon />
+              Security
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={handleLogout}>
               <LogOutIcon />

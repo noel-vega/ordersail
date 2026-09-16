@@ -3838,6 +3838,9 @@
           "emailVerified": {
             "type": "boolean"
           },
+          "mfaEnabled": {
+            "type": "boolean"
+          },
           "permissions": {
             "type": "array",
             "items": {
@@ -3852,6 +3855,7 @@
           "lastName",
           "accountId",
           "emailVerified",
+          "mfaEnabled",
           "permissions"
         ]
       },

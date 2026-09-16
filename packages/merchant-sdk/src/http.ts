@@ -25,12 +25,17 @@ export class ApiError extends Error {
 // openapi-fetch resolves non-2xx as { error } rather than throwing. Resource
 // methods that mutate use this so callers can `try/catch` and show the API's
 // message (e.g. a 409 from an over-refund) instead of a generic string.
+//
+// Success is `response.ok`, not "data is defined" — a void-returning
+// endpoint (e.g. disable/revoke, 200/201/204 with no body) legitimately
+// resolves with `data: undefined` on success, and treating that as failure
+// surfaced as a real bug (a successful 201 showing "Request failed (201)").
 export function unwrap<T>(result: {
   data?: T;
   error?: unknown;
   response: Response;
 }): T {
-  if (result.data !== undefined) return result.data;
+  if (result.response.ok) return result.data as T;
   const body = result.error;
   const raw =
     body && typeof body === "object" && "message" in body

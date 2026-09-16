@@ -96,6 +96,10 @@ export class AuthService {
   async me(user: AuthenticatedUser): Promise<AuthMe> {
     const permissions =
       await this.permissionsService.getEffectivePermissionKeys(user.sub);
+    const [mfa] = await this.db
+      .select({ confirmedAt: userMfaTable.confirmedAt })
+      .from(userMfaTable)
+      .where(eq(userMfaTable.userId, user.sub));
     return {
       userId: user.sub,
       email: user.email,
@@ -103,6 +107,7 @@ export class AuthService {
       lastName: user.lastName,
       accountId: user.accountId,
       emailVerified: user.emailVerified,
+      mfaEnabled: mfa?.confirmedAt != null,
       permissions: [...permissions].sort(),
     };
   }
