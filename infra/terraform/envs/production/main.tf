@@ -256,6 +256,10 @@ module "ecs_service_merchant_api" {
   secrets = [
     { name = "DATABASE_URL", valueFrom = module.secrets.database_url_secret_arn },
     { name = "STAFF_JWT_SECRET", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:STAFF_JWT_SECRET::" },
+    # AES-256-GCM key for TOTP secrets at rest (OS-316). Key must exist in
+    # the ordersail/production/merchant-api secret JSON — generate with
+    # `openssl rand -hex 32` and add it there before this deploys.
+    { name = "MFA_ENCRYPTION_KEY", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:MFA_ENCRYPTION_KEY::" },
     { name = "STRIPE_SECRET_KEY", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:STRIPE_SECRET_KEY::" },
     # the one Stripe event destination (account.updated + checkout.session.*) —
     # M9/OS-360. Key must exist in the ordersail/production/merchant-api secret JSON.

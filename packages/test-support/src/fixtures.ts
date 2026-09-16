@@ -28,6 +28,8 @@ import {
   stripeAccountsTable,
   userEmailVerificationsTable,
   userInvitesTable,
+  userMfaRecoveryCodesTable,
+  userMfaTable,
   userPasswordResetsTable,
   userRolesTable,
   usersTable,
@@ -150,6 +152,47 @@ export async function insertUserEmailVerification(
         token: opts.token ?? `verify-${uniq()}`,
         expiresAt:
           opts.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000),
+      })
+      .returning(),
+  );
+}
+
+// `secret` is stored pre-encrypted, same as the real table — this package
+// has no dependency on merchant-api's encryption key, so a spec that needs
+// to actually verify a TOTP code must encrypt a known secret itself (via
+// merchant-api's own shared/mfa/mfa-crypto) and pass the result in here.
+// Omitted → unconfirmed (mid-enrollment); pass a Date to simulate an
+// already-activated factor.
+export async function insertUserMfa(
+  db: TestDb,
+  opts: { userId: number; secret?: string; confirmedAt?: Date | null },
+): Promise<Row<typeof userMfaTable>> {
+  return one(
+    await db
+      .insert(userMfaTable)
+      .values({
+        userId: opts.userId,
+        secret: opts.secret ?? `encrypted-secret-${uniq()}`,
+        confirmedAt: opts.confirmedAt ?? null,
+      })
+      .returning(),
+  );
+}
+
+// `codeHash` is stored pre-hashed, same as the real table — pass a real
+// bcrypt hash to simulate a redeemable code. Omitted → unused; pass a Date
+// to simulate an already-consumed one.
+export async function insertUserMfaRecoveryCode(
+  db: TestDb,
+  opts: { userId: number; codeHash?: string; usedAt?: Date | null },
+): Promise<Row<typeof userMfaRecoveryCodesTable>> {
+  return one(
+    await db
+      .insert(userMfaRecoveryCodesTable)
+      .values({
+        userId: opts.userId,
+        codeHash: opts.codeHash ?? `hash-${uniq()}`,
+        usedAt: opts.usedAt ?? null,
       })
       .returning(),
   );

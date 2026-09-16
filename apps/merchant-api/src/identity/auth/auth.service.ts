@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import {
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { authenticator } from 'otplib';
 import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
@@ -18,6 +20,8 @@ import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
 import { env } from 'src/shared/env';
 import { generateToken } from 'src/shared/common/generate-token.util';
+import { decryptMfaSecret, encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
+import { generateRecoveryCodes } from 'src/shared/mfa/recovery-codes.util';
 import {
   accountApiKeysTable,
   accountsTable,
@@ -27,6 +31,8 @@ import {
   isNull,
   isUniqueViolation,
   userEmailVerificationsTable,
+  userMfaRecoveryCodesTable,
+  userMfaTable,
   userPasswordResetsTable,
   userRefreshTokensTable,
   usersTable,
@@ -47,6 +53,34 @@ const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 // the same replacement pair instead of revoking the family — see
 // packages/db/src/schema/user-refresh-tokens.ts for why this exists
 const REFRESH_GRACE_WINDOW_MS = 10_000;
+
+// long enough to type a code in, short enough that a challenge token isn't
+// worth much if it leaks (e.g. via a referrer header or a shared machine)
+const MFA_CHALLENGE_TTL = '5m';
+
+const MFA_ISSUER = 'OrderSail';
+
+interface SignInSuccessResult {
+  mfaRequired: false;
+  userId: number;
+  email: string;
+  accountId: number;
+  firstName: string;
+  lastName: string;
+  emailVerified: boolean;
+  access_token: string;
+}
+
+interface MfaChallengeResult {
+  mfaRequired: true;
+  challengeToken: string;
+}
+
+type SignInResult = SignInSuccessResult | MfaChallengeResult;
+
+// the callback param drizzle hands a `db.transaction()` caller — same
+// query-builder surface as `db` itself, scoped to one transaction
+type DbTransaction = Parameters<Parameters<(typeof Db)['transaction']>[0]>[0];
 
 @Injectable()
 export class AuthService {
@@ -73,7 +107,7 @@ export class AuthService {
     };
   }
 
-  async signin(signinDto: SignInDto) {
+  async signin(signinDto: SignInDto): Promise<SignInResult> {
     const user = await this.usersService.getByEmail(signinDto.email);
 
     // staff created from the dashboard have no password until they join via
@@ -86,6 +120,33 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
+    // a confirmed second factor means the password alone isn't enough —
+    // withhold tokens and hand back a short-lived challenge instead. An
+    // *unconfirmed* enrollment (mid-setup, never finished) doesn't count:
+    // there's nothing to challenge with yet.
+    const [mfa] = await this.db
+      .select({ confirmedAt: userMfaTable.confirmedAt })
+      .from(userMfaTable)
+      .where(eq(userMfaTable.userId, user.id));
+
+    if (mfa?.confirmedAt) {
+      return {
+        mfaRequired: true,
+        challengeToken: await this.createMfaChallengeToken(user.id),
+      };
+    }
+
+    return this.buildSignInSuccess(user);
+  }
+
+  private async buildSignInSuccess(user: {
+    id: number;
+    email: string;
+    accountId: number;
+    firstname: string;
+    lastname: string;
+    emailVerifiedAt: Date | null;
+  }): Promise<SignInSuccessResult> {
     const emailVerified = user.emailVerifiedAt !== null;
     const access_token = await this.createAccessToken(
       user.id,
@@ -97,6 +158,7 @@ export class AuthService {
     );
 
     return {
+      mfaRequired: false,
       userId: user.id,
       email: user.email,
       accountId: user.accountId,
@@ -105,6 +167,259 @@ export class AuthService {
       emailVerified,
       access_token,
     };
+  }
+
+  private async createMfaChallengeToken(userId: number): Promise<string> {
+    return await this.sign(
+      { sub: userId, typ: 'mfa_challenge' },
+      MFA_CHALLENGE_TTL,
+    );
+  }
+
+  // Exchanges a signin()-issued challenge for real tokens once the caller
+  // proves the second factor (TOTP or an unused recovery code). The
+  // challenge token's own signature/expiry is the only thing standing in
+  // for "the password was already checked" — it carries no other claims.
+  async verifyMfaChallenge(
+    challengeToken: string,
+    code: string,
+  ): Promise<SignInSuccessResult> {
+    let payload: { sub: number; typ: string };
+    try {
+      payload = await this.jwtService.verifyAsync(challengeToken);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired challenge');
+    }
+
+    if (payload.typ !== 'mfa_challenge') {
+      throw new UnauthorizedException('Invalid or expired challenge');
+    }
+
+    const [user] = await this.db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, payload.sub));
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired challenge');
+    }
+
+    const [mfa] = await this.db
+      .select()
+      .from(userMfaTable)
+      .where(eq(userMfaTable.userId, user.id));
+    if (!mfa?.confirmedAt) {
+      throw new UnauthorizedException('Invalid or expired challenge');
+    }
+
+    const isValidTotp = authenticator.verify({
+      token: code,
+      secret: decryptMfaSecret(mfa.secret),
+    });
+    const isValidRecoveryCode =
+      !isValidTotp && (await this.consumeRecoveryCode(user.id, code));
+
+    if (!isValidTotp && !isValidRecoveryCode) {
+      throw new UnauthorizedException('Invalid code');
+    }
+
+    return this.buildSignInSuccess(user);
+  }
+
+  // The update is conditioned on isNull(usedAt) too, not just the row id —
+  // two concurrent requests presenting the same code both pass the read
+  // above, but Postgres serializes the UPDATEs on that row: the second one
+  // re-evaluates its WHERE against the just-committed row and finds no
+  // match, so .returning() comes back empty and only one request wins.
+  private async consumeRecoveryCode(
+    userId: number,
+    code: string,
+  ): Promise<boolean> {
+    const unusedCodes = await this.db
+      .select()
+      .from(userMfaRecoveryCodesTable)
+      .where(
+        and(
+          eq(userMfaRecoveryCodesTable.userId, userId),
+          isNull(userMfaRecoveryCodesTable.usedAt),
+        ),
+      );
+
+    for (const row of unusedCodes) {
+      if (await bcrypt.compare(code, row.codeHash)) {
+        const [claimed] = await this.db
+          .update(userMfaRecoveryCodesTable)
+          .set({ usedAt: new Date() })
+          .where(
+            and(
+              eq(userMfaRecoveryCodesTable.id, row.id),
+              isNull(userMfaRecoveryCodesTable.usedAt),
+            ),
+          )
+          .returning();
+        if (claimed) return true;
+      }
+    }
+    return false;
+  }
+
+  // Generates a new unconfirmed TOTP secret and returns its otpauth:// URI
+  // for the caller to add to an authenticator app. Requires a verified email
+  // (a second factor shouldn't be lockable-in before proving control of the
+  // inbox — see OS-470) and blocks re-enrolling over an already-confirmed
+  // factor (disable first).
+  async enrollMfa(userId: number): Promise<{ otpauthUrl: string }> {
+    const [user] = await this.db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, userId));
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    if (!user.emailVerifiedAt) {
+      throw new ForbiddenException('Verify your email before enabling MFA');
+    }
+
+    const [existing] = await this.db
+      .select({ confirmedAt: userMfaTable.confirmedAt })
+      .from(userMfaTable)
+      .where(eq(userMfaTable.userId, userId));
+    if (existing?.confirmedAt) {
+      throw new ConflictException(
+        'MFA is already enabled — disable it first to re-enroll',
+      );
+    }
+
+    const secret = authenticator.generateSecret();
+    const encryptedSecret = encryptMfaSecret(secret);
+
+    await this.db
+      .insert(userMfaTable)
+      .values({ userId, secret: encryptedSecret })
+      .onConflictDoUpdate({
+        target: userMfaTable.userId,
+        set: {
+          secret: encryptedSecret,
+          confirmedAt: null,
+          updatedAt: new Date(),
+        },
+      });
+
+    return { otpauthUrl: authenticator.keyuri(user.email, MFA_ISSUER, secret) };
+  }
+
+  private async verifyPassword(
+    userId: number,
+    password: string,
+  ): Promise<void> {
+    const [user] = await this.db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, userId));
+    if (!user || !user.password) {
+      throw new UnauthorizedException();
+    }
+    if (!(await bcrypt.compare(password, user.password))) {
+      throw new UnauthorizedException();
+    }
+  }
+
+  // Verifies the current password (this activates a second factor — the
+  // same reauthentication bar as disabling one, see disableMfa) and the
+  // first code against the pending secret, then activates it and issues the
+  // one and only batch of recovery codes for this enrollment — the caller
+  // must save them now, they're never shown again. The state update and the
+  // code replacement run in one transaction, with the user_mfa row locked
+  // for its duration, so a concurrent confirm/regenerate for the same user
+  // can't interleave with this one.
+  async confirmMfa(
+    userId: number,
+    code: string,
+    password: string,
+  ): Promise<{ recoveryCodes: string[] }> {
+    await this.verifyPassword(userId, password);
+
+    return this.db.transaction(async (tx) => {
+      const [mfa] = await tx
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, userId))
+        .for('update');
+      if (!mfa || mfa.confirmedAt) {
+        throw new UnauthorizedException('No pending MFA enrollment');
+      }
+
+      if (
+        !authenticator.verify({
+          token: code,
+          secret: decryptMfaSecret(mfa.secret),
+        })
+      ) {
+        throw new UnauthorizedException('Invalid code');
+      }
+
+      await tx
+        .update(userMfaTable)
+        .set({ confirmedAt: new Date(), updatedAt: new Date() })
+        .where(eq(userMfaTable.id, mfa.id));
+
+      return { recoveryCodes: await this.issueRecoveryCodes(tx, userId) };
+    });
+  }
+
+  // Requires current-password re-entry — standard practice for removing a
+  // second factor, since the whole point of MFA is that a password alone
+  // shouldn't be enough to weaken an account's security.
+  async disableMfa(userId: number, password: string): Promise<void> {
+    await this.verifyPassword(userId, password);
+
+    await this.db
+      .delete(userMfaRecoveryCodesTable)
+      .where(eq(userMfaRecoveryCodesTable.userId, userId));
+    await this.db.delete(userMfaTable).where(eq(userMfaTable.userId, userId));
+  }
+
+  // Requires current-password re-entry (see confirmMfa) — a stolen bearer
+  // token alone shouldn't be enough to mint a fresh recovery-code backdoor
+  // for an account that already has MFA confirmed.
+  async regenerateRecoveryCodes(
+    userId: number,
+    password: string,
+  ): Promise<{ recoveryCodes: string[] }> {
+    await this.verifyPassword(userId, password);
+
+    return this.db.transaction(async (tx) => {
+      const [mfa] = await tx
+        .select({ confirmedAt: userMfaTable.confirmedAt })
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, userId))
+        .for('update');
+      if (!mfa?.confirmedAt) {
+        throw new UnauthorizedException('MFA is not enabled');
+      }
+
+      return { recoveryCodes: await this.issueRecoveryCodes(tx, userId) };
+    });
+  }
+
+  private async issueRecoveryCodes(
+    tx: DbTransaction,
+    userId: number,
+  ): Promise<string[]> {
+    const codes = generateRecoveryCodes();
+
+    await tx
+      .delete(userMfaRecoveryCodesTable)
+      .where(eq(userMfaRecoveryCodesTable.userId, userId));
+    await tx.insert(userMfaRecoveryCodesTable).values(
+      await Promise.all(
+        codes.map(async (code) => ({
+          userId,
+          codeHash: await bcrypt.hash(code, 10),
+        })),
+      ),
+    );
+
+    return codes;
   }
 
   async signup(signupDto: SignUpDto) {
@@ -225,7 +540,11 @@ export class AuthService {
   // Verifies the emailed token, marks the account verified, and — since
   // clicking the link proves control of the address — mints a fresh
   // access+refresh pair with emailVerified: true, auto-logging in whichever
-  // browser/tab opens the link (even if it's not the original session).
+  // browser/tab opens the link (even if it's not the original session). This
+  // bypasses the MFA challenge (no password check happens here either), but
+  // that's safe: enrollMfa() requires emailVerifiedAt already set, so a user
+  // reachable by this method (emailVerifiedAt still null) can never have a
+  // confirmed MFA factor yet.
   async verifyEmail(token: string) {
     const [verification] = await this.db
       .select()

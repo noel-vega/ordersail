@@ -13,6 +13,8 @@ Object.assign(process.env, {
 
   // merchant-api
   STAFF_JWT_SECRET: 'test-staff-secret',
+  MFA_ENCRYPTION_KEY:
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   MERCHANT_WEB_URL: 'http://localhost:5000',
   STRIPE_SECRET_KEY: 'sk_test_x',
   STRIPE_WEBHOOK_SECRET: 'whsec_x',
