@@ -203,11 +203,31 @@ describe('AuthService.me (OS-180)', () => {
       firstName: signupDto.firstName,
       lastName: signupDto.lastName,
       emailVerified: false,
+      mfaEnabled: false,
     });
     // fresh signup → Owner role → every catalog key, sorted
     expect(me.permissions).toEqual(
       [...PERMISSIONS_CATALOG.map((p) => p.key)].sort(),
     );
+  });
+
+  it('reports mfaEnabled: true once a factor is confirmed', async () => {
+    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+    const service = await build();
+    const { userId, accountId } = await service.signup(signupDto);
+    await insertUserMfa(db, { userId, confirmedAt: new Date() });
+
+    const me = await service.me({
+      sub: userId,
+      email: signupDto.email,
+      accountId,
+      firstName: signupDto.firstName,
+      lastName: signupDto.lastName,
+      emailVerified: false,
+      typ: 'access',
+    });
+
+    expect(me.mfaEnabled).toBe(true);
   });
 });
 

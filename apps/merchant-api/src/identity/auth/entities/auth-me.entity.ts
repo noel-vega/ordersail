@@ -22,6 +22,11 @@ export class AuthMe {
   @ApiProperty()
   emailVerified: boolean;
 
+  // whether a TOTP factor is confirmed and active (OS-316) — merchant-web's
+  // security page uses this to render "enroll" vs "manage" state
+  @ApiProperty()
+  mfaEnabled: boolean;
+
   @ApiProperty({ type: [String] })
   permissions: string[];
 }

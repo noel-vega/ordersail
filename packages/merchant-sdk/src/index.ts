@@ -21,6 +21,7 @@ import { createOnboardingResource } from "./resources/onboarding.js";
 import { createRolesResource } from "./resources/roles.js";
 import { createPermissionsResource } from "./resources/permissions.js";
 import { createPosDevicesResource } from "./resources/pos-devices.js";
+import { createMfaResource } from "./resources/mfa.js";
 
 export type ApiKey = components["schemas"]["ApiKeyDto"];
 export type CreateApiKeyDto = components["schemas"]["CreateApiKeyDto"];
@@ -95,6 +96,13 @@ export type PosDevice = components["schemas"]["PosDevice"];
 export type PosDevicePairing = components["schemas"]["PosDevicePairing"];
 export type CreatePosDeviceDto = components["schemas"]["CreatePosDeviceDto"];
 export type UpdatePosDeviceDto = components["schemas"]["UpdatePosDeviceDto"];
+export type MfaEnrollResponse =
+  components["schemas"]["MfaEnrollResponseDto"];
+export type MfaRecoveryCodes = components["schemas"]["MfaRecoveryCodesDto"];
+export type MfaConfirmDto = components["schemas"]["MfaConfirmDto"];
+export type MfaDisableDto = components["schemas"]["MfaDisableDto"];
+export type MfaRegenerateRecoveryCodesDto =
+  components["schemas"]["MfaRegenerateRecoveryCodesDto"];
 
 export class AdminClient {
   accessToken: string | undefined;
@@ -119,6 +127,7 @@ export class AdminClient {
   roles: ReturnType<typeof createRolesResource>;
   permissions: ReturnType<typeof createPermissionsResource>;
   posDevices: ReturnType<typeof createPosDevicesResource>;
+  mfa: ReturnType<typeof createMfaResource>;
 
   // every request needs the bearer token and the cross-origin cookie
   // (for the refresh_token) — centralized here instead of at each call site.
@@ -156,15 +165,22 @@ export class AdminClient {
     this.roles = createRolesResource(this.client, doRequest);
     this.permissions = createPermissionsResource(this.client, doRequest);
     this.posDevices = createPosDevicesResource(this.client, doRequest);
+    this.mfa = createMfaResource(this.client, doRequest);
   }
 
+  // returns either an access token (sets it on the client, same as before)
+  // or an MFA challenge (OS-316) — the caller narrows on `mfaRequired` to
+  // tell them apart. No UI consumes the challenge branch yet (OS-475); this
+  // just keeps the client honest about what the API can actually return.
   async signIn(credentials: components["schemas"]["SignInDto"]) {
     const { data } = await this.client.POST("/auth/signin", {
       body: credentials,
     });
 
-    this.accessToken = data?.access_token;
-    return this.accessToken;
+    if (data && "access_token" in data) {
+      this.accessToken = data.access_token;
+    }
+    return data;
   }
 
   async signUp(signup: components["schemas"]["SignUpDto"]) {
