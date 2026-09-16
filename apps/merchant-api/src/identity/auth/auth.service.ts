@@ -78,6 +78,10 @@ interface MfaChallengeResult {
 
 type SignInResult = SignInSuccessResult | MfaChallengeResult;
 
+// the callback param drizzle hands a `db.transaction()` caller — same
+// query-builder surface as `db` itself, scoped to one transaction
+type DbTransaction = Parameters<Parameters<(typeof Db)['transaction']>[0]>[0];
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -221,6 +225,11 @@ export class AuthService {
     return this.buildSignInSuccess(user);
   }
 
+  // The update is conditioned on isNull(usedAt) too, not just the row id —
+  // two concurrent requests presenting the same code both pass the read
+  // above, but Postgres serializes the UPDATEs on that row: the second one
+  // re-evaluates its WHERE against the just-committed row and finds no
+  // match, so .returning() comes back empty and only one request wins.
   private async consumeRecoveryCode(
     userId: number,
     code: string,
@@ -237,11 +246,17 @@ export class AuthService {
 
     for (const row of unusedCodes) {
       if (await bcrypt.compare(code, row.codeHash)) {
-        await this.db
+        const [claimed] = await this.db
           .update(userMfaRecoveryCodesTable)
           .set({ usedAt: new Date() })
-          .where(eq(userMfaRecoveryCodesTable.id, row.id));
-        return true;
+          .where(
+            and(
+              eq(userMfaRecoveryCodesTable.id, row.id),
+              isNull(userMfaRecoveryCodesTable.usedAt),
+            ),
+          )
+          .returning();
+        if (claimed) return true;
       }
     }
     return false;
@@ -292,42 +307,10 @@ export class AuthService {
     return { otpauthUrl: authenticator.keyuri(user.email, MFA_ISSUER, secret) };
   }
 
-  // Verifies the first code against the pending secret, activates it, and
-  // issues the one and only batch of recovery codes for this enrollment —
-  // the caller must save them now, they're never shown again.
-  async confirmMfa(
+  private async verifyPassword(
     userId: number,
-    code: string,
-  ): Promise<{ recoveryCodes: string[] }> {
-    const [mfa] = await this.db
-      .select()
-      .from(userMfaTable)
-      .where(eq(userMfaTable.userId, userId));
-    if (!mfa || mfa.confirmedAt) {
-      throw new UnauthorizedException('No pending MFA enrollment');
-    }
-
-    if (
-      !authenticator.verify({
-        token: code,
-        secret: decryptMfaSecret(mfa.secret),
-      })
-    ) {
-      throw new UnauthorizedException('Invalid code');
-    }
-
-    await this.db
-      .update(userMfaTable)
-      .set({ confirmedAt: new Date(), updatedAt: new Date() })
-      .where(eq(userMfaTable.id, mfa.id));
-
-    return { recoveryCodes: await this.issueRecoveryCodes(userId) };
-  }
-
-  // Requires current-password re-entry — standard practice for removing a
-  // second factor, since the whole point of MFA is that a password alone
-  // shouldn't be enough to weaken an account's security.
-  async disableMfa(userId: number, password: string): Promise<void> {
+    password: string,
+  ): Promise<void> {
     const [user] = await this.db
       .select()
       .from(usersTable)
@@ -338,6 +321,56 @@ export class AuthService {
     if (!(await bcrypt.compare(password, user.password))) {
       throw new UnauthorizedException();
     }
+  }
+
+  // Verifies the current password (this activates a second factor — the
+  // same reauthentication bar as disabling one, see disableMfa) and the
+  // first code against the pending secret, then activates it and issues the
+  // one and only batch of recovery codes for this enrollment — the caller
+  // must save them now, they're never shown again. The state update and the
+  // code replacement run in one transaction, with the user_mfa row locked
+  // for its duration, so a concurrent confirm/regenerate for the same user
+  // can't interleave with this one.
+  async confirmMfa(
+    userId: number,
+    code: string,
+    password: string,
+  ): Promise<{ recoveryCodes: string[] }> {
+    await this.verifyPassword(userId, password);
+
+    return this.db.transaction(async (tx) => {
+      const [mfa] = await tx
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, userId))
+        .for('update');
+      if (!mfa || mfa.confirmedAt) {
+        throw new UnauthorizedException('No pending MFA enrollment');
+      }
+
+      if (
+        !authenticator.verify({
+          token: code,
+          secret: decryptMfaSecret(mfa.secret),
+        })
+      ) {
+        throw new UnauthorizedException('Invalid code');
+      }
+
+      await tx
+        .update(userMfaTable)
+        .set({ confirmedAt: new Date(), updatedAt: new Date() })
+        .where(eq(userMfaTable.id, mfa.id));
+
+      return { recoveryCodes: await this.issueRecoveryCodes(tx, userId) };
+    });
+  }
+
+  // Requires current-password re-entry — standard practice for removing a
+  // second factor, since the whole point of MFA is that a password alone
+  // shouldn't be enough to weaken an account's security.
+  async disableMfa(userId: number, password: string): Promise<void> {
+    await this.verifyPassword(userId, password);
 
     await this.db
       .delete(userMfaRecoveryCodesTable)
@@ -345,27 +378,39 @@ export class AuthService {
     await this.db.delete(userMfaTable).where(eq(userMfaTable.userId, userId));
   }
 
+  // Requires current-password re-entry (see confirmMfa) — a stolen bearer
+  // token alone shouldn't be enough to mint a fresh recovery-code backdoor
+  // for an account that already has MFA confirmed.
   async regenerateRecoveryCodes(
     userId: number,
+    password: string,
   ): Promise<{ recoveryCodes: string[] }> {
-    const [mfa] = await this.db
-      .select({ confirmedAt: userMfaTable.confirmedAt })
-      .from(userMfaTable)
-      .where(eq(userMfaTable.userId, userId));
-    if (!mfa?.confirmedAt) {
-      throw new UnauthorizedException('MFA is not enabled');
-    }
+    await this.verifyPassword(userId, password);
 
-    return { recoveryCodes: await this.issueRecoveryCodes(userId) };
+    return this.db.transaction(async (tx) => {
+      const [mfa] = await tx
+        .select({ confirmedAt: userMfaTable.confirmedAt })
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, userId))
+        .for('update');
+      if (!mfa?.confirmedAt) {
+        throw new UnauthorizedException('MFA is not enabled');
+      }
+
+      return { recoveryCodes: await this.issueRecoveryCodes(tx, userId) };
+    });
   }
 
-  private async issueRecoveryCodes(userId: number): Promise<string[]> {
+  private async issueRecoveryCodes(
+    tx: DbTransaction,
+    userId: number,
+  ): Promise<string[]> {
     const codes = generateRecoveryCodes();
 
-    await this.db
+    await tx
       .delete(userMfaRecoveryCodesTable)
       .where(eq(userMfaRecoveryCodesTable.userId, userId));
-    await this.db.insert(userMfaRecoveryCodesTable).values(
+    await tx.insert(userMfaRecoveryCodesTable).values(
       await Promise.all(
         codes.map(async (code) => ({
           userId,

@@ -773,9 +773,9 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const user = await seedUserWithPassword();
       const service = await build();
 
-      await expect(service.confirmMfa(user.id, '123456')).rejects.toThrow(
-        'No pending MFA enrollment',
-      );
+      await expect(
+        service.confirmMfa(user.id, '123456', password),
+      ).rejects.toThrow('No pending MFA enrollment');
     });
 
     it('rejects an invalid code', async () => {
@@ -783,9 +783,26 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const service = await build();
       await service.enrollMfa(user.id);
 
-      await expect(service.confirmMfa(user.id, '000000')).rejects.toThrow(
-        'Invalid code',
-      );
+      await expect(
+        service.confirmMfa(user.id, '000000', password),
+      ).rejects.toThrow('Invalid code');
+    });
+
+    it('rejects the wrong password, even with a correct code', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+      const { otpauthUrl } = await service.enrollMfa(user.id);
+      const code = authenticator.generate(extractSecret(otpauthUrl));
+
+      await expect(
+        service.confirmMfa(user.id, code, 'wrong-password'),
+      ).rejects.toThrow();
+
+      const [mfa] = await db
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, user.id));
+      expect(mfa?.confirmedAt).toBeNull();
     });
 
     it('activates the factor and returns one batch of recovery codes', async () => {
@@ -794,7 +811,11 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const { otpauthUrl } = await service.enrollMfa(user.id);
       const code = authenticator.generate(extractSecret(otpauthUrl));
 
-      const { recoveryCodes } = await service.confirmMfa(user.id, code);
+      const { recoveryCodes } = await service.confirmMfa(
+        user.id,
+        code,
+        password,
+      );
 
       expect(recoveryCodes).toHaveLength(10);
       const [mfa] = await db
@@ -811,7 +832,11 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const service = await build();
       const { otpauthUrl } = await service.enrollMfa(user.id);
       const secret = extractSecret(otpauthUrl);
-      await service.confirmMfa(user.id, authenticator.generate(secret));
+      await service.confirmMfa(
+        user.id,
+        authenticator.generate(secret),
+        password,
+      );
 
       const signInResult = await service.signin({
         email: user.email,
@@ -857,6 +882,42 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       await expect(
         service.verifyMfaChallenge(second.challengeToken, recoveryCode),
       ).rejects.toThrow('Invalid code');
+    });
+
+    it('lets only one of two concurrent redemptions of the same code succeed', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, {
+        userId: user.id,
+        confirmedAt: new Date(),
+        secret: encryptMfaSecret(authenticator.generateSecret()),
+      });
+      const recoveryCode = 'ABCDE-FGHJK';
+      await insertUserMfaRecoveryCode(db, {
+        userId: user.id,
+        codeHash: await bcrypt.hash(recoveryCode, 10),
+      });
+      const service = await build();
+
+      const challenge = await service.signin({ email: user.email, password });
+      if (!challenge.mfaRequired) throw new Error('expected a challenge');
+
+      // same challenge token, same recovery code, fired concurrently — the
+      // race this guards against
+      const results = await Promise.allSettled([
+        service.verifyMfaChallenge(challenge.challengeToken, recoveryCode),
+        service.verifyMfaChallenge(challenge.challengeToken, recoveryCode),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+
+      const codeRows = await db
+        .select()
+        .from(userMfaRecoveryCodesTable)
+        .where(eq(userMfaRecoveryCodesTable.userId, user.id));
+      expect(codeRows.filter((r) => r.usedAt !== null)).toHaveLength(1);
     });
 
     it('rejects an invalid code', async () => {
@@ -942,9 +1003,19 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const user = await seedUserWithPassword();
       const service = await build();
 
-      await expect(service.regenerateRecoveryCodes(user.id)).rejects.toThrow(
-        'MFA is not enabled',
-      );
+      await expect(
+        service.regenerateRecoveryCodes(user.id, password),
+      ).rejects.toThrow('MFA is not enabled');
+    });
+
+    it('requires the current password', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      await expect(
+        service.regenerateRecoveryCodes(user.id, 'wrong-password'),
+      ).rejects.toThrow();
     });
 
     it('replaces existing codes with a fresh batch of 10', async () => {
@@ -953,7 +1024,10 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       await insertUserMfaRecoveryCode(db, { userId: user.id });
       const service = await build();
 
-      const { recoveryCodes } = await service.regenerateRecoveryCodes(user.id);
+      const { recoveryCodes } = await service.regenerateRecoveryCodes(
+        user.id,
+        password,
+      );
       expect(recoveryCodes).toHaveLength(10);
 
       const rows = await db

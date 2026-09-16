@@ -11,8 +11,12 @@ export const env = parseEnv(
     // AES-256-GCM key for TOTP secrets at rest (OS-316) — 32 bytes, hex
     // encoded. App-level static key for now, same convention as
     // STAFF_JWT_SECRET; revisit with KMS envelope encryption if that
-    // becomes a compliance requirement.
-    MFA_ENCRYPTION_KEY: z.string().length(64),
+    // becomes a compliance requirement. Must be real hex, not just 64
+    // characters — Buffer.from(str, 'hex') silently truncates at the first
+    // invalid character rather than throwing, so a non-hex value would
+    // otherwise pass startup validation and only fail later, deep inside
+    // createCipheriv/createDecipheriv.
+    MFA_ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/),
     MERCHANT_WEB_URL: z.url().default('http://localhost:5000'),
 
     // one platform-owned Stripe/Shippo account, shared with storefront-api

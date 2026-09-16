@@ -23,6 +23,7 @@ import { MfaVerifyDto } from './dto/mfa-verify.dto';
 import { MfaDisableDto } from './dto/mfa-disable.dto';
 import { MfaEnrollResponseDto } from './dto/mfa-enroll-response.dto';
 import { MfaRecoveryCodesDto } from './dto/mfa-recovery-codes.dto';
+import { MfaRegenerateRecoveryCodesDto } from './dto/mfa-regenerate-recovery-codes.dto';
 import { AuthMe } from './entities/auth-me.entity';
 import {
   AuthenticatedOnly,
@@ -36,8 +37,10 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
+  ApiExtraModels,
   ApiOkResponse,
   ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 
 const REFRESH_TOKEN_COOKIE = 'refresh_token';
@@ -61,7 +64,18 @@ export class AuthController {
   // global default
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('signin')
-  @ApiOkResponse({ type: AccessTokenDto })
+  // returns one of two shapes depending on whether the account has a
+  // confirmed MFA factor (OS-316) — both must be declared or a generated
+  // client (merchant-sdk) can't type the MFA-challenge branch
+  @ApiExtraModels(AccessTokenDto, MfaChallengeDto)
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(AccessTokenDto) },
+        { $ref: getSchemaPath(MfaChallengeDto) },
+      ],
+    },
+  })
   @ApiUnauthorizedResponse()
   async signin(
     @Body() signinDto: SignInDto,
@@ -142,7 +156,7 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: MfaConfirmDto,
   ): Promise<MfaRecoveryCodesDto> {
-    return this.authService.confirmMfa(user.sub, dto.code);
+    return this.authService.confirmMfa(user.sub, dto.code, dto.password);
   }
 
   @AuthenticatedOnly()
@@ -166,8 +180,9 @@ export class AuthController {
   @ApiUnauthorizedResponse()
   async regenerateRecoveryCodes(
     @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: MfaRegenerateRecoveryCodesDto,
   ): Promise<MfaRecoveryCodesDto> {
-    return this.authService.regenerateRecoveryCodes(user.sub);
+    return this.authService.regenerateRecoveryCodes(user.sub, dto.password);
   }
 
   @Public()

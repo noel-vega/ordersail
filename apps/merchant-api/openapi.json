@@ -35,7 +35,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccessTokenDto"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AccessTokenDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MfaChallengeDto"
+                    }
+                  ]
                 }
               }
             }
@@ -184,6 +191,16 @@
       "post": {
         "operationId": "AuthController_regenerateRecoveryCodes",
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaRegenerateRecoveryCodesDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -3596,6 +3613,35 @@
       }
     },
     "schemas": {
+      "AccessTokenDto": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token"
+        ]
+      },
+      "MfaChallengeDto": {
+        "type": "object",
+        "properties": {
+          "mfaRequired": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "challengeToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mfaRequired",
+          "challengeToken"
+        ]
+      },
       "SignInDto": {
         "type": "object",
         "properties": {
@@ -3609,17 +3655,6 @@
         "required": [
           "email",
           "password"
-        ]
-      },
-      "AccessTokenDto": {
-        "type": "object",
-        "properties": {
-          "access_token": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "access_token"
         ]
       },
       "MfaVerifyDto": {
@@ -3653,10 +3688,14 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "password": {
+            "type": "string"
           }
         },
         "required": [
-          "code"
+          "code",
+          "password"
         ]
       },
       "MfaRecoveryCodesDto": {
@@ -3674,6 +3713,17 @@
         ]
       },
       "MfaDisableDto": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "MfaRegenerateRecoveryCodesDto": {
         "type": "object",
         "properties": {
           "password": {
