@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { ConflictException } from '@nestjs/common';
+import { authenticator } from 'otplib';
+import * as bcrypt from 'bcryptjs';
+import { encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
 import {
   useTestDb,
   insertAccount,
@@ -9,6 +12,8 @@ import {
   insertUserPasswordReset,
   insertUserEmailVerification,
   insertUserInvite,
+  insertUserMfa,
+  insertUserMfaRecoveryCode,
 } from 'test-support';
 import {
   PERMISSIONS_CATALOG,
@@ -19,6 +24,8 @@ import {
   rolePermissionsTable,
   rolesTable,
   userEmailVerificationsTable,
+  userMfaRecoveryCodesTable,
+  userMfaTable,
   userPasswordResetsTable,
   userRefreshTokensTable,
   userRolesTable,
@@ -654,5 +661,306 @@ describe('AuthService.resendVerification (OS-470)', () => {
     await service.resendVerification(user.id);
 
     expect(emailMock.sendVerificationEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService — TOTP MFA (OS-316)', () => {
+  const password = 'correct-horse-battery-staple';
+
+  async function seedUserWithPassword(
+    opts: { emailVerifiedAt?: Date | null } = {},
+  ) {
+    const account = await insertAccount(db);
+    return insertUser(db, {
+      accountId: account.id,
+      email: `mfa-${randomUUID()}@store.test`,
+      password: await bcrypt.hash(password, 10),
+      // ?? would treat an explicit `null` the same as "omitted" and fall
+      // through to the default — use `in` so a test can seed an
+      // unverified user on purpose
+      emailVerifiedAt:
+        'emailVerifiedAt' in opts ? opts.emailVerifiedAt : new Date(),
+    });
+  }
+
+  function extractSecret(otpauthUrl: string): string {
+    const secret = new URL(otpauthUrl).searchParams.get('secret');
+    if (!secret) throw new Error('otpauth URL had no secret');
+    return secret;
+  }
+
+  describe('signin', () => {
+    it('signs in normally when no MFA is enrolled', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      expect(result.mfaRequired).toBe(false);
+    });
+
+    it('signs in normally when MFA is enrolled but never confirmed', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      expect(result.mfaRequired).toBe(false);
+    });
+
+    it('returns a challenge instead of tokens when MFA is confirmed', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      expect(result.mfaRequired).toBe(true);
+      if (!result.mfaRequired) throw new Error('expected a challenge');
+      expect(result.challengeToken).toBeTruthy();
+    });
+
+    it('still rejects a wrong password before ever checking MFA', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      await expect(
+        service.signin({ email: user.email, password: 'wrong' }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('enrollMfa', () => {
+    it('requires a verified email', async () => {
+      const user = await seedUserWithPassword({ emailVerifiedAt: null });
+      const service = await build();
+
+      await expect(service.enrollMfa(user.id)).rejects.toThrow(
+        'Verify your email before enabling MFA',
+      );
+    });
+
+    it('generates a pending, encrypted secret and returns an otpauth URI', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+
+      const result = await service.enrollMfa(user.id);
+      expect(result.otpauthUrl).toContain('otpauth://totp/');
+
+      const [mfa] = await db
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, user.id));
+      expect(mfa?.confirmedAt).toBeNull();
+      expect(mfa?.secret).not.toBe(extractSecret(result.otpauthUrl));
+    });
+
+    it('rejects re-enrolling over an already-confirmed factor', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      await expect(service.enrollMfa(user.id)).rejects.toThrow(
+        'MFA is already enabled',
+      );
+    });
+  });
+
+  describe('confirmMfa', () => {
+    it('rejects when there is no pending enrollment', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+
+      await expect(service.confirmMfa(user.id, '123456')).rejects.toThrow(
+        'No pending MFA enrollment',
+      );
+    });
+
+    it('rejects an invalid code', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+      await service.enrollMfa(user.id);
+
+      await expect(service.confirmMfa(user.id, '000000')).rejects.toThrow(
+        'Invalid code',
+      );
+    });
+
+    it('activates the factor and returns one batch of recovery codes', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+      const { otpauthUrl } = await service.enrollMfa(user.id);
+      const code = authenticator.generate(extractSecret(otpauthUrl));
+
+      const { recoveryCodes } = await service.confirmMfa(user.id, code);
+
+      expect(recoveryCodes).toHaveLength(10);
+      const [mfa] = await db
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, user.id));
+      expect(mfa?.confirmedAt).not.toBeNull();
+    });
+  });
+
+  describe('verifyMfaChallenge', () => {
+    it('completes a full enroll → challenge → verify round trip with a TOTP code', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+      const { otpauthUrl } = await service.enrollMfa(user.id);
+      const secret = extractSecret(otpauthUrl);
+      await service.confirmMfa(user.id, authenticator.generate(secret));
+
+      const signInResult = await service.signin({
+        email: user.email,
+        password,
+      });
+      if (!signInResult.mfaRequired) throw new Error('expected a challenge');
+
+      const result = await service.verifyMfaChallenge(
+        signInResult.challengeToken,
+        authenticator.generate(secret),
+      );
+
+      expect(result.access_token).toBeTruthy();
+      expect(result.userId).toBe(user.id);
+    });
+
+    it('accepts an unused recovery code exactly once', async () => {
+      const user = await seedUserWithPassword();
+      // a real, decryptable secret — the TOTP check runs (and fails) before
+      // falling through to the recovery-code path, so it must decrypt cleanly
+      await insertUserMfa(db, {
+        userId: user.id,
+        confirmedAt: new Date(),
+        secret: encryptMfaSecret(authenticator.generateSecret()),
+      });
+      const recoveryCode = 'ABCDE-FGHJK';
+      await insertUserMfaRecoveryCode(db, {
+        userId: user.id,
+        codeHash: await bcrypt.hash(recoveryCode, 10),
+      });
+      const service = await build();
+
+      const first = await service.signin({ email: user.email, password });
+      if (!first.mfaRequired) throw new Error('expected a challenge');
+      const result = await service.verifyMfaChallenge(
+        first.challengeToken,
+        recoveryCode,
+      );
+      expect(result.access_token).toBeTruthy();
+
+      const second = await service.signin({ email: user.email, password });
+      if (!second.mfaRequired) throw new Error('expected a challenge');
+      await expect(
+        service.verifyMfaChallenge(second.challengeToken, recoveryCode),
+      ).rejects.toThrow('Invalid code');
+    });
+
+    it('rejects an invalid code', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, {
+        userId: user.id,
+        confirmedAt: new Date(),
+        secret: encryptMfaSecret(authenticator.generateSecret()),
+      });
+      const service = await build();
+      const signInResult = await service.signin({
+        email: user.email,
+        password,
+      });
+      if (!signInResult.mfaRequired) throw new Error('expected a challenge');
+
+      await expect(
+        service.verifyMfaChallenge(signInResult.challengeToken, '000000'),
+      ).rejects.toThrow('Invalid code');
+    });
+
+    it('rejects an unknown/expired challenge token', async () => {
+      const service = await build();
+
+      await expect(
+        service.verifyMfaChallenge('not-a-real-token', '123456'),
+      ).rejects.toThrow('Invalid or expired challenge');
+    });
+
+    it('rejects a real access token presented as a challenge token', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+      const accessToken = await service.createAccessToken(
+        user.id,
+        user.email,
+        user.accountId,
+        user.firstname,
+        user.lastname,
+        true,
+      );
+
+      await expect(
+        service.verifyMfaChallenge(accessToken, '123456'),
+      ).rejects.toThrow('Invalid or expired challenge');
+    });
+  });
+
+  describe('disableMfa', () => {
+    it('requires the current password', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      await expect(
+        service.disableMfa(user.id, 'wrong-password'),
+      ).rejects.toThrow();
+    });
+
+    it('removes the MFA row and every recovery code on success', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      await insertUserMfaRecoveryCode(db, { userId: user.id });
+      const service = await build();
+
+      await service.disableMfa(user.id, password);
+
+      const mfaRows = await db
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, user.id));
+      expect(mfaRows).toHaveLength(0);
+
+      const codeRows = await db
+        .select()
+        .from(userMfaRecoveryCodesTable)
+        .where(eq(userMfaRecoveryCodesTable.userId, user.id));
+      expect(codeRows).toHaveLength(0);
+    });
+  });
+
+  describe('regenerateRecoveryCodes', () => {
+    it('requires an already-confirmed factor', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+
+      await expect(service.regenerateRecoveryCodes(user.id)).rejects.toThrow(
+        'MFA is not enabled',
+      );
+    });
+
+    it('replaces existing codes with a fresh batch of 10', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      await insertUserMfaRecoveryCode(db, { userId: user.id });
+      const service = await build();
+
+      const { recoveryCodes } = await service.regenerateRecoveryCodes(user.id);
+      expect(recoveryCodes).toHaveLength(10);
+
+      const rows = await db
+        .select()
+        .from(userMfaRecoveryCodesTable)
+        .where(eq(userMfaRecoveryCodesTable.userId, user.id));
+      expect(rows).toHaveLength(10);
+    });
   });
 });

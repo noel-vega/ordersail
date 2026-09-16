@@ -17,6 +17,12 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
+import { MfaChallengeDto } from './dto/mfa-challenge.dto';
+import { MfaConfirmDto } from './dto/mfa-confirm.dto';
+import { MfaVerifyDto } from './dto/mfa-verify.dto';
+import { MfaDisableDto } from './dto/mfa-disable.dto';
+import { MfaEnrollResponseDto } from './dto/mfa-enroll-response.dto';
+import { MfaRecoveryCodesDto } from './dto/mfa-recovery-codes.dto';
 import { AuthMe } from './entities/auth-me.entity';
 import {
   AuthenticatedOnly,
@@ -60,8 +66,12 @@ export class AuthController {
   async signin(
     @Body() signinDto: SignInDto,
     @Res({ passthrough: true }) res: FastifyReply,
-  ): Promise<AccessTokenDto> {
+  ): Promise<AccessTokenDto | MfaChallengeDto> {
     const result = await this.authService.signin(signinDto);
+
+    if (result.mfaRequired) {
+      return { mfaRequired: true, challengeToken: result.challengeToken };
+    }
 
     const refreshToken = await this.authService.createRefreshToken(
       result.userId,
@@ -76,6 +86,88 @@ export class AuthController {
     this.setRefreshCookie(res, refreshToken);
 
     return { access_token: result.access_token };
+  }
+
+  // exchanges a signin()-issued MFA challenge for real tokens — public
+  // because the caller isn't holding a session yet (that's the whole point
+  // of the challenge), but the challenge token itself is short-lived and
+  // scoped to exactly one user
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('mfa/verify')
+  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiUnauthorizedResponse()
+  async verifyMfaChallenge(
+    @Body() dto: MfaVerifyDto,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    const result = await this.authService.verifyMfaChallenge(
+      dto.challengeToken,
+      dto.code,
+    );
+
+    const refreshToken = await this.authService.createRefreshToken(
+      result.userId,
+      result.email,
+      result.accountId,
+      result.firstName,
+      result.lastName,
+      result.emailVerified,
+      randomUUID(),
+    );
+
+    this.setRefreshCookie(res, refreshToken);
+
+    return { access_token: result.access_token };
+  }
+
+  @AuthenticatedOnly()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('mfa/enroll')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: MfaEnrollResponseDto })
+  async enrollMfa(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MfaEnrollResponseDto> {
+    return this.authService.enrollMfa(user.sub);
+  }
+
+  @AuthenticatedOnly()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('mfa/confirm')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: MfaRecoveryCodesDto })
+  @ApiUnauthorizedResponse()
+  async confirmMfa(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: MfaConfirmDto,
+  ): Promise<MfaRecoveryCodesDto> {
+    return this.authService.confirmMfa(user.sub, dto.code);
+  }
+
+  @AuthenticatedOnly()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('mfa/disable')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse()
+  @ApiUnauthorizedResponse()
+  async disableMfa(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: MfaDisableDto,
+  ): Promise<void> {
+    await this.authService.disableMfa(user.sub, dto.password);
+  }
+
+  @AuthenticatedOnly()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('mfa/recovery-codes/regenerate')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: MfaRecoveryCodesDto })
+  @ApiUnauthorizedResponse()
+  async regenerateRecoveryCodes(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MfaRecoveryCodesDto> {
+    return this.authService.regenerateRecoveryCodes(user.sub);
   }
 
   @Public()
