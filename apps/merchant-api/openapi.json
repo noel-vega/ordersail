@@ -136,7 +136,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MfaRecoveryCodesDto"
+                  "$ref": "#/components/schemas/MfaConfirmResponseDto"
                 }
               }
             }
@@ -174,6 +174,9 @@
             "description": ""
           },
           "401": {
+            "description": ""
+          },
+          "409": {
             "description": ""
           }
         },
@@ -1171,6 +1174,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": ""
           }
         },
         "security": [
@@ -3698,7 +3704,7 @@
           "password"
         ]
       },
-      "MfaRecoveryCodesDto": {
+      "MfaConfirmResponseDto": {
         "type": "object",
         "properties": {
           "recoveryCodes": {
@@ -3706,10 +3712,14 @@
             "items": {
               "type": "string"
             }
+          },
+          "access_token": {
+            "type": "string"
           }
         },
         "required": [
-          "recoveryCodes"
+          "recoveryCodes",
+          "access_token"
         ]
       },
       "MfaDisableDto": {
@@ -3732,6 +3742,20 @@
         },
         "required": [
           "password"
+        ]
+      },
+      "MfaRecoveryCodesDto": {
+        "type": "object",
+        "properties": {
+          "recoveryCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "recoveryCodes"
         ]
       },
       "SignUpDto": {
@@ -3841,6 +3865,9 @@
           "mfaEnabled": {
             "type": "boolean"
           },
+          "mfaEnrollmentSatisfied": {
+            "type": "boolean"
+          },
           "permissions": {
             "type": "array",
             "items": {
@@ -3856,6 +3883,7 @@
           "accountId",
           "emailVerified",
           "mfaEnabled",
+          "mfaEnrollmentSatisfied",
           "permissions"
         ]
       },
@@ -4218,6 +4246,11 @@
           "email": {
             "type": "string"
           },
+          "requireMfaAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -4232,6 +4265,7 @@
           "name",
           "phone",
           "email",
+          "requireMfaAt",
           "createdAt",
           "updatedAt"
         ]
@@ -4244,6 +4278,9 @@
           },
           "email": {
             "type": "string"
+          },
+          "requireMfa": {
+            "type": "boolean"
           }
         }
       },

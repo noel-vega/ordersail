@@ -1167,14 +1167,18 @@ export interface components {
             code: string;
             password: string;
         };
-        MfaRecoveryCodesDto: {
+        MfaConfirmResponseDto: {
             recoveryCodes: string[];
+            access_token: string;
         };
         MfaDisableDto: {
             password: string;
         };
         MfaRegenerateRecoveryCodesDto: {
             password: string;
+        };
+        MfaRecoveryCodesDto: {
+            recoveryCodes: string[];
         };
         SignUpDto: {
             businessName: string;
@@ -1206,6 +1210,7 @@ export interface components {
             accountId: number;
             emailVerified: boolean;
             mfaEnabled: boolean;
+            mfaEnrollmentSatisfied: boolean;
             permissions: string[];
         };
         CreateUserDto: {
@@ -1306,6 +1311,8 @@ export interface components {
             phone: string;
             email: string;
             /** Format: date-time */
+            requireMfaAt: string | null;
+            /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
@@ -1313,6 +1320,7 @@ export interface components {
         UpdateAccountDto: {
             phone?: string;
             email?: string;
+            requireMfa?: boolean;
         };
         CreateProductDto: {
             name: string;
@@ -2026,7 +2034,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MfaRecoveryCodesDto"];
+                    "application/json": components["schemas"]["MfaConfirmResponseDto"];
                 };
             };
             401: {
@@ -2057,6 +2065,12 @@ export interface operations {
                 content?: never;
             };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2750,6 +2764,12 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Account"];
                 };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -39,6 +39,7 @@ const unverifiedUser: AuthenticatedRequest['user'] = {
   firstName: 'X',
   lastName: 'Y',
   emailVerified: false,
+  mfaEnrollmentSatisfied: true,
   typ: 'access',
 };
 

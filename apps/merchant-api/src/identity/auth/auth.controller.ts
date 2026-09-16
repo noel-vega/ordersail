@@ -24,12 +24,14 @@ import { MfaDisableDto } from './dto/mfa-disable.dto';
 import { MfaEnrollResponseDto } from './dto/mfa-enroll-response.dto';
 import { MfaRecoveryCodesDto } from './dto/mfa-recovery-codes.dto';
 import { MfaRegenerateRecoveryCodesDto } from './dto/mfa-regenerate-recovery-codes.dto';
+import { MfaConfirmResponseDto } from './dto/mfa-confirm-response.dto';
 import { AuthMe } from './entities/auth-me.entity';
 import {
   AuthenticatedOnly,
   CurrentUser,
   Public,
   SkipEmailVerification,
+  SkipMfaEnrollment,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 import { env } from 'src/shared/env';
@@ -94,6 +96,7 @@ export class AuthController {
       result.firstName,
       result.lastName,
       result.emailVerified,
+      result.mfaEnrollmentSatisfied,
       randomUUID(),
     );
 
@@ -127,6 +130,7 @@ export class AuthController {
       result.firstName,
       result.lastName,
       result.emailVerified,
+      result.mfaEnrollmentSatisfied,
       randomUUID(),
     );
 
@@ -135,7 +139,10 @@ export class AuthController {
     return { access_token: result.access_token };
   }
 
+  // exempt from MfaEnrollmentGuard — a caller gated into forced enrollment
+  // (OS-473) has to be able to reach these in order to satisfy it
   @AuthenticatedOnly()
+  @SkipMfaEnrollment()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('mfa/enroll')
   @ApiBearerAuth('JWT-auth')
@@ -147,16 +154,37 @@ export class AuthController {
   }
 
   @AuthenticatedOnly()
+  @SkipMfaEnrollment()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('mfa/confirm')
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse({ type: MfaRecoveryCodesDto })
+  @ApiOkResponse({ type: MfaConfirmResponseDto })
   @ApiUnauthorizedResponse()
   async confirmMfa(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: MfaConfirmDto,
-  ): Promise<MfaRecoveryCodesDto> {
-    return this.authService.confirmMfa(user.sub, dto.code, dto.password);
+  ): Promise<MfaConfirmResponseDto> {
+    const result = await this.authService.confirmMfa(
+      user.sub,
+      dto.code,
+      dto.password,
+    );
+
+    // this caller may have been gated into forced enrollment
+    // (mfaEnrollmentSatisfied: false baked into their current access
+    // token) — re-mint immediately with the now-satisfied claim so they
+    // aren't stuck until their token naturally refreshes
+    const access_token = await this.authService.createAccessToken(
+      user.sub,
+      user.email,
+      user.accountId,
+      user.firstName,
+      user.lastName,
+      user.emailVerified,
+      true,
+    );
+
+    return { recoveryCodes: result.recoveryCodes, access_token };
   }
 
   @AuthenticatedOnly()
@@ -165,11 +193,12 @@ export class AuthController {
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse()
   @ApiUnauthorizedResponse()
+  @ApiConflictResponse()
   async disableMfa(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: MfaDisableDto,
   ): Promise<void> {
-    await this.authService.disableMfa(user.sub, dto.password);
+    await this.authService.disableMfa(user.sub, user.accountId, dto.password);
   }
 
   @AuthenticatedOnly()
@@ -204,6 +233,7 @@ export class AuthController {
       result.firstName,
       result.lastName,
       result.emailVerified,
+      result.mfaEnrollmentSatisfied,
       randomUUID(),
     );
 
@@ -231,6 +261,7 @@ export class AuthController {
       result.firstName,
       result.lastName,
       result.emailVerified,
+      result.mfaEnrollmentSatisfied,
       randomUUID(),
     );
 
@@ -281,6 +312,7 @@ export class AuthController {
       result.firstName,
       result.lastName,
       result.emailVerified,
+      result.mfaEnrollmentSatisfied,
       randomUUID(),
     );
 
@@ -308,11 +340,13 @@ export class AuthController {
   }
 
   // any authenticated user reads their own identity + effective permission
-  // keys (merchant-web's permission context). Exempt from EmailVerifiedGuard
-  // — an unverified caller needs this to know it's unverified in the first
-  // place (merchant-web's gate screen reads emailVerified from here).
+  // keys (merchant-web's permission context). Exempt from
+  // EmailVerifiedGuard/MfaEnrollmentGuard — a gated caller needs this to
+  // know it's gated in the first place (merchant-web reads
+  // emailVerified/mfaEnrollmentSatisfied from here).
   @AuthenticatedOnly()
   @SkipEmailVerification()
+  @SkipMfaEnrollment()
   @Get('me')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: AuthMe })
