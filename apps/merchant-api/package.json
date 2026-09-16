@@ -125,6 +125,7 @@
       "^config$": "<rootDir>/../../../packages/config/src/index.ts",
       "^queue$": "<rootDir>/../../../packages/queue/src/index.ts",
       "^logging$": "<rootDir>/../../../packages/logging/src/index.ts",
+      "^password-policy$": "<rootDir>/../../../packages/password-policy/src/index.ts",
       "^db$": "<rootDir>/../../../packages/db/src/index.ts",
       "^db/(identity|catalog|stock|sales|payments)$": "<rootDir>/../../../packages/db/src/domains/$1.ts",
       "^db/(.*)$": "<rootDir>/../../../packages/db/src/$1",

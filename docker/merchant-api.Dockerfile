@@ -22,6 +22,7 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/email-templates/package.json packages/email-templates/package.json
 COPY packages/logging/package.json packages/logging/package.json
+COPY packages/password-policy/package.json packages/password-policy/package.json
 COPY packages/queue/package.json packages/queue/package.json
 COPY packages/payments/package.json packages/payments/package.json
 COPY packages/storage/package.json packages/storage/package.json
@@ -33,7 +34,7 @@ RUN npm ci
 # (dependency order), then the app itself.
 FROM deps AS build
 COPY . .
-RUN npm run build --workspace=config --workspace=logging --workspace=db --workspace=queue --workspace=storage --workspace=payments
+RUN npm run build --workspace=config --workspace=logging --workspace=db --workspace=queue --workspace=storage --workspace=payments --workspace=password-policy
 RUN npm run build --workspace=merchant-api
 
 # --- prod-deps: same package.json-only copy, but omit devDependencies —
@@ -53,6 +54,7 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/email-templates/package.json packages/email-templates/package.json
 COPY packages/logging/package.json packages/logging/package.json
+COPY packages/password-policy/package.json packages/password-policy/package.json
 COPY packages/queue/package.json packages/queue/package.json
 COPY packages/payments/package.json packages/payments/package.json
 COPY packages/storage/package.json packages/storage/package.json
@@ -79,6 +81,7 @@ COPY --from=build /app/packages/config/dist ./packages/config/dist
 COPY --from=build /app/packages/logging/dist ./packages/logging/dist
 COPY --from=build /app/packages/db/dist ./packages/db/dist
 COPY --from=build /app/packages/payments/dist ./packages/payments/dist
+COPY --from=build /app/packages/password-policy/dist ./packages/password-policy/dist
 COPY --from=build /app/packages/queue/dist ./packages/queue/dist
 COPY --from=build /app/packages/storage/dist ./packages/storage/dist
 USER app
