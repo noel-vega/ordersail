@@ -1,0 +1,29 @@
+{
+  "name": "password-policy",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/zxcvbn": "^4.4.5",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "class-validator": "^0.15.1",
+    "zxcvbn": "^4.4.2"
+  }
+}

@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, MinLength } from 'class-validator';
+import { IsStrongPassword } from 'password-policy';
 
 export class AcceptInviteDto {
   @ApiProperty()
@@ -9,7 +10,8 @@ export class AcceptInviteDto {
 
   @ApiProperty()
   @IsString()
-  @MinLength(8)
+  @MinLength(12)
+  @IsStrongPassword()
   password: string;
 
   constructor(token: string, password: string) {

@@ -39,6 +39,7 @@
     "cookie-parser": "^1.4.7",
     "db": "*",
     "logging": "*",
+    "password-policy": "*",
     "payments": "*",
     "queue": "*",
     "reflect-metadata": "^0.2.2",

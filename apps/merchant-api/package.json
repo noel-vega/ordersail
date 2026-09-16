@@ -48,6 +48,7 @@
     "db": "*",
     "fastify": "5.11.3",
     "logging": "*",
+    "password-policy": "*",
     "payments": "*",
     "queue": "*",
     "reflect-metadata": "^0.2.2",
