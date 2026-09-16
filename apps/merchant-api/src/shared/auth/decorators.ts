@@ -25,6 +25,14 @@ export const SKIP_EMAIL_VERIFICATION_KEY = 'skipEmailVerification';
 export const SkipEmailVerification = () =>
   SetMetadata(SKIP_EMAIL_VERIFICATION_KEY, true);
 
+export const SKIP_MFA_ENROLLMENT_KEY = 'skipMfaEnrollment';
+// opt-out, same shape as @SkipEmailVerification() — MfaEnrollmentGuard
+// blocks every route by default when the caller's account requires MFA and
+// they haven't confirmed a factor yet (OS-473). This marks the few routes a
+// caller needs to reach *in order to* enroll (or to check their own status).
+export const SkipMfaEnrollment = () =>
+  SetMetadata(SKIP_MFA_ENROLLMENT_KEY, true);
+
 export const AUTHENTICATED_ONLY_KEY = 'authenticatedOnly';
 // a no-op marker — PermissionsGuard already lets through anything without
 // @RequirePermissions(). Its only job is turning "deliberately reachable by
@@ -47,6 +55,13 @@ export interface AuthenticatedUser {
   // time, not per access-token call. Set true again by re-minting the pair
   // in verify-email/accept-invite, not by mutating an existing token.
   emailVerified: boolean;
+  // true when the caller's account doesn't require MFA, or does and they
+  // have a confirmed factor — i.e. "nothing is blocking them" (OS-473).
+  // Same baked-in-at-mint-time, recomputed-on-refresh treatment as
+  // emailVerified. A caller who enrolls mid-session gets this flipped true
+  // immediately via a token re-mint in AuthService.confirmMfa, rather than
+  // waiting for their next refresh.
+  mfaEnrollmentSatisfied: boolean;
   // only present on refresh tokens — identifies the user_refresh_tokens row
   // this specific token corresponds to (rotation/reuse-detection, OS-467)
   jti?: string;

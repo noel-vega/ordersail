@@ -193,6 +193,7 @@ describe('AuthService.me (OS-180)', () => {
       firstName: signupDto.firstName,
       lastName: signupDto.lastName,
       emailVerified: false,
+      mfaEnrollmentSatisfied: true,
       typ: 'access',
     });
 
@@ -224,6 +225,7 @@ describe('AuthService.me (OS-180)', () => {
       firstName: signupDto.firstName,
       lastName: signupDto.lastName,
       emailVerified: false,
+      mfaEnrollmentSatisfied: true,
       typ: 'access',
     });
 
@@ -243,6 +245,7 @@ describe('AuthService.refreshTokens (OS-467)', () => {
       signupDto.firstName,
       signupDto.lastName,
       false,
+      true,
       randomUUID(),
     );
     return { service, userId, accountId, refreshToken };
@@ -336,6 +339,7 @@ describe('AuthService.refreshTokens (OS-467)', () => {
       signupDto.firstName,
       signupDto.lastName,
       false,
+      true,
     );
 
     await expect(service.refreshTokens(accessToken)).rejects.toThrow(
@@ -356,6 +360,7 @@ describe('AuthService.logout (OS-467)', () => {
       signupDto.firstName,
       signupDto.lastName,
       false,
+      true,
       randomUUID(),
     );
 
@@ -977,6 +982,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         user.firstname,
         user.lastname,
         true,
+        true,
       );
 
       await expect(
@@ -1055,6 +1061,220 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .from(userMfaRecoveryCodesTable)
         .where(eq(userMfaRecoveryCodesTable.userId, user.id));
       expect(rows).toHaveLength(10);
+    });
+  });
+});
+
+describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
+  const password = 'correct-horse-battery-staple';
+
+  async function seedAccountAndUser(opts: { requireMfaAt?: Date | null }) {
+    const account = await insertAccount(db);
+    if (opts.requireMfaAt !== undefined) {
+      await db
+        .update(accountsTable)
+        .set({ requireMfaAt: opts.requireMfaAt })
+        .where(eq(accountsTable.id, account.id));
+    }
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: `mfa-enforce-${randomUUID()}@store.test`,
+      password: await bcrypt.hash(password, 10),
+      emailVerifiedAt: new Date(),
+    });
+    return { account, user };
+  }
+
+  describe('signin', () => {
+    it('is satisfied when the account does not require MFA', async () => {
+      const { user } = await seedAccountAndUser({});
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      expect(result.mfaEnrollmentSatisfied).toBe(true);
+    });
+
+    it('is unsatisfied when the account requires MFA and the user has not enrolled', async () => {
+      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      expect(result.mfaEnrollmentSatisfied).toBe(false);
+      // still signs in — this is a post-login gate, not a hard block
+      expect(result.access_token).toBeTruthy();
+    });
+
+    it('still issues a challenge (unaffected by the account toggle) once the user has a confirmed factor', async () => {
+      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      expect(result.mfaRequired).toBe(true);
+    });
+  });
+
+  describe('verifyMfaChallenge', () => {
+    it('is satisfied after completing the challenge, even when the account requires MFA', async () => {
+      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
+      const secret = authenticator.generateSecret();
+      await insertUserMfa(db, {
+        userId: user.id,
+        confirmedAt: new Date(),
+        secret: encryptMfaSecret(secret),
+      });
+      const service = await build();
+
+      const signInResult = await service.signin({
+        email: user.email,
+        password,
+      });
+      if (!signInResult.mfaRequired) throw new Error('expected a challenge');
+
+      const result = await service.verifyMfaChallenge(
+        signInResult.challengeToken,
+        authenticator.generate(secret),
+      );
+
+      expect(result.mfaEnrollmentSatisfied).toBe(true);
+    });
+  });
+
+  describe('acceptInvite', () => {
+    it('is unsatisfied when the account already requires MFA at invite-accept time', async () => {
+      const account = await insertAccount(db);
+      await db
+        .update(accountsTable)
+        .set({ requireMfaAt: new Date() })
+        .where(eq(accountsTable.id, account.id));
+      const user = await insertUser(db, {
+        accountId: account.id,
+        password: null,
+      });
+      const invite = await insertUserInvite(db, { userId: user.id });
+      const service = await build();
+
+      const result = await service.acceptInvite({
+        token: invite.token,
+        password: 'brand-new-password',
+      });
+
+      expect(result.mfaEnrollmentSatisfied).toBe(false);
+    });
+
+    it('is satisfied when the account does not require MFA', async () => {
+      const account = await insertAccount(db);
+      const user = await insertUser(db, {
+        accountId: account.id,
+        password: null,
+      });
+      const invite = await insertUserInvite(db, { userId: user.id });
+      const service = await build();
+
+      const result = await service.acceptInvite({
+        token: invite.token,
+        password: 'brand-new-password',
+      });
+
+      expect(result.mfaEnrollmentSatisfied).toBe(true);
+    });
+  });
+
+  describe('verifyEmail', () => {
+    it('reflects the account MFA requirement for a newly-verified user', async () => {
+      const account = await insertAccount(db);
+      await db
+        .update(accountsTable)
+        .set({ requireMfaAt: new Date() })
+        .where(eq(accountsTable.id, account.id));
+      const user = await insertUser(db, {
+        accountId: account.id,
+        email: `verify-mfa-${randomUUID()}@store.test`,
+        password: 'hashed',
+      });
+      const verification = await insertUserEmailVerification(db, {
+        userId: user.id,
+      });
+      const service = await build();
+
+      const result = await service.verifyEmail(verification.token);
+
+      expect(result.mfaEnrollmentSatisfied).toBe(false);
+    });
+  });
+
+  describe('refreshTokens', () => {
+    it('picks up the account toggle turning on mid-session', async () => {
+      const { account, user } = await seedAccountAndUser({});
+      const service = await build();
+      const signInResult = await service.signin({
+        email: user.email,
+        password,
+      });
+      if (signInResult.mfaRequired)
+        throw new Error('expected a normal sign-in');
+      const refreshToken = await service.createRefreshToken(
+        signInResult.userId,
+        signInResult.email,
+        signInResult.accountId,
+        signInResult.firstName,
+        signInResult.lastName,
+        signInResult.emailVerified,
+        signInResult.mfaEnrollmentSatisfied,
+        randomUUID(),
+      );
+
+      // owner turns the requirement on after this session already started
+      await db
+        .update(accountsTable)
+        .set({ requireMfaAt: new Date() })
+        .where(eq(accountsTable.id, account.id));
+
+      const refreshed = await service.refreshTokens(refreshToken);
+      const payload = new JwtService({
+        secret: 'test-secret',
+      }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
+
+      expect(payload.mfaEnrollmentSatisfied).toBe(false);
+    });
+
+    it('picks up enrollment completing mid-session', async () => {
+      const { user } = await seedAccountAndUser({
+        requireMfaAt: new Date(),
+      });
+      const service = await build();
+      const signInResult = await service.signin({
+        email: user.email,
+        password,
+      });
+      if (signInResult.mfaRequired)
+        throw new Error('expected a normal sign-in');
+      expect(signInResult.mfaEnrollmentSatisfied).toBe(false);
+      const refreshToken = await service.createRefreshToken(
+        signInResult.userId,
+        signInResult.email,
+        signInResult.accountId,
+        signInResult.firstName,
+        signInResult.lastName,
+        signInResult.emailVerified,
+        signInResult.mfaEnrollmentSatisfied,
+        randomUUID(),
+      );
+
+      // user finishes forced enrollment mid-session
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+
+      const refreshed = await service.refreshTokens(refreshToken);
+      const payload = new JwtService({
+        secret: 'test-secret',
+      }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
+
+      expect(payload.mfaEnrollmentSatisfied).toBe(true);
     });
   });
 });

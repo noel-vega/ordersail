@@ -27,6 +27,12 @@ export class AuthMe {
   @ApiProperty()
   mfaEnabled: boolean;
 
+  // false means the account requires MFA and this user hasn't finished
+  // enrolling yet — merchant-web should route them into forced enrollment
+  // (OS-473/OS-475) rather than the rest of the app
+  @ApiProperty()
+  mfaEnrollmentSatisfied: boolean;
+
   @ApiProperty({ type: [String] })
   permissions: string[];
 }

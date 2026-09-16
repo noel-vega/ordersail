@@ -9,6 +9,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { jwtConstants } from './auth.constants';
 import { AUTH_APP_GUARD } from './auth.guard';
 import { EMAIL_VERIFIED_APP_GUARD } from './email-verified.guard';
+import { MFA_ENROLLMENT_APP_GUARD } from './mfa-enrollment.guard';
 import { PERMISSIONS_APP_GUARD } from './permissions.guard';
 import { THROTTLER_APP_GUARD } from './throttler.guard';
 
@@ -33,13 +34,16 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
   ],
   // order matters: ThrottlerGuard runs first so a brute-force burst is
   // rejected before spending a JWT-verify cycle on it; AuthGuard must then
-  // populate request.user before EmailVerifiedGuard/PermissionsGuard read
-  // it. EmailVerifiedGuard runs before PermissionsGuard — an unverified
+  // populate request.user before EmailVerifiedGuard/MfaEnrollmentGuard/
+  // PermissionsGuard read it. EmailVerifiedGuard runs before
+  // MfaEnrollmentGuard (enrolling MFA requires a verified email, OS-473),
+  // and both run before PermissionsGuard — an unverified or unenrolled
   // caller is blocked before permissions are even considered.
   providers: [
     THROTTLER_APP_GUARD,
     AUTH_APP_GUARD,
     EMAIL_VERIFIED_APP_GUARD,
+    MFA_ENROLLMENT_APP_GUARD,
     PERMISSIONS_APP_GUARD,
     AuthService,
   ],

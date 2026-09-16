@@ -14,6 +14,9 @@ export class Account implements SelectAccount {
   @ApiProperty()
   email!: string;
 
+  @ApiProperty({ type: Date, nullable: true })
+  requireMfaAt!: Date | null;
+
   @ApiProperty()
   createdAt!: Date;
 

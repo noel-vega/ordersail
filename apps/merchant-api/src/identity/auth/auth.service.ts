@@ -68,6 +68,7 @@ interface SignInSuccessResult {
   firstName: string;
   lastName: string;
   emailVerified: boolean;
+  mfaEnrollmentSatisfied: boolean;
   access_token: string;
 }
 
@@ -108,6 +109,7 @@ export class AuthService {
       accountId: user.accountId,
       emailVerified: user.emailVerified,
       mfaEnabled: mfa?.confirmedAt != null,
+      mfaEnrollmentSatisfied: user.mfaEnrollmentSatisfied,
       permissions: [...permissions].sort(),
     };
   }
@@ -141,17 +143,53 @@ export class AuthService {
       };
     }
 
-    return this.buildSignInSuccess(user);
+    // not confirmed, so the only way mfaEnrollmentSatisfied can be false
+    // here is the account requiring MFA and this user never having
+    // finished enrolling — no need for the (unconfirmed) user_mfa lookup
+    // isMfaEnrollmentSatisfied() would otherwise do, we already have that
+    // answer from the query above
+    const [account] = await this.db
+      .select({ requireMfaAt: accountsTable.requireMfaAt })
+      .from(accountsTable)
+      .where(eq(accountsTable.id, user.accountId));
+    const mfaEnrollmentSatisfied = !account?.requireMfaAt;
+
+    return this.buildSignInSuccess(user, mfaEnrollmentSatisfied);
   }
 
-  private async buildSignInSuccess(user: {
-    id: number;
-    email: string;
-    accountId: number;
-    firstname: string;
-    lastname: string;
-    emailVerifiedAt: Date | null;
-  }): Promise<SignInSuccessResult> {
+  // Account requires MFA -> satisfied only with a confirmed factor.
+  // Doesn't require MFA -> trivially satisfied. Used wherever the caller
+  // doesn't already know the user's confirmed-MFA state from a query it
+  // just ran for another reason (signin/verifyMfaChallenge do, and skip
+  // this to avoid a redundant lookup).
+  private async isMfaEnrollmentSatisfied(
+    accountId: number,
+    userId: number,
+  ): Promise<boolean> {
+    const [account] = await this.db
+      .select({ requireMfaAt: accountsTable.requireMfaAt })
+      .from(accountsTable)
+      .where(eq(accountsTable.id, accountId));
+    if (!account?.requireMfaAt) return true;
+
+    const [mfa] = await this.db
+      .select({ confirmedAt: userMfaTable.confirmedAt })
+      .from(userMfaTable)
+      .where(eq(userMfaTable.userId, userId));
+    return mfa?.confirmedAt != null;
+  }
+
+  private async buildSignInSuccess(
+    user: {
+      id: number;
+      email: string;
+      accountId: number;
+      firstname: string;
+      lastname: string;
+      emailVerifiedAt: Date | null;
+    },
+    mfaEnrollmentSatisfied: boolean,
+  ): Promise<SignInSuccessResult> {
     const emailVerified = user.emailVerifiedAt !== null;
     const access_token = await this.createAccessToken(
       user.id,
@@ -160,6 +198,7 @@ export class AuthService {
       user.firstname,
       user.lastname,
       emailVerified,
+      mfaEnrollmentSatisfied,
     );
 
     return {
@@ -170,6 +209,7 @@ export class AuthService {
       firstName: user.firstname,
       lastName: user.lastname,
       emailVerified,
+      mfaEnrollmentSatisfied,
       access_token,
     };
   }
@@ -227,7 +267,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid code');
     }
 
-    return this.buildSignInSuccess(user);
+    // a confirmed factor the caller just proved possession of always
+    // satisfies any account-wide MFA requirement
+    return this.buildSignInSuccess(user, true);
   }
 
   // The update is conditioned on isNull(usedAt) too, not just the row id —
@@ -476,6 +518,8 @@ export class AuthService {
       // successful signup; the account can always resend
       await this.issueVerificationEmail(user);
 
+      // brand-new account, created moments ago — requireMfaAt is never set
+      // at creation, so there's nothing to satisfy yet
       const access_token = await this.createAccessToken(
         user.id,
         user.email,
@@ -483,6 +527,7 @@ export class AuthService {
         user.firstname,
         user.lastname,
         false,
+        true,
       );
 
       return {
@@ -492,6 +537,7 @@ export class AuthService {
         firstName: user.firstname,
         lastName: user.lastname,
         emailVerified: false,
+        mfaEnrollmentSatisfied: true,
         access_token,
       };
     } catch (err) {
@@ -522,6 +568,14 @@ export class AuthService {
     // clicking the emailed invite link already proves ownership of this
     // address — UsersService.activate() sets emailVerifiedAt alongside the
     // password, so this is always true here, not read back from `user`
+    //
+    // unlike signup(), this account may already exist with requireMfaAt
+    // set by the time a new staff member joins — check for real, don't
+    // assume unsatisfied like a brand-new account
+    const mfaEnrollmentSatisfied = await this.isMfaEnrollmentSatisfied(
+      user.accountId,
+      user.id,
+    );
     const access_token = await this.createAccessToken(
       user.id,
       user.email,
@@ -529,6 +583,7 @@ export class AuthService {
       user.firstName,
       user.lastName,
       true,
+      mfaEnrollmentSatisfied,
     );
 
     return {
@@ -538,6 +593,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       emailVerified: true,
+      mfaEnrollmentSatisfied,
       access_token,
     };
   }
@@ -574,6 +630,13 @@ export class AuthService {
       .delete(userEmailVerificationsTable)
       .where(eq(userEmailVerificationsTable.id, verification.id));
 
+    // this user could never have a confirmed MFA factor yet (enrollMfa()
+    // requires emailVerifiedAt already set), so this only ever depends on
+    // whether the account requires MFA at all
+    const mfaEnrollmentSatisfied = await this.isMfaEnrollmentSatisfied(
+      user.accountId,
+      user.id,
+    );
     const access_token = await this.createAccessToken(
       user.id,
       user.email,
@@ -581,6 +644,7 @@ export class AuthService {
       user.firstname,
       user.lastname,
       true,
+      mfaEnrollmentSatisfied,
     );
 
     return {
@@ -590,6 +654,7 @@ export class AuthService {
       firstName: user.firstname,
       lastName: user.lastname,
       emailVerified: true,
+      mfaEnrollmentSatisfied,
       access_token,
     };
   }
@@ -721,6 +786,7 @@ export class AuthService {
     firstName: string,
     lastName: string,
     emailVerified: boolean,
+    mfaEnrollmentSatisfied: boolean,
   ) {
     return await this.sign(
       {
@@ -730,6 +796,7 @@ export class AuthService {
         firstName,
         lastName,
         emailVerified,
+        mfaEnrollmentSatisfied,
         typ: 'access',
       },
       '8h',
@@ -743,6 +810,7 @@ export class AuthService {
     firstName: string,
     lastName: string,
     emailVerified: boolean,
+    mfaEnrollmentSatisfied: boolean,
     jti: string,
   ) {
     return await this.sign(
@@ -753,6 +821,7 @@ export class AuthService {
         firstName,
         lastName,
         emailVerified,
+        mfaEnrollmentSatisfied,
         typ: 'refresh',
         jti,
       },
@@ -772,6 +841,7 @@ export class AuthService {
     firstName: string,
     lastName: string,
     emailVerified: boolean,
+    mfaEnrollmentSatisfied: boolean,
     familyId: string,
   ): Promise<{ token: string; jti: string }> {
     const jti = randomUUID();
@@ -785,6 +855,7 @@ export class AuthService {
       firstName,
       lastName,
       emailVerified,
+      mfaEnrollmentSatisfied,
       jti,
     );
     return { token, jti };
@@ -797,6 +868,7 @@ export class AuthService {
     firstName: string,
     lastName: string,
     emailVerified: boolean,
+    mfaEnrollmentSatisfied: boolean,
     familyId: string,
   ): Promise<string> {
     const { token } = await this.mintRefreshToken(
@@ -806,6 +878,7 @@ export class AuthService {
       firstName,
       lastName,
       emailVerified,
+      mfaEnrollmentSatisfied,
       familyId,
     );
     return token;
@@ -866,6 +939,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired token');
     }
     const emailVerified = userRow.emailVerifiedAt !== null;
+    // same rationale as emailVerified above — recomputed fresh so an
+    // account turning "require MFA" on, or a user finishing enrollment,
+    // is picked up by the next rotation rather than carrying a stale claim
+    const mfaEnrollmentSatisfied = await this.isMfaEnrollmentSatisfied(
+      payload.accountId,
+      payload.sub,
+    );
 
     const [record] = await this.db
       .select()
@@ -899,6 +979,7 @@ export class AuthService {
               payload.firstName,
               payload.lastName,
               emailVerified,
+              mfaEnrollmentSatisfied,
             ),
             refresh_token: await this.signRefreshToken(
               payload.sub,
@@ -907,6 +988,7 @@ export class AuthService {
               payload.firstName,
               payload.lastName,
               emailVerified,
+              mfaEnrollmentSatisfied,
               replacement.jti,
             ),
           };
@@ -926,6 +1008,7 @@ export class AuthService {
       payload.firstName,
       payload.lastName,
       emailVerified,
+      mfaEnrollmentSatisfied,
       record.familyId,
     );
     await this.db
@@ -940,6 +1023,7 @@ export class AuthService {
       payload.firstName,
       payload.lastName,
       emailVerified,
+      mfaEnrollmentSatisfied,
     );
 
     return { access_token, refresh_token };
