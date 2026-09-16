@@ -15,12 +15,14 @@ import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
 import { AuthMe } from './entities/auth-me.entity';
 import {
   AuthenticatedOnly,
   CurrentUser,
   Public,
+  SkipEmailVerification,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 import { env } from 'src/shared/env';
@@ -67,6 +69,7 @@ export class AuthController {
       result.accountId,
       result.firstName,
       result.lastName,
+      result.emailVerified,
       randomUUID(),
     );
 
@@ -93,6 +96,7 @@ export class AuthController {
       result.accountId,
       result.firstName,
       result.lastName,
+      result.emailVerified,
       randomUUID(),
     );
 
@@ -119,6 +123,7 @@ export class AuthController {
       result.accountId,
       result.firstName,
       result.lastName,
+      result.emailVerified,
       randomUUID(),
     );
 
@@ -148,9 +153,59 @@ export class AuthController {
     await this.authService.resetPassword(dto.token, dto.password);
   }
 
-  // any authenticated user reads their own identity + effective permission
-  // keys (merchant-web's permission context)
+  // reachable while unverified — clicking the emailed link works even in a
+  // browser/tab with no session at all (or a different device than the one
+  // that signed up), and returns a fresh, correctly-claimed token pair
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('verify-email')
+  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiUnauthorizedResponse()
+  async verifyEmail(
+    @Body() dto: VerifyEmailDto,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    const result = await this.authService.verifyEmail(dto.token);
+
+    const refreshToken = await this.authService.createRefreshToken(
+      result.userId,
+      result.email,
+      result.accountId,
+      result.firstName,
+      result.lastName,
+      result.emailVerified,
+      randomUUID(),
+    );
+
+    this.setRefreshCookie(res, refreshToken);
+
+    return { access_token: result.access_token };
+  }
+
+  // exempt from EmailVerifiedGuard (an unverified caller has to be able to
+  // reach this in order to get verified) but still requires a real session
+  // — resends to the caller's own account, not an arbitrary email, so
+  // there's no new enumeration surface the way forgot-password has to
+  // guard against
   @AuthenticatedOnly()
+  @SkipEmailVerification()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('verify-email/resend')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse()
+  @ApiUnauthorizedResponse()
+  async resendVerification(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    await this.authService.resendVerification(user.sub);
+  }
+
+  // any authenticated user reads their own identity + effective permission
+  // keys (merchant-web's permission context). Exempt from EmailVerifiedGuard
+  // — an unverified caller needs this to know it's unverified in the first
+  // place (merchant-web's gate screen reads emailVerified from here).
+  @AuthenticatedOnly()
+  @SkipEmailVerification()
   @Get('me')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: AuthMe })

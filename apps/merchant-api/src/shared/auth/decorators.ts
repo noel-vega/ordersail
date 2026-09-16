@@ -13,6 +13,18 @@ export const PERMISSIONS_KEY = 'permissions';
 export const RequirePermissions = (...permissions: string[]) =>
   SetMetadata(PERMISSIONS_KEY, permissions);
 
+export const SKIP_EMAIL_VERIFICATION_KEY = 'skipEmailVerification';
+// opt-out, inverted from @RequirePermissions()'s opt-in: EmailVerifiedGuard
+// blocks every route by default for an unverified caller, since there are
+// far more routes that should require verification than routes that
+// shouldn't. This marks the few exceptions — a caller needs to reach them
+// *in order to* get verified (or to sign out) in the first place. @Public()
+// routes are already exempt (EmailVerifiedGuard never runs without a
+// request.user to check); this is only for authenticated-but-unverified
+// routes like GET /auth/me and POST /auth/verify-email/resend.
+export const SkipEmailVerification = () =>
+  SetMetadata(SKIP_EMAIL_VERIFICATION_KEY, true);
+
 export const AUTHENTICATED_ONLY_KEY = 'authenticatedOnly';
 // a no-op marker — PermissionsGuard already lets through anything without
 // @RequirePermissions(). Its only job is turning "deliberately reachable by
@@ -30,6 +42,11 @@ export interface AuthenticatedUser {
   firstName: string;
   lastName: string;
   typ: 'access' | 'refresh';
+  // baked in at mint time rather than looked up from the DB per request
+  // (OS-470) — mirrors how deactivatedAt is only re-checked at refresh
+  // time, not per access-token call. Set true again by re-minting the pair
+  // in verify-email/accept-invite, not by mutating an existing token.
+  emailVerified: boolean;
   // only present on refresh tokens — identifies the user_refresh_tokens row
   // this specific token corresponds to (rotation/reuse-detection, OS-467)
   jti?: string;

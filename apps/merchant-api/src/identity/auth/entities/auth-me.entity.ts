@@ -19,6 +19,9 @@ export class AuthMe {
   @ApiProperty()
   accountId: number;
 
+  @ApiProperty()
+  emailVerified: boolean;
+
   @ApiProperty({ type: [String] })
   permissions: string[];
 }

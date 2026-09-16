@@ -26,6 +26,7 @@ import {
   rolePermissionsTable,
   rolesTable,
   stripeAccountsTable,
+  userEmailVerificationsTable,
   userInvitesTable,
   userPasswordResetsTable,
   userRolesTable,
@@ -75,6 +76,8 @@ export async function insertUser(
     // string for a joined user (status 'active')
     password?: string | null;
     deactivatedAt?: Date | null;
+    // omitted → null (unverified); pass a Date for an already-verified user
+    emailVerifiedAt?: Date | null;
   },
 ): Promise<Row<typeof usersTable>> {
   return one(
@@ -87,6 +90,7 @@ export async function insertUser(
         email: opts.email ?? `staff-${uniq()}@store.test`,
         password: opts.password ?? null,
         deactivatedAt: opts.deactivatedAt ?? null,
+        emailVerifiedAt: opts.emailVerifiedAt ?? null,
       })
       .returning(),
   );
@@ -126,6 +130,26 @@ export async function insertUserPasswordReset(
         userId: opts.userId,
         token: opts.token ?? `reset-${uniq()}`,
         expiresAt: opts.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000),
+      })
+      .returning(),
+  );
+}
+
+// a pending email-verification request — one row exists only while
+// verification is outstanding (consumed on use). `expiresAt` defaults 24h
+// out; pass a past Date to simulate an expired link.
+export async function insertUserEmailVerification(
+  db: TestDb,
+  opts: { userId: number; token?: string; expiresAt?: Date },
+): Promise<Row<typeof userEmailVerificationsTable>> {
+  return one(
+    await db
+      .insert(userEmailVerificationsTable)
+      .values({
+        userId: opts.userId,
+        token: opts.token ?? `verify-${uniq()}`,
+        expiresAt:
+          opts.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000),
       })
       .returning(),
   );

@@ -21,6 +21,12 @@ export const usersTable = pgTable("users", {
   // but their row + history stay and they still show in the staff list
   // (badged) so an owner can reactivate them. Mirrors account_api_keys.revokedAt.
   deactivatedAt: timestamp("deactivated_at"),
+  // null until the owner-signup or staff-invite email address is proven —
+  // set at accept-invite time (clicking the invite link already proves
+  // ownership) or by verify-email for a self-signup account. Sign-in isn't
+  // blocked on this (OS-470) — an unverified account is gated post-login
+  // instead, by EmailVerifiedGuard reading the JWT's emailVerified claim.
+  emailVerifiedAt: timestamp("email_verified_at"),
   createdAt: timestampAt("created_at"),
   updatedAt: timestampAt("updated_at"),
 });

@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { ConflictException } from '@nestjs/common';
-import { useTestDb, insertUser, insertUserPasswordReset } from 'test-support';
+import {
+  useTestDb,
+  insertAccount,
+  insertUser,
+  insertUserPasswordReset,
+  insertUserEmailVerification,
+  insertUserInvite,
+} from 'test-support';
 import {
   PERMISSIONS_CATALOG,
   accountApiKeysTable,
@@ -11,6 +18,7 @@ import {
   permissionsTable,
   rolePermissionsTable,
   rolesTable,
+  userEmailVerificationsTable,
   userPasswordResetsTable,
   userRefreshTokensTable,
   userRolesTable,
@@ -29,10 +37,12 @@ const db = useTestDb();
 const emailMock = {
   sendInviteEmail: jest.fn(),
   sendPasswordResetEmail: jest.fn(),
+  sendVerificationEmail: jest.fn(),
 };
 beforeEach(() => {
   emailMock.sendInviteEmail.mockClear();
   emailMock.sendPasswordResetEmail.mockClear();
+  emailMock.sendVerificationEmail.mockClear();
 });
 
 async function build() {
@@ -130,6 +140,30 @@ describe('AuthService.signup — first-run seed (OS-173)', () => {
     expect(rolePerms).toHaveLength(PERMISSIONS_CATALOG.length);
   });
 
+  it('leaves the account unverified and sends a verification email (OS-470)', async () => {
+    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+    const service = await build();
+
+    const result = await service.signup(signupDto);
+    expect(result.emailVerified).toBe(false);
+
+    const [user] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, result.userId));
+    expect(user?.emailVerifiedAt).toBeNull();
+
+    const [verification] = await db
+      .select()
+      .from(userEmailVerificationsTable)
+      .where(eq(userEmailVerificationsTable.userId, result.userId));
+    expect(verification).toBeDefined();
+    expect(emailMock.sendVerificationEmail).toHaveBeenCalledWith(
+      signupDto.email,
+      expect.objectContaining({ firstName: signupDto.firstName }),
+    );
+  });
+
   it('rejects a duplicate email with a ConflictException', async () => {
     const service = await build();
     await service.signup(signupDto);
@@ -151,6 +185,7 @@ describe('AuthService.me (OS-180)', () => {
       accountId,
       firstName: signupDto.firstName,
       lastName: signupDto.lastName,
+      emailVerified: false,
       typ: 'access',
     });
 
@@ -160,6 +195,7 @@ describe('AuthService.me (OS-180)', () => {
       email: signupDto.email,
       firstName: signupDto.firstName,
       lastName: signupDto.lastName,
+      emailVerified: false,
     });
     // fresh signup → Owner role → every catalog key, sorted
     expect(me.permissions).toEqual(
@@ -179,6 +215,7 @@ describe('AuthService.refreshTokens (OS-467)', () => {
       accountId,
       signupDto.firstName,
       signupDto.lastName,
+      false,
       randomUUID(),
     );
     return { service, userId, accountId, refreshToken };
@@ -190,6 +227,29 @@ describe('AuthService.refreshTokens (OS-467)', () => {
     const result = await service.refreshTokens(refreshToken);
     expect(typeof result.access_token).toBe('string');
     expect(typeof result.refresh_token).toBe('string');
+  });
+
+  it('picks up a verification that happened since the refresh token was minted, not the stale claim (OS-470)', async () => {
+    const { service, userId, refreshToken } = await seedSession();
+
+    // the presented refresh token still carries emailVerified: false — this
+    // simulates a device that verified elsewhere and never got the fresh
+    // pair verify-email mints, so a rotation is the next chance to notice
+    await db
+      .update(usersTable)
+      .set({ emailVerifiedAt: new Date() })
+      .where(eq(usersTable.id, userId));
+
+    const jwt = new JwtService({ secret: 'test-secret' });
+    const result = await service.refreshTokens(refreshToken);
+    expect(
+      jwt.decode<{ emailVerified: boolean }>(result.access_token)
+        ?.emailVerified,
+    ).toBe(true);
+    expect(
+      jwt.decode<{ emailVerified: boolean }>(result.refresh_token)
+        ?.emailVerified,
+    ).toBe(true);
   });
 
   it('rejects the refresh token of a deactivated user', async () => {
@@ -248,6 +308,7 @@ describe('AuthService.refreshTokens (OS-467)', () => {
       accountId,
       signupDto.firstName,
       signupDto.lastName,
+      false,
     );
 
     await expect(service.refreshTokens(accessToken)).rejects.toThrow(
@@ -267,6 +328,7 @@ describe('AuthService.logout (OS-467)', () => {
       accountId,
       signupDto.firstName,
       signupDto.lastName,
+      false,
       randomUUID(),
     );
 
@@ -440,5 +502,157 @@ describe('AuthService.resetPassword (OS-469)', () => {
     await expect(
       service.resetPassword('not-a-real-token', 'brand-new-password'),
     ).rejects.toThrow('Invalid or expired token');
+  });
+});
+
+describe('AuthService.acceptInvite — email verification (OS-470)', () => {
+  it('marks the account verified at activation, no separate step', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'invitee@store.test',
+      password: null,
+    });
+    const invite = await insertUserInvite(db, { userId: user.id });
+    const service = await build();
+
+    const result = await service.acceptInvite({
+      token: invite.token,
+      password: 'brand-new-password',
+    });
+
+    expect(result.emailVerified).toBe(true);
+
+    const [updated] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id));
+    expect(updated?.emailVerifiedAt).not.toBeNull();
+  });
+});
+
+describe('AuthService.verifyEmail (OS-470)', () => {
+  async function seedUnverifiedUser() {
+    const account = await insertAccount(db);
+    return insertUser(db, {
+      accountId: account.id,
+      email: 'unverified@store.test',
+      password: 'hashed',
+    });
+  }
+
+  it('verifies the account and returns a token pair with the updated claim', async () => {
+    const user = await seedUnverifiedUser();
+    const verification = await insertUserEmailVerification(db, {
+      userId: user.id,
+    });
+    const service = await build();
+
+    const result = await service.verifyEmail(verification.token);
+    expect(result.emailVerified).toBe(true);
+
+    const [updated] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id));
+    expect(updated?.emailVerifiedAt).not.toBeNull();
+
+    const remaining = await db
+      .select()
+      .from(userEmailVerificationsTable)
+      .where(eq(userEmailVerificationsTable.token, verification.token));
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('rejects an expired token', async () => {
+    const user = await seedUnverifiedUser();
+    const verification = await insertUserEmailVerification(db, {
+      userId: user.id,
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    const service = await build();
+
+    await expect(service.verifyEmail(verification.token)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+
+  it('rejects an unknown token', async () => {
+    const service = await build();
+    await expect(service.verifyEmail('not-a-real-token')).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+
+  it('rejects a token that has already been used', async () => {
+    const user = await seedUnverifiedUser();
+    const verification = await insertUserEmailVerification(db, {
+      userId: user.id,
+    });
+    const service = await build();
+
+    await service.verifyEmail(verification.token);
+
+    await expect(service.verifyEmail(verification.token)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+});
+
+describe('AuthService.resendVerification (OS-470)', () => {
+  it('regenerates the token and resends for an unverified account', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'resend@store.test',
+      password: 'hashed',
+    });
+    const service = await build();
+
+    await service.resendVerification(user.id);
+
+    const [verification] = await db
+      .select()
+      .from(userEmailVerificationsTable)
+      .where(eq(userEmailVerificationsTable.userId, user.id));
+    expect(verification).toBeDefined();
+    expect(emailMock.sendVerificationEmail).toHaveBeenCalledWith(
+      user.email,
+      expect.objectContaining({ firstName: user.firstname }),
+    );
+  });
+
+  it('replaces an existing pending verification instead of accumulating rows', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'resend2@store.test',
+      password: 'hashed',
+    });
+    const service = await build();
+
+    await service.resendVerification(user.id);
+    await service.resendVerification(user.id);
+
+    const rows = await db
+      .select()
+      .from(userEmailVerificationsTable)
+      .where(eq(userEmailVerificationsTable.userId, user.id));
+    expect(rows).toHaveLength(1);
+  });
+
+  it('is a silent no-op for an already-verified account', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'already-verified@store.test',
+      password: 'hashed',
+      emailVerifiedAt: new Date(),
+    });
+    const service = await build();
+
+    await service.resendVerification(user.id);
+
+    expect(emailMock.sendVerificationEmail).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,6 @@
 export { renderStaffInviteEmail, type StaffInviteEmailProps } from "./templates/staff-invite.js";
 export { renderPasswordResetEmail, type PasswordResetEmailProps } from "./templates/password-reset.js";
+export { renderVerifyEmailEmail, type VerifyEmailEmailProps } from "./templates/verify-email.js";
 export { renderCustomerThankYouEmail, type CustomerThankYouEmailProps } from "./templates/customer-thank-you.js";
 export {
   renderOrderConfirmationEmail,
