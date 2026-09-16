@@ -219,6 +219,10 @@ async function ensureAccount() {
       lastname: 'Owner',
       email: OWNER_EMAIL,
       password: hashedPassword,
+      // this is trusted local seed data, not a real signup — skip the
+      // verify-email round trip and mark it proven up front so the demo
+      // account isn't stuck behind the post-login verification gate (OS-470)
+      emailVerifiedAt: new Date(),
     });
 
     return account;
