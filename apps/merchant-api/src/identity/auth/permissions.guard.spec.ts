@@ -59,6 +59,7 @@ const asUser = (sub: number): AuthenticatedRequest['user'] => ({
   accountId: 1,
   firstName: 'X',
   lastName: 'Y',
+  emailVerified: true,
   typ: 'access',
 });
 

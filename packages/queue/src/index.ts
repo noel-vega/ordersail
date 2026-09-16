@@ -19,6 +19,7 @@ export const QUEUE_NAMES = {
 export type EmailJobData =
   | { type: "staff-invite"; correlationId: string; to: string; firstName: string; inviteUrl: string }
   | { type: "password-reset"; correlationId: string; to: string; firstName: string; resetUrl: string }
+  | { type: "verify-email"; correlationId: string; to: string; firstName: string; verifyUrl: string }
   | {
       type: "customer-thank-you";
       correlationId: string;

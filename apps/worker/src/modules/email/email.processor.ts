@@ -7,6 +7,7 @@ import {
   renderOrderConfirmationEmail,
   renderPasswordResetEmail,
   renderStaffInviteEmail,
+  renderVerifyEmailEmail,
 } from 'email-templates';
 import { MailerService } from './mailer.service';
 
@@ -59,6 +60,17 @@ export class EmailProcessor extends WorkerHost {
           html: await renderPasswordResetEmail({
             firstName: data.firstName,
             resetUrl: data.resetUrl,
+          }),
+        });
+        return;
+
+      case 'verify-email':
+        await this.mailerService.sendMail({
+          to: data.to,
+          subject: 'Verify your Ordersail email',
+          html: await renderVerifyEmailEmail({
+            firstName: data.firstName,
+            verifyUrl: data.verifyUrl,
           }),
         });
         return;

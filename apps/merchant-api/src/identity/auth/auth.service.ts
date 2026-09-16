@@ -26,6 +26,7 @@ import {
   eq,
   isNull,
   isUniqueViolation,
+  userEmailVerificationsTable,
   userPasswordResetsTable,
   userRefreshTokensTable,
   usersTable,
@@ -37,6 +38,10 @@ import { generateApiKey } from '../api-keys/api-keys.util';
 // deliberately much shorter than the 7-day invite TTL — an existing active
 // user can always request a fresh link, so there's no cost to expiring fast
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+
+// no urgency signal the way a password reset has ("someone might be taking
+// over your account right now") — a generous window is fine
+const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
 // a just-rotated-out refresh token, re-presented within this window, replays
 // the same replacement pair instead of revoking the family — see
@@ -63,6 +68,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       accountId: user.accountId,
+      emailVerified: user.emailVerified,
       permissions: [...permissions].sort(),
     };
   }
@@ -80,12 +86,14 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
+    const emailVerified = user.emailVerifiedAt !== null;
     const access_token = await this.createAccessToken(
       user.id,
       user.email,
       user.accountId,
       user.firstname,
       user.lastname,
+      emailVerified,
     );
 
     return {
@@ -94,6 +102,7 @@ export class AuthService {
       accountId: user.accountId,
       firstName: user.firstname,
       lastName: user.lastname,
+      emailVerified,
       access_token,
     };
   }
@@ -142,12 +151,18 @@ export class AuthService {
         return user;
       });
 
+      // best-effort, outside the transaction — an email that fails to send
+      // (see EmailService's own try/catch) shouldn't roll back a
+      // successful signup; the account can always resend
+      await this.issueVerificationEmail(user);
+
       const access_token = await this.createAccessToken(
         user.id,
         user.email,
         user.accountId,
         user.firstname,
         user.lastname,
+        false,
       );
 
       return {
@@ -156,6 +171,7 @@ export class AuthService {
         accountId: user.accountId,
         firstName: user.firstname,
         lastName: user.lastname,
+        emailVerified: false,
         access_token,
       };
     } catch (err) {
@@ -183,12 +199,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired invite');
     }
 
+    // clicking the emailed invite link already proves ownership of this
+    // address — UsersService.activate() sets emailVerifiedAt alongside the
+    // password, so this is always true here, not read back from `user`
     const access_token = await this.createAccessToken(
       user.id,
       user.email,
       user.accountId,
       user.firstName,
       user.lastName,
+      true,
     );
 
     return {
@@ -197,8 +217,100 @@ export class AuthService {
       accountId: user.accountId,
       firstName: user.firstName,
       lastName: user.lastName,
+      emailVerified: true,
       access_token,
     };
+  }
+
+  // Verifies the emailed token, marks the account verified, and — since
+  // clicking the link proves control of the address — mints a fresh
+  // access+refresh pair with emailVerified: true, auto-logging in whichever
+  // browser/tab opens the link (even if it's not the original session).
+  async verifyEmail(token: string) {
+    const [verification] = await this.db
+      .select()
+      .from(userEmailVerificationsTable)
+      .where(eq(userEmailVerificationsTable.token, token));
+
+    if (!verification || verification.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    const [user] = await this.db
+      .update(usersTable)
+      .set({ emailVerifiedAt: new Date(), updatedAt: new Date() })
+      .where(eq(usersTable.id, verification.userId))
+      .returning();
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    await this.db
+      .delete(userEmailVerificationsTable)
+      .where(eq(userEmailVerificationsTable.id, verification.id));
+
+    const access_token = await this.createAccessToken(
+      user.id,
+      user.email,
+      user.accountId,
+      user.firstname,
+      user.lastname,
+      true,
+    );
+
+    return {
+      userId: user.id,
+      email: user.email,
+      accountId: user.accountId,
+      firstName: user.firstname,
+      lastName: user.lastname,
+      emailVerified: true,
+      access_token,
+    };
+  }
+
+  // Silent no-op if the account is gone or already verified — reachable by
+  // any authenticated caller for their own account (see
+  // AuthController.resendVerification), so there's no email to leak
+  // existence of here the way requestPasswordReset has to guard against.
+  async resendVerification(userId: number): Promise<void> {
+    const [user] = await this.db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, userId));
+
+    if (!user || user.emailVerifiedAt) return;
+
+    await this.issueVerificationEmail(user);
+  }
+
+  private async issueVerificationEmail(user: {
+    id: number;
+    email: string;
+    firstname: string;
+  }): Promise<void> {
+    const token = generateToken(32);
+    await this.db
+      .insert(userEmailVerificationsTable)
+      .values({
+        userId: user.id,
+        token,
+        expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
+      })
+      .onConflictDoUpdate({
+        target: userEmailVerificationsTable.userId,
+        set: {
+          token,
+          expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
+        },
+      });
+
+    const verifyUrl = `${env.MERCHANT_WEB_URL}/verify-email?token=${token}`;
+    await this.emailService.sendVerificationEmail(user.email, {
+      firstName: user.firstname,
+      verifyUrl,
+    });
   }
 
   // Always resolves with no signal either way — a distinct response for
@@ -284,9 +396,18 @@ export class AuthService {
     accountId: number,
     firstName: string,
     lastName: string,
+    emailVerified: boolean,
   ) {
     return await this.sign(
-      { sub, email, accountId, firstName, lastName, typ: 'access' },
+      {
+        sub,
+        email,
+        accountId,
+        firstName,
+        lastName,
+        emailVerified,
+        typ: 'access',
+      },
       '8h',
     );
   }
@@ -297,10 +418,20 @@ export class AuthService {
     accountId: number,
     firstName: string,
     lastName: string,
+    emailVerified: boolean,
     jti: string,
   ) {
     return await this.sign(
-      { sub, email, accountId, firstName, lastName, typ: 'refresh', jti },
+      {
+        sub,
+        email,
+        accountId,
+        firstName,
+        lastName,
+        emailVerified,
+        typ: 'refresh',
+        jti,
+      },
       '7d',
     );
   }
@@ -316,6 +447,7 @@ export class AuthService {
     accountId: number,
     firstName: string,
     lastName: string,
+    emailVerified: boolean,
     familyId: string,
   ): Promise<{ token: string; jti: string }> {
     const jti = randomUUID();
@@ -328,6 +460,7 @@ export class AuthService {
       accountId,
       firstName,
       lastName,
+      emailVerified,
       jti,
     );
     return { token, jti };
@@ -339,6 +472,7 @@ export class AuthService {
     accountId: number,
     firstName: string,
     lastName: string,
+    emailVerified: boolean,
     familyId: string,
   ): Promise<string> {
     const { token } = await this.mintRefreshToken(
@@ -347,6 +481,7 @@ export class AuthService {
       accountId,
       firstName,
       lastName,
+      emailVerified,
       familyId,
     );
     return token;
@@ -391,14 +526,22 @@ export class AuthService {
     // a staff member deactivated mid-session still holds a valid 7-day
     // refresh token — re-check the row here so they can't keep minting
     // access tokens (gated routes already 403 them; this also cuts off the
-    // authenticated-but-ungated ones)
+    // authenticated-but-ungated ones). emailVerifiedAt is re-checked here
+    // too, for the same reason — trusting payload.emailVerified would carry
+    // a stale claim forward through every future rotation instead of
+    // picking up a verification that happened after this refresh token was
+    // minted.
     const [userRow] = await this.db
-      .select({ deactivatedAt: usersTable.deactivatedAt })
+      .select({
+        deactivatedAt: usersTable.deactivatedAt,
+        emailVerifiedAt: usersTable.emailVerifiedAt,
+      })
       .from(usersTable)
       .where(eq(usersTable.id, payload.sub));
     if (!userRow || userRow.deactivatedAt) {
       throw new UnauthorizedException('Invalid or expired token');
     }
+    const emailVerified = userRow.emailVerifiedAt !== null;
 
     const [record] = await this.db
       .select()
@@ -431,6 +574,7 @@ export class AuthService {
               payload.accountId,
               payload.firstName,
               payload.lastName,
+              emailVerified,
             ),
             refresh_token: await this.signRefreshToken(
               payload.sub,
@@ -438,6 +582,7 @@ export class AuthService {
               payload.accountId,
               payload.firstName,
               payload.lastName,
+              emailVerified,
               replacement.jti,
             ),
           };
@@ -456,6 +601,7 @@ export class AuthService {
       payload.accountId,
       payload.firstName,
       payload.lastName,
+      emailVerified,
       record.familyId,
     );
     await this.db
@@ -469,6 +615,7 @@ export class AuthService {
       payload.accountId,
       payload.firstName,
       payload.lastName,
+      emailVerified,
     );
 
     return { access_token, refresh_token };

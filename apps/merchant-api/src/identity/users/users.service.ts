@@ -99,14 +99,21 @@ export class UsersService {
   // sets the user's real password and consumes the invite — called once
   // they follow the emailed link and choose one. Returns undefined if the
   // user no longer exists (e.g. deleted between the invite lookup and this
-  // call) rather than assuming the update always finds a row.
+  // call) rather than assuming the update always finds a row. Also marks
+  // the account email-verified (OS-470) — clicking the emailed invite link
+  // already proves ownership of the address, so there's no separate
+  // verification step for staff who join this way.
   async activate(
     id: number,
     hashedPassword: string,
   ): Promise<User | undefined> {
     const [user] = await this.db
       .update(usersTable)
-      .set({ password: hashedPassword, updatedAt: new Date() })
+      .set({
+        password: hashedPassword,
+        emailVerifiedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(eq(usersTable.id, id))
       .returning();
 

@@ -41,6 +41,29 @@ export class EmailService {
     }
   }
 
+  async sendVerificationEmail(
+    to: string,
+    params: { firstName: string; verifyUrl: string },
+  ) {
+    try {
+      await withTimeout(
+        this.emailQueue.add('verify-email', {
+          type: 'verify-email',
+          correlationId: getCorrelationId() ?? randomUUID(),
+          to,
+          ...params,
+        }),
+        5000,
+        'enqueue verification email',
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue verification email for ${to}`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
+  }
+
   async sendPasswordResetEmail(
     to: string,
     params: { firstName: string; resetUrl: string },
