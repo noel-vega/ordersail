@@ -175,6 +175,9 @@
           },
           "401": {
             "description": ""
+          },
+          "409": {
+            "description": ""
           }
         },
         "security": [
@@ -1171,6 +1174,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": ""
           }
         },
         "security": [

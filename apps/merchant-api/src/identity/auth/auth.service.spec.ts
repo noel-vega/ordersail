@@ -998,7 +998,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const service = await build();
 
       await expect(
-        service.disableMfa(user.id, 'wrong-password'),
+        service.disableMfa(user.id, user.accountId, 'wrong-password'),
       ).rejects.toThrow();
     });
 
@@ -1008,7 +1008,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       await insertUserMfaRecoveryCode(db, { userId: user.id });
       const service = await build();
 
-      await service.disableMfa(user.id, password);
+      await service.disableMfa(user.id, user.accountId, password);
 
       const mfaRows = await db
         .select()
@@ -1021,6 +1021,26 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .from(userMfaRecoveryCodesTable)
         .where(eq(userMfaRecoveryCodesTable.userId, user.id));
       expect(codeRows).toHaveLength(0);
+    });
+
+    it('refuses to disable while the account requires MFA (OS-473)', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      await db
+        .update(accountsTable)
+        .set({ requireMfaAt: new Date() })
+        .where(eq(accountsTable.id, user.accountId));
+      const service = await build();
+
+      await expect(
+        service.disableMfa(user.id, user.accountId, password),
+      ).rejects.toThrow('Your account requires MFA');
+
+      const mfaRows = await db
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, user.id));
+      expect(mfaRows).toHaveLength(1);
     });
   });
 

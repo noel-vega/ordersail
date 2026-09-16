@@ -415,9 +415,29 @@ export class AuthService {
 
   // Requires current-password re-entry — standard practice for removing a
   // second factor, since the whole point of MFA is that a password alone
-  // shouldn't be enough to weaken an account's security.
-  async disableMfa(userId: number, password: string): Promise<void> {
+  // shouldn't be enough to weaken an account's security. Refused outright
+  // while the account requires MFA (OS-473) — otherwise a caller could
+  // self-disable and keep full access for the rest of their current
+  // access token's 8h lifetime (mfaEnrollmentSatisfied is only
+  // recomputed on refresh, not per request), silently defeating the
+  // account-wide requirement. An Owner must turn the requirement off
+  // first if this user genuinely needs to stop using MFA.
+  async disableMfa(
+    userId: number,
+    accountId: number,
+    password: string,
+  ): Promise<void> {
     await this.verifyPassword(userId, password);
+
+    const [account] = await this.db
+      .select({ requireMfaAt: accountsTable.requireMfaAt })
+      .from(accountsTable)
+      .where(eq(accountsTable.id, accountId));
+    if (account?.requireMfaAt) {
+      throw new ConflictException(
+        'Your account requires MFA — ask an Owner to turn off the requirement before disabling',
+      );
+    }
 
     await this.db
       .delete(userMfaRecoveryCodesTable)
