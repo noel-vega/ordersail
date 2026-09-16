@@ -18,6 +18,7 @@ export const QUEUE_NAMES = {
 // the `logging` package's runWithCorrelationId/getCorrelationId
 export type EmailJobData =
   | { type: "staff-invite"; correlationId: string; to: string; firstName: string; inviteUrl: string }
+  | { type: "password-reset"; correlationId: string; to: string; firstName: string; resetUrl: string }
   | {
       type: "customer-thank-you";
       correlationId: string;

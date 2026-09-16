@@ -27,6 +27,7 @@ import {
   rolesTable,
   stripeAccountsTable,
   userInvitesTable,
+  userPasswordResetsTable,
   userRolesTable,
   usersTable,
   variantOptionValuesTable,
@@ -106,6 +107,25 @@ export async function insertUserInvite(
         token: opts.token ?? `invite-${uniq()}`,
         expiresAt:
           opts.expiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      })
+      .returning(),
+  );
+}
+
+// a pending password-reset request — one row exists only while the reset is
+// outstanding (consumed on use). `expiresAt` defaults 1h out; pass a past
+// Date to simulate an expired link.
+export async function insertUserPasswordReset(
+  db: TestDb,
+  opts: { userId: number; token?: string; expiresAt?: Date },
+): Promise<Row<typeof userPasswordResetsTable>> {
+  return one(
+    await db
+      .insert(userPasswordResetsTable)
+      .values({
+        userId: opts.userId,
+        token: opts.token ?? `reset-${uniq()}`,
+        expiresAt: opts.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000),
       })
       .returning(),
   );

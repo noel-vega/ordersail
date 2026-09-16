@@ -13,6 +13,8 @@ import { AuthService } from './auth.service';
 import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
 import { AuthMe } from './entities/auth-me.entity';
 import {
@@ -123,6 +125,27 @@ export class AuthController {
     this.setRefreshCookie(res, refreshToken);
 
     return { access_token: result.access_token };
+  }
+
+  @Public()
+  // strict — coordinate with the merchant-api throttler (OS-314). Response
+  // shape never reveals whether the email matched an account.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('forgot-password')
+  @ApiOkResponse()
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
+    await this.authService.requestPasswordReset(dto.email);
+  }
+
+  @Public()
+  // reset tokens are 32 bytes and single-use, but keep guessing attempts
+  // bounded — mirrors accept-invite's rate limit
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('reset-password')
+  @ApiOkResponse()
+  @ApiUnauthorizedResponse()
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    await this.authService.resetPassword(dto.token, dto.password);
   }
 
   // any authenticated user reads their own identity + effective permission

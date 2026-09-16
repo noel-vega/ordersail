@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { ConflictException } from '@nestjs/common';
-import { useTestDb } from 'test-support';
+import { useTestDb, insertUser, insertUserPasswordReset } from 'test-support';
 import {
   PERMISSIONS_CATALOG,
   accountApiKeysTable,
@@ -11,18 +11,29 @@ import {
   permissionsTable,
   rolePermissionsTable,
   rolesTable,
+  userPasswordResetsTable,
   userRefreshTokensTable,
   userRolesTable,
   usersTable,
 } from 'db/identity';
 import { locationsTable } from 'db/stock';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { EmailService } from 'src/shared/email/email.service';
 import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
 
 const db = useTestDb();
+
+const emailMock = {
+  sendInviteEmail: jest.fn(),
+  sendPasswordResetEmail: jest.fn(),
+};
+beforeEach(() => {
+  emailMock.sendInviteEmail.mockClear();
+  emailMock.sendPasswordResetEmail.mockClear();
+});
 
 async function build() {
   const ref = await Test.createTestingModule({
@@ -33,13 +44,18 @@ async function build() {
         provide: JwtService,
         useValue: new JwtService({ secret: 'test-secret' }),
       },
-      // signup() never touches UsersService
-      { provide: UsersService, useValue: {} },
+      // real UsersService (needed for requestPasswordReset's getByEmail) —
+      // its EmailService/PermissionsService deps are unused on that path
+      {
+        provide: UsersService,
+        useValue: new UsersService(db, {} as never, {} as never),
+      },
       // real RolesService for createSystemRole; its PermissionsService dep is
       // unused on that path
       { provide: RolesService, useValue: new RolesService(db, {} as never) },
       // real PermissionsService — signup() doesn't call it, me() does
       { provide: PermissionsService, useValue: new PermissionsService(db) },
+      { provide: EmailService, useValue: emailMock },
     ],
   }).compile();
   return ref.get(AuthService);
@@ -264,5 +280,165 @@ describe('AuthService.logout (OS-467)', () => {
   it('is a no-op for an unknown/invalid token (best-effort)', async () => {
     const service = await build();
     await expect(service.logout('not-a-real-token')).resolves.toBeUndefined();
+  });
+});
+
+describe('AuthService.requestPasswordReset (OS-469)', () => {
+  it('creates a reset row and emails the user for an active account', async () => {
+    const account = await insertAccountFor();
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'active@store.test',
+      password: 'hashed',
+    });
+    const service = await build();
+
+    await service.requestPasswordReset(user.email);
+
+    const [reset] = await db
+      .select()
+      .from(userPasswordResetsTable)
+      .where(eq(userPasswordResetsTable.userId, user.id));
+    expect(reset).toBeDefined();
+    expect(emailMock.sendPasswordResetEmail).toHaveBeenCalledWith(
+      user.email,
+      expect.objectContaining({ firstName: user.firstname }),
+    );
+  });
+
+  it('replaces an existing pending reset instead of accumulating rows', async () => {
+    const account = await insertAccountFor();
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'active2@store.test',
+      password: 'hashed',
+    });
+    const service = await build();
+
+    await service.requestPasswordReset(user.email);
+    await service.requestPasswordReset(user.email);
+
+    const rows = await db
+      .select()
+      .from(userPasswordResetsTable)
+      .where(eq(userPasswordResetsTable.userId, user.id));
+    expect(rows).toHaveLength(1);
+  });
+
+  it('is a silent no-op for an unknown email (no account enumeration)', async () => {
+    const service = await build();
+    await expect(
+      service.requestPasswordReset('nobody@store.test'),
+    ).resolves.toBeUndefined();
+    expect(emailMock.sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  it('is a silent no-op for a pending invite (no password set yet)', async () => {
+    const account = await insertAccountFor();
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'invited@store.test',
+      password: null,
+    });
+    const service = await build();
+
+    await service.requestPasswordReset(user.email);
+
+    expect(emailMock.sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  async function insertAccountFor() {
+    const [account] = await db
+      .insert(accountsTable)
+      .values({
+        name: 'Reset Co',
+        phone: '5555550100',
+        email: 'reset-co@store.test',
+      })
+      .returning();
+    if (!account) throw new Error('account insert returned no row');
+    return account;
+  }
+});
+
+describe('AuthService.resetPassword (OS-469)', () => {
+  async function seedActiveUser(overrides: { password?: string } = {}) {
+    const [account] = await db
+      .insert(accountsTable)
+      .values({
+        name: 'Reset Co',
+        phone: '5555550100',
+        email: 'reset-co2@store.test',
+      })
+      .returning();
+    if (!account) throw new Error('account insert returned no row');
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'reset-user@store.test',
+      password: overrides.password ?? 'old-hashed-password',
+    });
+    return user;
+  }
+
+  it('sets the new password, consumes the token, and revokes all sessions', async () => {
+    const user = await seedActiveUser();
+    const reset = await insertUserPasswordReset(db, { userId: user.id });
+    await db.insert(userRefreshTokensTable).values([
+      { userId: user.id, jti: 'jti-1', familyId: 'family-1' },
+      { userId: user.id, jti: 'jti-2', familyId: 'family-2' },
+    ]);
+    const service = await build();
+
+    await service.resetPassword(reset.token, 'brand-new-password');
+
+    const [updated] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id));
+    expect(updated?.password).not.toBe(user.password);
+
+    const remaining = await db
+      .select()
+      .from(userPasswordResetsTable)
+      .where(eq(userPasswordResetsTable.token, reset.token));
+    expect(remaining).toHaveLength(0);
+
+    const tokens = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.userId, user.id));
+    expect(tokens.every((t) => t.revokedAt !== null)).toBe(true);
+  });
+
+  it('rejects an expired token', async () => {
+    const user = await seedActiveUser();
+    const reset = await insertUserPasswordReset(db, {
+      userId: user.id,
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    const service = await build();
+
+    await expect(
+      service.resetPassword(reset.token, 'brand-new-password'),
+    ).rejects.toThrow('Invalid or expired token');
+  });
+
+  it('rejects a token that has already been used', async () => {
+    const user = await seedActiveUser();
+    const reset = await insertUserPasswordReset(db, { userId: user.id });
+    const service = await build();
+
+    await service.resetPassword(reset.token, 'brand-new-password');
+
+    await expect(
+      service.resetPassword(reset.token, 'another-password'),
+    ).rejects.toThrow('Invalid or expired token');
+  });
+
+  it('rejects an unknown token', async () => {
+    const service = await build();
+    await expect(
+      service.resetPassword('not-a-real-token', 'brand-new-password'),
+    ).rejects.toThrow('Invalid or expired token');
   });
 });
