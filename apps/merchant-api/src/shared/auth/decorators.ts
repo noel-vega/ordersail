@@ -13,6 +13,16 @@ export const PERMISSIONS_KEY = 'permissions';
 export const RequirePermissions = (...permissions: string[]) =>
   SetMetadata(PERMISSIONS_KEY, permissions);
 
+export const AUTHENTICATED_ONLY_KEY = 'authenticatedOnly';
+// a no-op marker — PermissionsGuard already lets through anything without
+// @RequirePermissions(). Its only job is turning "deliberately reachable by
+// any authenticated user, no specific permission required" into a
+// checkable assertion instead of a code comment, so route-guard-coverage
+// spec can tell "reviewed and intentional" apart from "nobody thought
+// about this route's guard yet" (see identity/auth/route-guard-coverage.spec.ts)
+export const AuthenticatedOnly = () =>
+  SetMetadata(AUTHENTICATED_ONLY_KEY, true);
+
 export interface AuthenticatedUser {
   sub: number;
   email: string;

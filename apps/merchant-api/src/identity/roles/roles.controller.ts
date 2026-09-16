@@ -19,6 +19,7 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 import { Role } from './entities/role.entity';
 import { RoleDetail } from './entities/role-detail.entity';
 import {
+  AuthenticatedOnly,
   CurrentUser,
   GrantedPermissions,
   RequirePermissions,
@@ -51,6 +52,7 @@ export class RolesController {
   // needs to be able to list what's available, and those don't imply
   // roles:read. Same precedent as GET /permissions: reading the role list
   // isn't itself sensitive, only creating/editing/deleting one is.
+  @AuthenticatedOnly()
   @Get()
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: [RoleDetail] })
@@ -58,6 +60,7 @@ export class RolesController {
     return this.rolesService.findAll(user.accountId);
   }
 
+  @AuthenticatedOnly()
   @Get(':id')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: RoleDetail })

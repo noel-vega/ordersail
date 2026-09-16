@@ -48,4 +48,6 @@ export const PERMISSIONS_CATALOG: PermissionDef[] = [
 
   { key: "account:read", resource: "account", action: "read", description: "View account settings" },
   { key: "account:write", resource: "account", action: "write", description: "Edit account settings" },
+
+  { key: "dashboard:read", resource: "dashboard", action: "read", description: "View the business dashboard (revenue, orders, inventory alerts)" },
 ];

@@ -27,6 +27,7 @@ import { User } from './entities/user.entity';
 import { PaginatedUsers } from './entities/paginated-users.entity';
 import {
   CurrentUser,
+  AuthenticatedOnly,
   GrantedPermissions,
   RequirePermissions,
   type AuthenticatedUser,
@@ -85,6 +86,9 @@ export class UsersController {
 
   // no @RequirePermissions — a user may always edit their own name/phone;
   // editing anyone else needs users:write (checked in the handler)
+  // self-edit is always allowed; editing another user is checked in the
+  // handler (assertCanGrant-style ownership check, not a blanket permission)
+  @AuthenticatedOnly()
   @Patch(':id')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: User })

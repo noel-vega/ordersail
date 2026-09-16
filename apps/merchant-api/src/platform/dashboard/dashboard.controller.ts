@@ -4,6 +4,7 @@ import { DashboardService } from './dashboard.service';
 import { DashboardSummary } from './entities/dashboard-summary.entity';
 import {
   CurrentUser,
+  RequirePermissions,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
 
@@ -11,6 +12,7 @@ import {
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  @RequirePermissions('dashboard:read')
   @Get()
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: DashboardSummary })

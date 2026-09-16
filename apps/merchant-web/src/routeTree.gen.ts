@@ -22,6 +22,7 @@ import { Route as AppCartsIndexRouteImport } from './routes/app/carts/index'
 import { Route as AppCartsIdRouteImport } from './routes/app/carts/$id'
 import { Route as AppCustomersIndexRouteImport } from './routes/app/customers/index'
 import { Route as AppCustomersIdRouteImport } from './routes/app/customers/$id'
+import { Route as AppDashboardIndexRouteImport } from './routes/app/dashboard/index'
 import { Route as AppDevelopersIndexRouteImport } from './routes/app/developers/index'
 import { Route as AppFailedOrdersIndexRouteImport } from './routes/app/failed-orders/index'
 import { Route as AppInventoryIndexRouteImport } from './routes/app/inventory/index'
@@ -110,6 +111,11 @@ const AppCustomersIndexRoute = AppCustomersIndexRouteImport.update({
 const AppCustomersIdRoute = AppCustomersIdRouteImport.update({
   id: '/customers/$id',
   path: '/customers/$id',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppDashboardIndexRoute = AppDashboardIndexRouteImport.update({
+  id: '/dashboard/',
+  path: '/dashboard/',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppDevelopersIndexRoute = AppDevelopersIndexRouteImport.update({
@@ -258,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/app/users/create': typeof AppUsersCreateRoute
   '/app/carts/': typeof AppCartsIndexRoute
   '/app/customers/': typeof AppCustomersIndexRoute
+  '/app/dashboard/': typeof AppDashboardIndexRoute
   '/app/developers/': typeof AppDevelopersIndexRoute
   '/app/failed-orders/': typeof AppFailedOrdersIndexRoute
   '/app/inventory/': typeof AppInventoryIndexRoute
@@ -294,6 +301,7 @@ export interface FileRoutesByTo {
   '/app/users/create': typeof AppUsersCreateRoute
   '/app/carts': typeof AppCartsIndexRoute
   '/app/customers': typeof AppCustomersIndexRoute
+  '/app/dashboard': typeof AppDashboardIndexRoute
   '/app/developers': typeof AppDevelopersIndexRoute
   '/app/failed-orders': typeof AppFailedOrdersIndexRoute
   '/app/inventory': typeof AppInventoryIndexRoute
@@ -334,6 +342,7 @@ export interface FileRoutesById {
   '/app/users/create': typeof AppUsersCreateRoute
   '/app/carts/': typeof AppCartsIndexRoute
   '/app/customers/': typeof AppCustomersIndexRoute
+  '/app/dashboard/': typeof AppDashboardIndexRoute
   '/app/developers/': typeof AppDevelopersIndexRoute
   '/app/failed-orders/': typeof AppFailedOrdersIndexRoute
   '/app/inventory/': typeof AppInventoryIndexRoute
@@ -375,6 +384,7 @@ export interface FileRouteTypes {
     | '/app/users/create'
     | '/app/carts/'
     | '/app/customers/'
+    | '/app/dashboard/'
     | '/app/developers/'
     | '/app/failed-orders/'
     | '/app/inventory/'
@@ -411,6 +421,7 @@ export interface FileRouteTypes {
     | '/app/users/create'
     | '/app/carts'
     | '/app/customers'
+    | '/app/dashboard'
     | '/app/developers'
     | '/app/failed-orders'
     | '/app/inventory'
@@ -450,6 +461,7 @@ export interface FileRouteTypes {
     | '/app/users/create'
     | '/app/carts/'
     | '/app/customers/'
+    | '/app/dashboard/'
     | '/app/developers/'
     | '/app/failed-orders/'
     | '/app/inventory/'
@@ -566,6 +578,13 @@ declare module '@tanstack/react-router' {
       path: '/customers/$id'
       fullPath: '/app/customers/$id'
       preLoaderRoute: typeof AppCustomersIdRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/dashboard/': {
+      id: '/app/dashboard/'
+      path: '/dashboard'
+      fullPath: '/app/dashboard/'
+      preLoaderRoute: typeof AppDashboardIndexRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/app/developers/': {
@@ -792,6 +811,7 @@ interface AppRouteRouteChildren {
   AppUsersCreateRoute: typeof AppUsersCreateRoute
   AppCartsIndexRoute: typeof AppCartsIndexRoute
   AppCustomersIndexRoute: typeof AppCustomersIndexRoute
+  AppDashboardIndexRoute: typeof AppDashboardIndexRoute
   AppDevelopersIndexRoute: typeof AppDevelopersIndexRoute
   AppFailedOrdersIndexRoute: typeof AppFailedOrdersIndexRoute
   AppInventoryIndexRoute: typeof AppInventoryIndexRoute
@@ -817,6 +837,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppUsersCreateRoute: AppUsersCreateRoute,
   AppCartsIndexRoute: AppCartsIndexRoute,
   AppCustomersIndexRoute: AppCustomersIndexRoute,
+  AppDashboardIndexRoute: AppDashboardIndexRoute,
   AppDevelopersIndexRoute: AppDevelopersIndexRoute,
   AppFailedOrdersIndexRoute: AppFailedOrdersIndexRoute,
   AppInventoryIndexRoute: AppInventoryIndexRoute,

@@ -16,6 +16,7 @@ import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
 import { AuthMe } from './entities/auth-me.entity';
 import {
+  AuthenticatedOnly,
   CurrentUser,
   Public,
   type AuthenticatedUser,
@@ -124,8 +125,9 @@ export class AuthController {
     return { access_token: result.access_token };
   }
 
-  // no @RequirePermissions — any authenticated user reads their own identity
-  // + effective permission keys (merchant-web's permission context)
+  // any authenticated user reads their own identity + effective permission
+  // keys (merchant-web's permission context)
+  @AuthenticatedOnly()
   @Get('me')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: AuthMe })
