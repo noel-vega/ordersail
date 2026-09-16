@@ -5,6 +5,7 @@ import { Logger, runWithCorrelationId } from 'logging';
 import {
   renderCustomerThankYouEmail,
   renderOrderConfirmationEmail,
+  renderPasswordResetEmail,
   renderStaffInviteEmail,
 } from 'email-templates';
 import { MailerService } from './mailer.service';
@@ -47,6 +48,17 @@ export class EmailProcessor extends WorkerHost {
           html: await renderStaffInviteEmail({
             firstName: data.firstName,
             inviteUrl: data.inviteUrl,
+          }),
+        });
+        return;
+
+      case 'password-reset':
+        await this.mailerService.sendMail({
+          to: data.to,
+          subject: 'Reset your Ordersail password',
+          html: await renderPasswordResetEmail({
+            firstName: data.firstName,
+            resetUrl: data.resetUrl,
           }),
         });
         return;

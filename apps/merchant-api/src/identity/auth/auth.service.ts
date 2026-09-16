@@ -15,6 +15,9 @@ import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 import { AuthMe } from './entities/auth-me.entity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { EmailService } from 'src/shared/email/email.service';
+import { env } from 'src/shared/env';
+import { generateToken } from 'src/shared/common/generate-token.util';
 import {
   accountApiKeysTable,
   accountsTable,
@@ -23,12 +26,17 @@ import {
   eq,
   isNull,
   isUniqueViolation,
+  userPasswordResetsTable,
   userRefreshTokensTable,
   usersTable,
 } from 'db/identity';
 import { locationsTable } from 'db/stock';
 import * as bcrypt from 'bcryptjs';
 import { generateApiKey } from '../api-keys/api-keys.util';
+
+// deliberately much shorter than the 7-day invite TTL — an existing active
+// user can always request a fresh link, so there's no cost to expiring fast
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 // a just-rotated-out refresh token, re-presented within this window, replays
 // the same replacement pair instead of revoking the family — see
@@ -43,6 +51,7 @@ export class AuthService {
     private usersService: UsersService,
     private rolesService: RolesService,
     private permissionsService: PermissionsService,
+    private emailService: EmailService,
   ) {}
 
   async me(user: AuthenticatedUser): Promise<AuthMe> {
@@ -190,6 +199,76 @@ export class AuthService {
       lastName: user.lastName,
       access_token,
     };
+  }
+
+  // Always resolves with no signal either way — a distinct response for
+  // "no account with that email" vs "email sent" would let an attacker
+  // enumerate registered accounts. A pending invite (password IS NULL) is
+  // treated the same as "no account": there's no password to reset yet,
+  // that user needs the invite link instead.
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.usersService.getByEmail(email);
+    if (!user || !user.password) return;
+
+    const token = generateToken(32);
+    await this.db
+      .insert(userPasswordResetsTable)
+      .values({
+        userId: user.id,
+        token,
+        expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+      })
+      .onConflictDoUpdate({
+        target: userPasswordResetsTable.userId,
+        set: { token, expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS) },
+      });
+
+    const resetUrl = `${env.MERCHANT_WEB_URL}/reset-password?token=${token}`;
+    await this.emailService.sendPasswordResetEmail(user.email, {
+      firstName: user.firstname,
+      resetUrl,
+    });
+  }
+
+  // Sets a new password, consumes the reset token, and revokes every
+  // existing refresh-token family for the user — unlike a normal token
+  // rotation (which only kills the one family being rotated), a password
+  // reset must kill every live session, since the whole point is "whoever
+  // had the old password should be logged out everywhere."
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const [reset] = await this.db
+      .select()
+      .from(userPasswordResetsTable)
+      .where(eq(userPasswordResetsTable.token, token));
+
+    if (!reset || reset.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.db
+      .update(usersTable)
+      .set({ password: hashedPassword, updatedAt: new Date() })
+      .where(eq(usersTable.id, reset.userId));
+
+    await this.db
+      .delete(userPasswordResetsTable)
+      .where(eq(userPasswordResetsTable.id, reset.id));
+
+    await this.revokeAllFamiliesForUser(reset.userId);
+  }
+
+  private async revokeAllFamiliesForUser(userId: number): Promise<void> {
+    await this.db
+      .update(userRefreshTokensTable)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(userRefreshTokensTable.userId, userId),
+          isNull(userRefreshTokensTable.revokedAt),
+        ),
+      );
   }
 
   private async sign(

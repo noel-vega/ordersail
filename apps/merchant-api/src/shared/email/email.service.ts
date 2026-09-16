@@ -40,4 +40,27 @@ export class EmailService {
       );
     }
   }
+
+  async sendPasswordResetEmail(
+    to: string,
+    params: { firstName: string; resetUrl: string },
+  ) {
+    try {
+      await withTimeout(
+        this.emailQueue.add('password-reset', {
+          type: 'password-reset',
+          correlationId: getCorrelationId() ?? randomUUID(),
+          to,
+          ...params,
+        }),
+        5000,
+        'enqueue password reset email',
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue password reset email for ${to}`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
+  }
 }
