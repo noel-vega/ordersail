@@ -39,6 +39,17 @@ export function EnrollMfaDialog(props: {
 
   const open = props.otpauthUrl !== null;
 
+  // Once the one-time recovery codes are showing, Escape/backdrop/the X
+  // button must not be able to dismiss this — that's the only copy the
+  // user will ever see, and losing it silently would leave MFA enabled
+  // with no saved recovery method. Only the explicit "I've saved these
+  // codes" button (which calls close() directly, not through here) may
+  // close the dialog at that point.
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && codes) return;
+    if (!nextOpen) close();
+  }
+
   function close() {
     props.onOpenChange(false);
     // let the dialog animate out before resetting
@@ -66,8 +77,8 @@ export function EnrollMfaDialog(props: {
   const secret = props.otpauthUrl ? extractSecret(props.otpauthUrl) : null;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent showCloseButton={!codes}>
         {codes ? (
           <RecoveryCodesReveal codes={codes} onDone={close} />
         ) : (

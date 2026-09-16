@@ -24,6 +24,16 @@ export function RegenerateCodesDialog(props: {
   const [error, setError] = useState<string | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
 
+  // Once the one-time recovery codes are showing, Escape/backdrop/the X
+  // button must not be able to dismiss this — that's the only copy the
+  // user will ever see. Only the explicit "I've saved these codes" button
+  // (which calls close() directly, not through here) may close the dialog
+  // at that point.
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && codes) return;
+    if (!nextOpen) close();
+  }
+
   function close() {
     props.onOpenChange(false);
     setTimeout(() => {
@@ -49,8 +59,8 @@ export function RegenerateCodesDialog(props: {
   }
 
   return (
-    <Dialog open={props.open} onOpenChange={(o) => !o && close()}>
-      <DialogContent>
+    <Dialog open={props.open} onOpenChange={handleOpenChange}>
+      <DialogContent showCloseButton={!codes}>
         {codes ? (
           <RecoveryCodesReveal codes={codes} onDone={close} />
         ) : (
