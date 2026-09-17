@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { LoggerService } from '@nestjs/common';
 import { pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
 
@@ -294,4 +296,88 @@ export class Logger implements LoggerService {
     const [fields, msg] = normalizeLogArgs(this.context, message, rest);
     root[level](fields, msg);
   }
+}
+
+// ---------------------------------------------------------------------------
+// HTTP request middleware — correlation ID + one access line per request
+// ---------------------------------------------------------------------------
+
+// The inbound header is untrusted and ends up on every log line of the
+// request (and its queued jobs), so only accept something that looks like an ID.
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
+const routeTemplates = new WeakMap<IncomingMessage, string>();
+
+// Adapters that don't expose the matched route on the raw request (Fastify)
+// report it here; Express's req.route is read directly.
+export function setRequestRoute(req: IncomingMessage, url: string | undefined): void {
+  if (url) routeTemplates.set(req, url);
+}
+
+function resolveRoute(req: IncomingMessage): string | null {
+  const explicit = routeTemplates.get(req);
+  if (explicit) return explicit;
+  // Nest registers every route on the app itself, so req.route.path is already
+  // the full template. req.baseUrl is deliberately ignored: under a mounted
+  // router it holds the *concrete* matched mount path (e.g. a token value).
+  const express = req as IncomingMessage & { route?: { path?: unknown } };
+  return typeof express.route?.path === 'string' ? express.route.path : null;
+}
+
+export type RequestLoggingOptions = {
+  // matched against the path without its query string; default ['/health']
+  ignorePaths?: string[];
+};
+
+// Replaces the per-service inline middleware. Registered with app.use() so it
+// runs on the raw Node req/res under both Express and Fastify: reuses a
+// well-formed inbound x-request-id (or mints one), echoes it, runs the rest of
+// the request inside the correlation scope, and writes one access line when the
+// response finishes. The line carries the route *template* only — never the raw
+// URL or query string, which can hold IDs and tokens (docs/observability.md).
+export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
+  const ignorePaths = new Set(options.ignorePaths ?? ['/health']);
+  const logger = new Logger('HTTP');
+
+  return (req: IncomingMessage, res: ServerResponse, next: () => void): void => {
+    const header = req.headers['x-request-id'];
+    const inbound = Array.isArray(header) ? header[0] : header;
+    const correlationId = inbound && REQUEST_ID_PATTERN.test(inbound) ? inbound : randomUUID();
+    res.setHeader('x-request-id', correlationId);
+
+    const path = (req.url ?? '').split('?')[0];
+    const store: CorrelationStore = { correlationId };
+
+    if (!ignorePaths.has(path)) {
+      const startedAt = process.hrtime.bigint();
+      let logged = false;
+      const writeAccessLine = (aborted: boolean) => {
+        if (logged) return;
+        logged = true;
+        const route = resolveRoute(req);
+        const responseTime = Number(process.hrtime.bigint() - startedAt) / 1e6;
+        const fields = {
+          // finish/close fire outside the ALS scope, so the store is read
+          // from the closure rather than the mixin
+          ...store,
+          event: 'http.request',
+          req: { method: req.method },
+          route,
+          // an aborted response never sent a status — res.statusCode would
+          // still read its default 200 and count as a success in queries
+          ...(aborted ? { aborted: true } : { res: { statusCode: res.statusCode } }),
+          responseTime: Math.round(responseTime * 10) / 10,
+        };
+        const outcome = aborted ? 'aborted' : res.statusCode;
+        const msg = `${req.method} ${route ?? '(unmatched)'} ${outcome}`;
+        if (!aborted && res.statusCode >= 500) logger.error(fields, msg);
+        else if (aborted || res.statusCode >= 400) logger.warn(fields, msg);
+        else logger.info(fields, msg);
+      };
+      res.once('finish', () => writeAccessLine(false));
+      res.once('close', () => writeAccessLine(!res.writableFinished));
+    }
+
+    als.run(store, next);
+  };
 }

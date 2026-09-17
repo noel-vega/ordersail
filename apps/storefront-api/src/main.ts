@@ -1,11 +1,9 @@
 import { env } from './env'; // validates process.env before anything else loads
-import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
-import { Logger, configureLogging, runWithCorrelationId } from 'logging';
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import { Logger, configureLogging, requestLoggingMiddleware } from 'logging';
 import { AppModule } from './app.module';
 import { createSwaggerConfig } from './swagger.config';
 
@@ -21,17 +19,9 @@ async function bootstrap() {
   });
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
-  // reuses an inbound x-request-id if the caller already set one (useful
-  // once there's a frontend/proxy assigning them), otherwise mints a fresh
-  // one — either way it's echoed back and threaded through every log line
-  // this request produces, including ones emitted from BullMQ jobs it enqueues
-  app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
-    const header = req.headers['x-request-id'];
-    const correlationId =
-      (Array.isArray(header) ? header[0] : header) || randomUUID();
-    res.setHeader('x-request-id', correlationId);
-    runWithCorrelationId(correlationId, next);
-  });
+  // correlation ID (reused from a well-formed inbound x-request-id or minted)
+  // + one access log line per request — see docs/observability.md
+  app.use(requestLoggingMiddleware());
 
   app.use(cookieParser());
 
@@ -52,7 +42,9 @@ async function bootstrap() {
       'x-app-key',
       'x-cart-token',
       'authorization',
+      'x-request-id',
     ],
+    exposedHeaders: ['x-request-id'],
   });
 
   const document = SwaggerModule.createDocument(app, createSwaggerConfig());
