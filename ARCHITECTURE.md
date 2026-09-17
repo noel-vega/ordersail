@@ -89,6 +89,8 @@ flowchart TB
   ends up running it. `worker`'s check also verifies each queue's consumption loop is actually
   draining a backlog, not just that Redis is reachable — a plain Redis ping can't tell the two apart
   (see the worker-reconnect-stall note in memory).
+- Logging, correlation IDs, and how to trace a request across API → queue → worker:
+  see [`docs/observability.md`](docs/observability.md).
 - `website` is fully standalone: no workspace deps, no outbound calls, static marketing content.
 - Every account is a tenant with its own Stripe Connect account — `merchant-api` and
   `storefront-api` both call Stripe directly (Connect onboarding vs. Checkout Sessions
