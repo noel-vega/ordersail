@@ -37,7 +37,7 @@ export class CheckoutOrderService {
     const cart = await this.carts.findByToken(event.cartToken, event.accountId);
     if (!cart || cart.items.length === 0) {
       this.logger.warn(
-        `checkout.session.paid ${event.checkoutSessionId}: cart ${event.cartToken} is gone or empty — no order created`,
+        `checkout.session.paid ${event.checkoutSessionId}: cart is gone or empty — no order created`,
       );
       return null;
     }
