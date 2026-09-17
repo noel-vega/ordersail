@@ -92,8 +92,20 @@ type SerializedError = {
   cause?: unknown;
 } & Partial<Record<(typeof ERROR_FIELDS)[number], unknown>>;
 
+// Non-Error values (a rejected plain object, an object `cause`) get the same
+// treatment: primitives pass through, objects are reduced to their type and a
+// string `message` — anything else they carry could be a provider payload
+// nested deeper than the redaction paths reach.
 export function serializeError(err: unknown, depth = 0): unknown {
-  if (!(err instanceof Error)) return err;
+  if (!(err instanceof Error)) {
+    if (typeof err !== 'object' && typeof err !== 'function') return err;
+    if (err === null) return err;
+    const source = err as { constructor?: { name?: string }; message?: unknown };
+    return {
+      type: source.constructor?.name || 'Object',
+      ...(typeof source.message === 'string' ? { message: source.message } : {}),
+    };
+  }
   const out: SerializedError = {
     type: err.constructor?.name ?? err.name,
     message: err.message,
@@ -227,7 +239,8 @@ export function normalizeLogArgs(
   for (const extra of extras) {
     if (extra instanceof Error) fields.err = extra;
     else if (typeof extra === 'string' && looksLikeStack(extra)) fields.stack = extra;
-    else if (extra !== undefined) fields.detail = extra;
+    // same reduction as `err`: a non-Error rejection can be any payload
+    else if (extra !== undefined) fields.detail = serializeError(extra);
   }
   return [fields, msg];
 }

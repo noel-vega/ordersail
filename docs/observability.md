@@ -159,7 +159,8 @@ If an address is genuinely needed to debug (rare), use `maskEmail()` from `loggi
   PII under them.
 - `err` is serialized from an allow-list (`type`, `message`, `stack`, `code`, `statusCode`,
   `requestId`, `param`, `cause`), so provider error payloads (Stripe `raw`/`headers`, Shippo
-  `rawResponse`/`body`) never reach the log.
+  `rawResponse`/`body`) never reach the log. A non-`Error` value (a rejected plain object, an
+  object `cause`, or Nest-style `detail`) is reduced to its type and a string `message`.
 
 ## Tracing a bug
 

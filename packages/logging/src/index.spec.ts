@@ -66,11 +66,11 @@ describe('normalizeLogArgs', () => {
     ]);
   });
 
-  it('non-Error, non-string extras land in detail', () => {
-    assert.deepEqual(normalizeLogArgs('Svc', 'odd rejection', [{ code: 42 }]), [
-      { context: 'Svc', detail: { code: 42 } },
-      'odd rejection',
-    ]);
+  it('non-Error object extras land in detail, reduced to type + message', () => {
+    assert.deepEqual(
+      normalizeLogArgs('Svc', 'odd rejection', [{ message: 'nope', body: { email: 'jane@example.com' } }]),
+      [{ context: 'Svc', detail: { type: 'Object', message: 'nope' } }, 'odd rejection'],
+    );
   });
 });
 
@@ -187,6 +187,23 @@ describe('error serialization', () => {
     assert.equal(serialized.raw, undefined);
     assert.equal(serialized.headers, undefined);
     assert.equal(serialized.rawResponse, undefined);
+  });
+
+  it('reduces an object cause instead of preserving it', () => {
+    const lines = captureLogs();
+    const err = new Error('shippo failed', {
+      cause: { message: 'bad address', request: { addressTo: { email: 'jane@example.com' } } },
+    });
+    new Logger('Fulfillments').error({ err }, 'label purchase failed');
+    assert.deepEqual(lines[0].err.cause, { type: 'Object', message: 'bad address' });
+  });
+
+  it('reduces a non-Error object passed as err, keeps primitive rejections', () => {
+    const lines = captureLogs();
+    new Logger('Svc').error({ err: { status: 500, body: { token: 'x', nested: { secret: 'y' } } } }, 'a');
+    new Logger('Svc').error({ err: 'timeout' }, 'b');
+    assert.deepEqual(lines[0].err, { type: 'Object' });
+    assert.equal(lines[1].err, 'timeout');
   });
 
   it('applies to Nest-style error(message, err) calls too', () => {
