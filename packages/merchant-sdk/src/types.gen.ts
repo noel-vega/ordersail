@@ -2234,7 +2234,21 @@ export interface operations {
                     "application/json": components["schemas"]["AccessTokenDto"];
                 };
             };
+            /** @description Invalid or expired token */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token belongs to a different account */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -618,22 +619,27 @@ export class AuthService {
     };
   }
 
-  // Verifies the emailed token, marks the account verified, and — since
-  // clicking the link proves control of the address — mints a fresh
-  // access+refresh pair with emailVerified: true, auto-logging in whichever
-  // browser/tab opens the link (even if it's not the original session). This
-  // bypasses the MFA challenge (no password check happens here either), but
-  // that's safe: enrollMfa() requires emailVerifiedAt already set, so a user
-  // reachable by this method (emailVerifiedAt still null) can never have a
-  // confirmed MFA factor yet.
-  async verifyEmail(token: string) {
+  // Verifies the emailed token for the *signed-in* caller and re-mints only
+  // their access token with emailVerified: true. The link proves control of
+  // the inbox, never identity — it must not create a session, or it becomes
+  // a password-free login link for anyone the email reaches (forwards,
+  // shared inboxes, link scanners). A token belonging to a different user
+  // is rejected without being consumed, so its owner can still use it.
+  async verifyEmail(userId: number, token: string) {
     const [verification] = await this.db
       .select()
       .from(userEmailVerificationsTable)
       .where(eq(userEmailVerificationsTable.token, token));
 
+    // 400, not 401: the caller is authenticated, so a 401 here would read as
+    // "your session expired" to the client's refresh-and-retry logic
     if (!verification || verification.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new BadRequestException('Invalid or expired token');
+    }
+    if (verification.userId !== userId) {
+      throw new ForbiddenException(
+        'This verification link belongs to a different account',
+      );
     }
 
     const [user] = await this.db
@@ -643,7 +649,7 @@ export class AuthService {
       .returning();
 
     if (!user) {
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new BadRequestException('Invalid or expired token');
     }
 
     await this.db
@@ -667,16 +673,7 @@ export class AuthService {
       mfaEnrollmentSatisfied,
     );
 
-    return {
-      userId: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: user.firstname,
-      lastName: user.lastname,
-      emailVerified: true,
-      mfaEnrollmentSatisfied,
-      access_token,
-    };
+    return { access_token };
   }
 
   // Silent no-op if the account is gone or already verified — reachable by

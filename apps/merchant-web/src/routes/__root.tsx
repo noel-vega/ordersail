@@ -2,6 +2,7 @@ import { createRootRoute, Outlet, redirect } from "@tanstack/react-router";
 import { Toaster } from "ui/sonner";
 import { merchantApi } from "../lib/merchant-api-client";
 import { appConfig } from "../config";
+import { safeRedirectPath } from "../features/auth/safe-redirect";
 
 const RootLayout = () => (
   <div className="h-dvh">
@@ -22,7 +23,8 @@ export const Route = createRootRoute({
       case "/signin":
       case "/signup":
         if (accessToken) {
-          throw redirect({ to: appConfig.homeRoute });
+          const next = (location.search as { redirect?: string }).redirect;
+          throw redirect({ href: safeRedirectPath(next) });
         }
         break;
       case "/join":
@@ -34,8 +36,13 @@ export const Route = createRootRoute({
         // /app is now homeRoute itself, so it belongs here rather than in
         // the case above — bouncing an authenticated visit at /app to
         // homeRoute (also /app) would just redirect to itself forever
+        // remember where they were headed (e.g. an emailed /verify-email
+        // link opened on another device) so sign-in can return them there
         if (!accessToken) {
-          throw redirect({ to: "/signin" });
+          throw redirect({
+            to: "/signin",
+            search: { redirect: location.href },
+          });
         }
     }
   },

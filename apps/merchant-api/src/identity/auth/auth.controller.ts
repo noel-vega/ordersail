@@ -37,9 +37,11 @@ import {
 import { env } from 'src/shared/env';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
   ApiExtraModels,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiUnauthorizedResponse,
   getSchemaPath,
@@ -291,43 +293,39 @@ export class AuthController {
     await this.authService.resetPassword(dto.token, dto.password);
   }
 
-  // reachable while unverified — clicking the emailed link works even in a
-  // browser/tab with no session at all (or a different device than the one
-  // that signed up), and returns a fresh, correctly-claimed token pair
-  @Public()
+  // requires the caller's existing session — the emailed token proves inbox
+  // control, not identity, so it never creates a session (see
+  // AuthService.verifyEmail). Exempt from both gates: a caller here is
+  // unverified by definition, and may also be MFA-gated. Returns a re-minted
+  // access token carrying emailVerified: true (same idea as mfa/confirm);
+  // the refresh cookie is untouched and picks the claim up on next rotation.
+  @AuthenticatedOnly()
+  @SkipEmailVerification()
+  @SkipMfaEnrollment()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('verify-email')
+  @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: AccessTokenDto })
+  @ApiBadRequestResponse({ description: 'Invalid or expired token' })
   @ApiUnauthorizedResponse()
+  @ApiForbiddenResponse({ description: 'Token belongs to a different account' })
   async verifyEmail(
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: VerifyEmailDto,
-    @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.authService.verifyEmail(dto.token);
-
-    const refreshToken = await this.authService.createRefreshToken(
-      result.userId,
-      result.email,
-      result.accountId,
-      result.firstName,
-      result.lastName,
-      result.emailVerified,
-      result.mfaEnrollmentSatisfied,
-      randomUUID(),
-    );
-
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
+    return this.authService.verifyEmail(user.sub, dto.token);
   }
 
   // exempt from EmailVerifiedGuard (an unverified caller has to be able to
   // reach this in order to get verified) but still requires a real session
   // — resends to the caller's own account, not an arbitrary email, so
   // there's no new enumeration surface the way forgot-password has to
-  // guard against
+  // guard against. Also exempt from MfaEnrollmentGuard: enrollMfa() requires
+  // a verified email, so an unverified user on an MFA-required account
+  // would otherwise be unable to satisfy either gate
   @AuthenticatedOnly()
   @SkipEmailVerification()
+  @SkipMfaEnrollment()
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @Post('verify-email/resend')
   @ApiBearerAuth('JWT-auth')

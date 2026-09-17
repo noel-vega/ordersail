@@ -14,6 +14,7 @@ import { Route as AppRouteRouteImport } from './routes/app/route'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as SigninRouteImport } from './routes/signin'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as App403RouteImport } from './routes/app/403'
 import { Route as AppProductsRouteRouteImport } from './routes/app/products/route'
@@ -72,6 +73,11 @@ const SigninRoute = SigninRouteImport.update({
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -253,6 +259,7 @@ export interface FileRoutesByFullPath {
   '/join': typeof JoinRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/app/products': typeof AppProductsRouteRouteWithChildren
   '/app/roles': typeof AppRolesRouteRouteWithChildren
   '/app/403': typeof App403Route
@@ -293,6 +300,7 @@ export interface FileRoutesByTo {
   '/join': typeof JoinRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/app/403': typeof App403Route
   '/app': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
@@ -333,6 +341,7 @@ export interface FileRoutesById {
   '/join': typeof JoinRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/app/products': typeof AppProductsRouteRouteWithChildren
   '/app/roles': typeof AppRolesRouteRouteWithChildren
   '/app/403': typeof App403Route
@@ -376,6 +385,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/signin'
     | '/signup'
+    | '/verify-email'
     | '/app/products'
     | '/app/roles'
     | '/app/403'
@@ -416,6 +426,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/signin'
     | '/signup'
+    | '/verify-email'
     | '/app/403'
     | '/app'
     | '/app/carts/$id'
@@ -455,6 +466,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/signin'
     | '/signup'
+    | '/verify-email'
     | '/app/products'
     | '/app/roles'
     | '/app/403'
@@ -497,6 +509,7 @@ export interface RootRouteChildren {
   JoinRoute: typeof JoinRoute
   SigninRoute: typeof SigninRoute
   SignupRoute: typeof SignupRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -534,6 +547,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/': {
@@ -880,6 +900,7 @@ const rootRouteChildren: RootRouteChildren = {
   JoinRoute: JoinRoute,
   SigninRoute: SigninRoute,
   SignupRoute: SignupRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

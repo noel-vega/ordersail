@@ -15,8 +15,9 @@ import { queryClient } from "../../lib/react-query-client";
 import { getAuthMeQueryOptions } from "../../features/auth/permissions.hooks";
 import { PermissionProvider } from "../../features/auth/permission-context";
 
-// the one route a caller gated by MfaEnrollmentGuard (OS-473) can still
-// reach — enrolling is how they satisfy the gate in the first place
+// where each gate sends the caller — completing it is how the gate is
+// satisfied (EmailVerifiedGuard / MfaEnrollmentGuard server-side). The email
+// lobby lives outside /app: every app route would 403 anyway
 const MFA_ENROLLMENT_ROUTE = "/app/settings/security";
 
 export const Route = createFileRoute("/app")({
@@ -28,6 +29,11 @@ export const Route = createFileRoute("/app")({
   // opt-in few, since the backend guard blocks almost everything too.
   beforeLoad: async ({ location }) => {
     const me = await queryClient.ensureQueryData(getAuthMeQueryOptions());
+    // email first: MFA enrollment itself requires a verified email, so
+    // sending an unverified user to the MFA page would dead-end them
+    if (me && !me.emailVerified) {
+      throw redirect({ to: "/verify-email" });
+    }
     if (
       me &&
       !me.mfaEnrollmentSatisfied &&
