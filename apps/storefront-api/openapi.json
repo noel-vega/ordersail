@@ -963,6 +963,47 @@
         ]
       }
     },
+    "/customer/orders/{id}": {
+      "get": {
+        "operationId": "CustomerOrdersController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerOrderDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CustomerJWT-auth": []
+          },
+          {
+            "AppKey-auth": []
+          }
+        ],
+        "tags": [
+          "CustomerOrders"
+        ]
+      }
+    },
     "/auth/signup": {
       "post": {
         "operationId": "AuthController_signup",
@@ -2091,6 +2132,262 @@
           "total",
           "limit",
           "offset"
+        ]
+      },
+      "CustomerOrderShipping": {
+        "type": "object",
+        "properties": {
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "postalCode": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "line1",
+          "line2",
+          "city",
+          "state",
+          "postalCode",
+          "country"
+        ]
+      },
+      "CustomerOrderPayment": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "stripe",
+              "cash",
+              "card"
+            ]
+          },
+          "amountCents": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "amountCents",
+          "createdAt"
+        ]
+      },
+      "CustomerOrderItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "variantId": {
+            "type": "number",
+            "nullable": true
+          },
+          "productName": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "optionsLabel": {
+            "type": "string",
+            "nullable": true
+          },
+          "priceCents": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "fulfilledQuantity": {
+            "type": "number"
+          },
+          "refundedQuantity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "variantId",
+          "productName",
+          "sku",
+          "optionsLabel",
+          "priceCents",
+          "quantity",
+          "fulfilledQuantity",
+          "refundedQuantity"
+        ]
+      },
+      "CustomerFulfillmentItem": {
+        "type": "object",
+        "properties": {
+          "orderItemId": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "orderItemId",
+          "quantity"
+        ]
+      },
+      "CustomerOrderFulfillment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "shippingCarrier": {
+            "type": "string",
+            "nullable": true
+          },
+          "shippingServiceLevel": {
+            "type": "string",
+            "nullable": true
+          },
+          "trackingNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "trackingUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerFulfillmentItem"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "shippingCarrier",
+          "shippingServiceLevel",
+          "trackingNumber",
+          "trackingUrl",
+          "createdAt",
+          "items"
+        ]
+      },
+      "CustomerOrderDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
+          },
+          "fulfillmentStatus": {
+            "type": "string",
+            "enum": [
+              "unfulfilled",
+              "partially_fulfilled",
+              "fulfilled"
+            ]
+          },
+          "customerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "shipping": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CustomerOrderShipping"
+              }
+            ]
+          },
+          "subtotalCents": {
+            "type": "number"
+          },
+          "shippingCents": {
+            "type": "number"
+          },
+          "taxCents": {
+            "type": "number"
+          },
+          "amountTotalCents": {
+            "type": "number"
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerOrderPayment"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerOrderItem"
+            }
+          },
+          "fulfillments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerOrderFulfillment"
+            }
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "fulfillmentStatus",
+          "customerName",
+          "customerEmail",
+          "shipping",
+          "subtotalCents",
+          "shippingCents",
+          "taxCents",
+          "amountTotalCents",
+          "payments",
+          "items",
+          "fulfillments",
+          "createdAt"
         ]
       },
       "CustomerSignUpDto": {

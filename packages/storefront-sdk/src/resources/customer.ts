@@ -31,6 +31,17 @@ export function createCustomerResource(client: Client<paths>, doRequest: DoFn) {
         );
         return unwrap(result);
       },
+
+      // undefined on a 404 — no such order, or it belongs to someone else
+      // (the API deliberately doesn't distinguish the two)
+      getById: async (id: number) => {
+        const path: paths["/customer/orders/{id}"]["get"]["parameters"]["path"] =
+          { id };
+        const result = await doRequest(() =>
+          client.GET("/customer/orders/{id}", { params: { path } }),
+        );
+        return unwrapOrUndefinedOn(result, 404);
+      },
     },
   };
 }

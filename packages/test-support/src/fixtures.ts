@@ -18,6 +18,7 @@ import {
   orderItemsTable,
   orderShippingTable,
   orderPaymentsTable,
+  orderRefundLinesTable,
   ordersTable,
   PERMISSIONS_CATALOG,
   permissionsTable,
@@ -659,6 +660,10 @@ export async function insertOrderPayment(
     amountCents?: number;
     stripeCheckoutSessionId?: string | null;
     stripePaymentIntentId?: string | null;
+    // refund rows only
+    stripeRefundId?: string | null;
+    reason?: string | null;
+    parentPaymentId?: number | null;
   },
 ): Promise<Row<typeof orderPaymentsTable>> {
   return one(
@@ -670,6 +675,9 @@ export async function insertOrderPayment(
         amountCents: opts.amountCents ?? 1000,
         stripeCheckoutSessionId: opts.stripeCheckoutSessionId ?? null,
         stripePaymentIntentId: opts.stripePaymentIntentId ?? null,
+        stripeRefundId: opts.stripeRefundId ?? null,
+        reason: opts.reason ?? null,
+        parentPaymentId: opts.parentPaymentId ?? null,
       })
       .returning(),
   );
@@ -707,9 +715,16 @@ export async function insertOrderItem(
 
 export async function insertOrderShipping(
   db: TestDb,
-  opts: { orderId: number; locationId?: number | null } & Partial<
-    typeof DEFAULT_ADDRESS
-  >,
+  opts: {
+    orderId: number;
+    locationId?: number | null;
+    line1?: string;
+    line2?: string | null;
+    city?: string;
+    state?: string | null;
+    postalCode?: string;
+    country?: string;
+  },
 ): Promise<Row<typeof orderShippingTable>> {
   const { orderId, locationId, ...address } = opts;
   return one(
@@ -765,4 +780,13 @@ export async function insertFulfillment(
     );
   }
   return fulfillment;
+}
+
+// the per-line breakdown of a line-item refund — refundPaymentId is the
+// negative order_payments row the refund was recorded as
+export async function insertOrderRefundLine(
+  db: TestDb,
+  opts: { refundPaymentId: number; orderItemId: number; quantity: number },
+): Promise<Row<typeof orderRefundLinesTable>> {
+  return one(await db.insert(orderRefundLinesTable).values(opts).returning());
 }

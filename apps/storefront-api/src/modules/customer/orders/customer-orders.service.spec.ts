@@ -6,6 +6,9 @@ import {
   insertLocation,
   insertOrder,
   insertOrderItem,
+  insertOrderPayment,
+  insertOrderRefundLine,
+  insertOrderShipping,
   useTestDb,
 } from 'test-support';
 import { CustomerOrdersService } from './customer-orders.service';
@@ -165,5 +168,232 @@ describe('CustomerOrdersService.findAll', () => {
     expect(first.items).toHaveLength(2);
     expect(second.items).toHaveLength(1);
     expect(second).toMatchObject({ total: 3, limit: 2, offset: 2 });
+  });
+});
+
+describe('CustomerOrdersService.findOne', () => {
+  it('returns undefined for an unknown id', async () => {
+    const account = await insertAccount(db);
+    const customer = await insertCustomer(db, { accountId: account.id });
+    const service = await build();
+
+    await expect(
+      service.findOne(999999, customer.id, account.id),
+    ).resolves.toBeUndefined();
+  });
+
+  it("returns undefined for another customer's order, a guest order, or the wrong account", async () => {
+    const account = await insertAccount(db);
+    const other = await insertAccount(db);
+    const customer = await insertCustomer(db, { accountId: account.id });
+    const someoneElse = await insertCustomer(db, { accountId: account.id });
+    const theirs = await insertOrder(db, {
+      accountId: account.id,
+      customerId: someoneElse.id,
+    });
+    const guest = await insertOrder(db, {
+      accountId: account.id,
+      customerId: null,
+      customerEmail: customer.email,
+    });
+    const mine = await insertOrder(db, {
+      accountId: account.id,
+      customerId: customer.id,
+    });
+    const service = await build();
+
+    await expect(
+      service.findOne(theirs.id, customer.id, account.id),
+    ).resolves.toBeUndefined();
+    await expect(
+      service.findOne(guest.id, customer.id, account.id),
+    ).resolves.toBeUndefined();
+    await expect(
+      service.findOne(mine.id, customer.id, other.id),
+    ).resolves.toBeUndefined();
+  });
+
+  it('returns items, shipping, payments and fulfillments without staff-only fields', async () => {
+    const account = await insertAccount(db);
+    const customer = await insertCustomer(db, { accountId: account.id });
+    const location = await insertLocation(db, { accountId: account.id });
+    const order = await insertOrder(db, {
+      accountId: account.id,
+      customerId: customer.id,
+      status: 'partially_refunded',
+      customerName: 'Shopper Buyer',
+      customerEmail: customer.email,
+      subtotalCents: 7000,
+      shippingCents: 500,
+      amountTotalCents: 7500,
+    });
+    await insertOrderShipping(db, {
+      orderId: order.id,
+      locationId: location.id,
+      line1: '1 Main St',
+      line2: null,
+      city: 'Austin',
+      state: 'TX',
+      postalCode: '78701',
+      country: 'US',
+    });
+    const shirt = await insertOrderItem(db, {
+      orderId: order.id,
+      productName: 'Shirt',
+      sku: 'SHIRT-M',
+      optionsLabel: 'M',
+      priceCents: 2000,
+      quantity: 2,
+    });
+    const hat = await insertOrderItem(db, {
+      orderId: order.id,
+      productName: 'Hat',
+      priceCents: 3000,
+      quantity: 1,
+    });
+    const charge = await insertOrderPayment(db, {
+      orderId: order.id,
+      method: 'stripe',
+      amountCents: 7500,
+      stripeCheckoutSessionId: 'cs_test_detail',
+      stripePaymentIntentId: 'pi_test_detail',
+    });
+    const refund = await insertOrderPayment(db, {
+      orderId: order.id,
+      method: 'stripe',
+      amountCents: -3000,
+      stripeRefundId: 're_test_detail',
+      reason: 'internal note: customer was rude',
+      parentPaymentId: charge.id,
+    });
+    await insertOrderRefundLine(db, {
+      refundPaymentId: refund.id,
+      orderItemId: hat.id,
+      quantity: 1,
+    });
+    await insertFulfillment(db, {
+      orderId: order.id,
+      locationId: location.id,
+      items: [{ orderItemId: shirt.id, quantity: 2 }],
+      shippingCarrier: 'UPS',
+      shippingServiceLevel: 'Ground',
+      trackingNumber: '1Z999',
+      trackingUrl: 'https://track.test/1Z999',
+      labelUrl: 'https://labels.test/secret.pdf',
+      amountCents: 1234,
+    });
+    const service = await build();
+
+    const detail = await service.findOne(order.id, customer.id, account.id);
+
+    expect(detail).toMatchObject({
+      id: order.id,
+      status: 'partially_refunded',
+      // 2 of 3 units shipped
+      fulfillmentStatus: 'partially_fulfilled',
+      customerName: 'Shopper Buyer',
+      customerEmail: customer.email,
+      subtotalCents: 7000,
+      shippingCents: 500,
+      taxCents: 0,
+      amountTotalCents: 7500,
+    });
+    expect(detail?.shipping).toEqual({
+      line1: '1 Main St',
+      line2: null,
+      city: 'Austin',
+      state: 'TX',
+      postalCode: '78701',
+      country: 'US',
+    });
+    expect(detail?.items).toEqual([
+      {
+        id: shirt.id,
+        variantId: null,
+        productName: 'Shirt',
+        sku: 'SHIRT-M',
+        optionsLabel: 'M',
+        priceCents: 2000,
+        quantity: 2,
+        fulfilledQuantity: 2,
+        refundedQuantity: 0,
+      },
+      {
+        id: hat.id,
+        variantId: null,
+        productName: 'Hat',
+        sku: null,
+        optionsLabel: null,
+        priceCents: 3000,
+        quantity: 1,
+        fulfilledQuantity: 0,
+        refundedQuantity: 1,
+      },
+    ]);
+    expect(
+      detail?.payments.map(({ method, amountCents }) => ({
+        method,
+        amountCents,
+      })),
+    ).toEqual([
+      { method: 'stripe', amountCents: 7500 },
+      { method: 'stripe', amountCents: -3000 },
+    ]);
+    expect(detail?.fulfillments).toHaveLength(1);
+    const [fulfillment] = detail!.fulfillments;
+    expect(fulfillment.createdAt).toBeInstanceOf(Date);
+    expect(fulfillment).toMatchObject({
+      shippingCarrier: 'UPS',
+      shippingServiceLevel: 'Ground',
+      trackingNumber: '1Z999',
+      trackingUrl: 'https://track.test/1Z999',
+      items: [{ orderItemId: shirt.id, quantity: 2 }],
+    });
+    expect(Object.keys(fulfillment).sort()).toEqual(
+      [
+        'createdAt',
+        'id',
+        'items',
+        'shippingCarrier',
+        'shippingServiceLevel',
+        'trackingNumber',
+        'trackingUrl',
+      ].sort(),
+    );
+
+    // nothing the merchant keeps for themselves leaks into the payload
+    const serialized = JSON.stringify(detail);
+    for (const leaked of [
+      'internal note',
+      're_test_detail',
+      'cs_test_detail',
+      'pi_test_detail',
+      'labels.test',
+      'locationId',
+      'events',
+      'allocations',
+    ]) {
+      expect(serialized).not.toContain(leaked);
+    }
+  });
+
+  it('returns null shipping and empty collections for a bare order', async () => {
+    const account = await insertAccount(db);
+    const customer = await insertCustomer(db, { accountId: account.id });
+    const order = await insertOrder(db, {
+      accountId: account.id,
+      customerId: customer.id,
+    });
+    const service = await build();
+
+    const detail = await service.findOne(order.id, customer.id, account.id);
+
+    expect(detail).toMatchObject({
+      shipping: null,
+      items: [],
+      payments: [],
+      fulfillments: [],
+      fulfillmentStatus: 'unfulfilled',
+    });
   });
 });

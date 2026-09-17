@@ -260,6 +260,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/customer/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CustomerOrdersController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/signup": {
         parameters: {
             query?: never;
@@ -539,6 +555,65 @@ export interface components {
             total: number;
             limit: number;
             offset: number;
+        };
+        CustomerOrderShipping: {
+            line1: string;
+            line2: string | null;
+            city: string;
+            state: string | null;
+            postalCode: string;
+            country: string;
+        };
+        CustomerOrderPayment: {
+            /** @enum {string} */
+            method: "stripe" | "cash" | "card";
+            amountCents: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CustomerOrderItem: {
+            id: number;
+            variantId: number | null;
+            productName: string;
+            sku: string | null;
+            optionsLabel: string | null;
+            priceCents: number;
+            quantity: number;
+            fulfilledQuantity: number;
+            refundedQuantity: number;
+        };
+        CustomerFulfillmentItem: {
+            orderItemId: number;
+            quantity: number;
+        };
+        CustomerOrderFulfillment: {
+            id: number;
+            shippingCarrier: string | null;
+            shippingServiceLevel: string | null;
+            trackingNumber: string | null;
+            trackingUrl: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            items: components["schemas"]["CustomerFulfillmentItem"][];
+        };
+        CustomerOrderDetail: {
+            id: number;
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+            /** @enum {string} */
+            fulfillmentStatus: "unfulfilled" | "partially_fulfilled" | "fulfilled";
+            customerName: string | null;
+            customerEmail: string | null;
+            shipping: components["schemas"]["CustomerOrderShipping"] | null;
+            subtotalCents: number;
+            shippingCents: number;
+            taxCents: number;
+            amountTotalCents: number;
+            payments: components["schemas"]["CustomerOrderPayment"][];
+            items: components["schemas"]["CustomerOrderItem"][];
+            fulfillments: components["schemas"]["CustomerOrderFulfillment"][];
+            /** Format: date-time */
+            createdAt: string;
         };
         CustomerSignUpDto: {
             firstName: string;
@@ -1056,6 +1131,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PaginatedCustomerOrders"];
                 };
+            };
+        };
+    };
+    CustomerOrdersController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerOrderDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -30,8 +30,11 @@ export default tseslint.config(
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
       // rest-siblings are the standard "omit this key" destructure idiom
-      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { ignoreRestSiblings: true },
+      ],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
 );

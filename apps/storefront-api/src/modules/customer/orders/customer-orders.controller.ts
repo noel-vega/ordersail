@@ -1,5 +1,18 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiSecurity } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiSecurity,
+} from '@nestjs/swagger';
 import { CustomerAuthGuard } from '../auth.guard';
 import {
   CurrentCustomer,
@@ -8,6 +21,7 @@ import {
 import { CustomerOrdersService } from './customer-orders.service';
 import { ListCustomerOrdersQueryDto } from './dto/list-customer-orders-query.dto';
 import { PaginatedCustomerOrders } from './entities/paginated-customer-orders.entity';
+import { CustomerOrderDetail } from './entities/customer-order-detail.entity';
 
 @ApiSecurity('AppKey-auth')
 @ApiBearerAuth('CustomerJWT-auth')
@@ -27,5 +41,21 @@ export class CustomerOrdersController {
       customer.sub,
       customer.accountId,
     );
+  }
+
+  @Get(':id')
+  @ApiOkResponse({ type: CustomerOrderDetail })
+  @ApiNotFoundResponse()
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+  ): Promise<CustomerOrderDetail> {
+    const order = await this.customerOrdersService.findOne(
+      id,
+      customer.sub,
+      customer.accountId,
+    );
+    if (!order) throw new NotFoundException();
+    return order;
   }
 }
