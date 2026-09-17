@@ -16,7 +16,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | Tool | Answers | Status |
 |---|---|---|
 | **pino → CloudWatch Logs** | *What happened, step by step?* — searched on demand | this doc |
-| **Sentry** | *What broke, how often, since which release?* — alerts us | OS-67–72 |
+| **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md` |
 | **OpenTelemetry traces** | *Where did the time go across services?* | deferred (OS-94) |
 
@@ -146,7 +146,7 @@ Never log:
 - request or response bodies
 
 If an address is genuinely needed to debug (rare), use `maskEmail()` from `logging`
-(`j***@example.com`). The same rules apply to SNS alert text and Sentry events.
+(`j***@example.com`) — **lands with OS-81**; until then log the user/order/job ID instead. The same rules apply to SNS alert text and Sentry events.
 
 pino's `redact` config (OS-81) censors known keys and headers as a **safety net** — it doesn't
 replace these rules.
@@ -156,7 +156,7 @@ replace these rules.
 **Find the correlation ID**
 
 - From the browser: the `x-request-id` response header in devtools (exposed via CORS, OS-82).
-- From a Sentry issue: the `correlation_id` tag (OS-72).
+- From a Sentry issue: the `correlation_id` tag — *pending: no Sentry integration yet (OS-67, OS-72)*.
 - From an order or job: search by `orderId` / `jobId` first, then read `correlationId` off the line.
 
 **Local dev** — the apps log to the terminal running `npm run dev` (`npm run logs` only
@@ -204,3 +204,6 @@ fields @timestamp, service, event, msg, orderId, disputeId
 | filter alert = 1
 | sort @timestamp desc
 ```
+
+(`= 1`, not `= true`: Logs Insights exposes JSON booleans as 1/0 and filters must compare
+against 1/0.)
