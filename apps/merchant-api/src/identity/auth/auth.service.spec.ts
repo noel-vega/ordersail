@@ -5,6 +5,7 @@ import { ConflictException } from '@nestjs/common';
 import { authenticator } from 'otplib';
 import * as bcrypt from 'bcryptjs';
 import { encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
+import { hashToken } from 'src/shared/common/generate-token.util';
 import {
   useTestDb,
   insertAccount,
@@ -398,6 +399,15 @@ describe('AuthService.requestPasswordReset (OS-469)', () => {
       user.email,
       expect.objectContaining({ firstName: user.firstname }),
     );
+
+    // OS-476: only the digest of the emailed token is stored
+    const [, params] = emailMock.sendPasswordResetEmail.mock.calls[0] as [
+      string,
+      { resetUrl: string },
+    ];
+    const emailed = new URL(params.resetUrl).searchParams.get('token')!;
+    expect(reset.token).not.toBe(emailed);
+    expect(reset.token).toBe(hashToken(emailed));
   });
 
   it('replaces an existing pending reset instead of accumulating rows', async () => {
@@ -477,6 +487,10 @@ describe('AuthService.resetPassword (OS-469)', () => {
   it('sets the new password, consumes the token, and revokes all sessions', async () => {
     const user = await seedActiveUser();
     const reset = await insertUserPasswordReset(db, { userId: user.id });
+    // fixture returns the full row (not just the overridden raw token)
+    expect(typeof reset.id).toBe('number');
+    expect(reset.userId).toBe(user.id);
+    expect(reset.expiresAt).toBeInstanceOf(Date);
     await db.insert(userRefreshTokensTable).values([
       { userId: user.id, jti: 'jti-1', familyId: 'family-1' },
       { userId: user.id, jti: 'jti-2', familyId: 'family-2' },
@@ -494,7 +508,7 @@ describe('AuthService.resetPassword (OS-469)', () => {
     const remaining = await db
       .select()
       .from(userPasswordResetsTable)
-      .where(eq(userPasswordResetsTable.token, reset.token));
+      .where(eq(userPasswordResetsTable.userId, user.id));
     expect(remaining).toHaveLength(0);
 
     const tokens = await db
@@ -578,6 +592,9 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     const verification = await insertUserEmailVerification(db, {
       userId: user.id,
     });
+    expect(typeof verification.id).toBe('number');
+    expect(verification.userId).toBe(user.id);
+    expect(verification.expiresAt).toBeInstanceOf(Date);
     const service = await build();
 
     const result = await service.verifyEmail(user.id, verification.token);
@@ -596,7 +613,7 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     const remaining = await db
       .select()
       .from(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.token, verification.token));
+      .where(eq(userEmailVerificationsTable.userId, user.id));
     expect(remaining).toHaveLength(0);
   });
 
@@ -684,6 +701,15 @@ describe('AuthService.resendVerification (OS-470)', () => {
       user.email,
       expect.objectContaining({ firstName: user.firstname }),
     );
+
+    // OS-476: only the digest of the emailed token is stored
+    const [, params] = emailMock.sendVerificationEmail.mock.calls[0] as [
+      string,
+      { verifyUrl: string },
+    ];
+    const emailed = new URL(params.verifyUrl).searchParams.get('token')!;
+    expect(verification.token).not.toBe(emailed);
+    expect(verification.token).toBe(hashToken(emailed));
   });
 
   it('replaces an existing pending verification instead of accumulating rows', async () => {

@@ -20,7 +20,10 @@ import { AuthMe } from './entities/auth-me.entity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
 import { env } from 'src/shared/env';
-import { generateToken } from 'src/shared/common/generate-token.util';
+import {
+  generateToken,
+  hashToken,
+} from 'src/shared/common/generate-token.util';
 import { decryptMfaSecret, encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
 import { generateRecoveryCodes } from 'src/shared/mfa/recovery-codes.util';
 import {
@@ -629,7 +632,7 @@ export class AuthService {
     const [verification] = await this.db
       .select()
       .from(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.token, token));
+      .where(eq(userEmailVerificationsTable.token, hashToken(token)));
 
     // 400, not 401: the caller is authenticated, so a 401 here would read as
     // "your session expired" to the client's refresh-and-retry logic
@@ -697,17 +700,18 @@ export class AuthService {
     firstname: string;
   }): Promise<void> {
     const token = generateToken(32);
+    const tokenHash = hashToken(token);
     await this.db
       .insert(userEmailVerificationsTable)
       .values({
         userId: user.id,
-        token,
+        token: tokenHash,
         expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
       })
       .onConflictDoUpdate({
         target: userEmailVerificationsTable.userId,
         set: {
-          token,
+          token: tokenHash,
           expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
         },
       });
@@ -729,16 +733,20 @@ export class AuthService {
     if (!user || !user.password) return;
 
     const token = generateToken(32);
+    const tokenHash = hashToken(token);
     await this.db
       .insert(userPasswordResetsTable)
       .values({
         userId: user.id,
-        token,
+        token: tokenHash,
         expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
       })
       .onConflictDoUpdate({
         target: userPasswordResetsTable.userId,
-        set: { token, expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS) },
+        set: {
+          token: tokenHash,
+          expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+        },
       });
 
     const resetUrl = `${env.MERCHANT_WEB_URL}/reset-password?token=${token}`;
@@ -757,7 +765,7 @@ export class AuthService {
     const [reset] = await this.db
       .select()
       .from(userPasswordResetsTable)
-      .where(eq(userPasswordResetsTable.token, token));
+      .where(eq(userPasswordResetsTable.token, hashToken(token)));
 
     if (!reset || reset.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid or expired token');
