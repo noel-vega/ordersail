@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
+import { ApiError } from "merchant-sdk";
 import {
   SignInRequestBodySchema,
   type SignInRequestBody,
@@ -9,16 +10,17 @@ import { Input } from "ui/input";
 import { Alert, AlertDescription, AlertTitle } from "ui/alert";
 import { Button } from "ui/button";
 import { useSignInMutation } from "../auth.hooks";
+import { MfaChallengeStep } from "../components/mfa-challenge-step";
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { InfoIcon } from "lucide-react";
-import { AuthenticationError } from "../../../errors";
 import { appConfig } from "../../../config";
 
 export function SignInView() {
   const signInMutation = useSignInMutation();
   const navigate = useNavigate();
   const [errorMessage, setErrorMessage] = useState("");
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
 
   const form = useForm({
     resolver: zodResolver(SignInRequestBodySchema),
@@ -29,13 +31,21 @@ export function SignInView() {
   });
 
   function handleSubmit(formData: SignInRequestBody) {
+    setErrorMessage("");
     signInMutation.mutate(formData, {
       onError: (err) => {
-        if (err instanceof AuthenticationError) {
-          setErrorMessage("Invalid email or password.");
-        }
+        // the API's 401 body is just "Unauthorized" — say what it means
+        setErrorMessage(
+          err instanceof ApiError && err.status !== 401
+            ? err.message
+            : "Invalid email or password.",
+        );
       },
-      onSuccess: () => {
+      onSuccess: (result) => {
+        if (result && "mfaRequired" in result && result.mfaRequired) {
+          setChallengeToken(result.challengeToken);
+          return;
+        }
         navigate({ to: appConfig.homeRoute });
       },
     });
@@ -48,9 +58,19 @@ export function SignInView() {
         <InfoIcon />
         <AlertTitle>Authentication Failed</AlertTitle>
         <AlertDescription>
-          Invalid email or password.
+          {errorMessage}
         </AlertDescription>
       </Alert>
+    );
+  }
+
+  if (challengeToken) {
+    return (
+      <MfaChallengeStep
+        challengeToken={challengeToken}
+        onVerified={() => navigate({ to: appConfig.homeRoute })}
+        onBack={() => setChallengeToken(null)}
+      />
     );
   }
 

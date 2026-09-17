@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { ApiError, type MfaEnrollResponse } from "merchant-sdk";
-import { ShieldCheckIcon } from "lucide-react";
+import { ShieldCheckIcon, InfoIcon } from "lucide-react";
 import { Button } from "ui/button";
+import { Alert, AlertDescription, AlertTitle } from "ui/alert";
 import { useAuthMe } from "../../auth/permissions.hooks";
 import { useEnrollMfaMutation } from "../mfa.hooks";
 import { EnrollMfaDialog } from "../components/enroll-mfa-dialog";
 import { DisableMfaDialog } from "../components/disable-mfa-dialog";
 import { RegenerateCodesDialog } from "../components/regenerate-codes-dialog";
 
-export function SecurityView() {
+export function SecurityView(props: { required?: boolean }) {
   const me = useAuthMe();
   const enroll = useEnrollMfaMutation();
   const [enrollment, setEnrollment] = useState<MfaEnrollResponse | null>(null);
@@ -35,6 +36,17 @@ export function SecurityView() {
   return (
     <div className="max-w-lg space-y-4">
       <h1 className="text-xl font-semibold">Security</h1>
+
+      {props.required && !mfaEnabled && (
+        <Alert>
+          <InfoIcon />
+          <AlertTitle>Two-factor authentication is required</AlertTitle>
+          <AlertDescription>
+            Your account requires MFA for every staff member. Set it up below
+            to continue.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="space-y-4 rounded-lg border p-4">
         <div className="flex items-center justify-between gap-4">
