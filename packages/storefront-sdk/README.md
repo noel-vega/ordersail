@@ -61,6 +61,8 @@ try {
 |                                | `getShippingOptions(body)`               | **yes**              |
 | `storefrontApi.customer`      | `get()`                                  | only unexpectedly²   |
 |                                | `update(params)`                         | **yes**              |
+|                                | `orders.list(query?)`                    | **yes**              |
+|                                | `orders.getById(id)`                     | only unexpectedly¹   |
 | `storefrontApi` (top level)   | `signUp(dto)`                            | **yes**              |
 |                                | `signIn(credentials)`                    | **yes**              |
 |                                | `refreshAccessToken()`                   | only unexpectedly²   |
@@ -73,17 +75,20 @@ still throws for everything else:
 
 ¹ `getById`/`cart.get`/`getSessionStatus` return `undefined` only on a `404`
 (a genuine lookup miss — no such product, no cart yet for this token, no
-such session) — a bad app-key, a `500`, or a network failure throws instead
-of looking identical to "not found."
+such session, no such order for the signed-in customer) — a bad app-key, a
+`500`, or a network failure throws instead of looking identical to "not
+found."
 
 ² `customer.get()`/`refreshAccessToken()` return `undefined` only on a `401`
 (not currently signed in — the everyday case for most visitors) — anything
 else, including a `404` (a customer row missing despite a valid token, which
 would be an anomaly, not a normal state), throws instead.
 
-Not yet supported: **order history** for customers (`storefront-api` has no
-customer-facing order endpoints yet — see Storefront Builder M5) and
-**webhooks/real-time events** (no plans yet).
+`customer.orders.list()`/`getById()` throw on a `401` rather than returning
+`undefined`: call them only once `customer.get()` has told you someone is
+signed in.
+
+Not yet supported: **webhooks/real-time events** (no plans yet).
 
 ## Error handling
 
@@ -163,7 +168,7 @@ still leaves you logged out locally; it just means the now-orphaned refresh
 token stays valid until it expires on its own instead of being revoked
 immediately.
 
-Only `customer.get()`/`customer.update()` retry once on a `401` by calling
+Only `customer.get()`/`customer.update()`/`customer.orders.*` retry once on a `401` by calling
 `refreshAccessToken()` and re-issuing the request — `cart` and `checkout`
 methods don't, and don't need to: they never check the customer JWT at all.
 Cart/checkout identity flows entirely through the `x-cart-token` header

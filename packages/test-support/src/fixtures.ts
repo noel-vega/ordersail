@@ -10,11 +10,15 @@ import {
   cartsTable,
   categoriesTable,
   customersTable,
+  fulfillmentItemsTable,
+  fulfillmentsTable,
   inArray,
   inventoryTable,
   locationsTable,
   orderItemsTable,
+  orderShippingTable,
   orderPaymentsTable,
+  orderRefundLinesTable,
   ordersTable,
   PERMISSIONS_CATALOG,
   permissionsTable,
@@ -656,6 +660,10 @@ export async function insertOrderPayment(
     amountCents?: number;
     stripeCheckoutSessionId?: string | null;
     stripePaymentIntentId?: string | null;
+    // refund rows only
+    stripeRefundId?: string | null;
+    reason?: string | null;
+    parentPaymentId?: number | null;
   },
 ): Promise<Row<typeof orderPaymentsTable>> {
   return one(
@@ -667,6 +675,9 @@ export async function insertOrderPayment(
         amountCents: opts.amountCents ?? 1000,
         stripeCheckoutSessionId: opts.stripeCheckoutSessionId ?? null,
         stripePaymentIntentId: opts.stripePaymentIntentId ?? null,
+        stripeRefundId: opts.stripeRefundId ?? null,
+        reason: opts.reason ?? null,
+        parentPaymentId: opts.parentPaymentId ?? null,
       })
       .returning(),
   );
@@ -700,4 +711,82 @@ export async function insertOrderItem(
       })
       .returning(),
   );
+}
+
+export async function insertOrderShipping(
+  db: TestDb,
+  opts: {
+    orderId: number;
+    locationId?: number | null;
+    line1?: string;
+    line2?: string | null;
+    city?: string;
+    state?: string | null;
+    postalCode?: string;
+    country?: string;
+  },
+): Promise<Row<typeof orderShippingTable>> {
+  const { orderId, locationId, ...address } = opts;
+  return one(
+    await db
+      .insert(orderShippingTable)
+      .values({
+        orderId,
+        locationId: locationId ?? null,
+        ...DEFAULT_ADDRESS,
+        ...address,
+      })
+      .returning(),
+  );
+}
+
+// a purchased label plus the order-item quantities it covers
+export async function insertFulfillment(
+  db: TestDb,
+  opts: {
+    orderId: number;
+    locationId: number;
+    items: { orderItemId: number; quantity: number }[];
+    shippingCarrier?: string | null;
+    shippingServiceLevel?: string | null;
+    trackingNumber?: string | null;
+    trackingUrl?: string | null;
+    labelUrl?: string | null;
+    amountCents?: number;
+  },
+): Promise<Row<typeof fulfillmentsTable>> {
+  const fulfillment = await one(
+    await db
+      .insert(fulfillmentsTable)
+      .values({
+        orderId: opts.orderId,
+        locationId: opts.locationId,
+        shippingCarrier: opts.shippingCarrier ?? 'USPS',
+        shippingServiceLevel: opts.shippingServiceLevel ?? 'Priority Mail',
+        trackingNumber: opts.trackingNumber ?? `TRACK${uniq()}`,
+        trackingUrl: opts.trackingUrl ?? null,
+        labelUrl: opts.labelUrl ?? null,
+        amountCents: opts.amountCents ?? 850,
+      })
+      .returning(),
+  );
+  if (opts.items.length > 0) {
+    await db.insert(fulfillmentItemsTable).values(
+      opts.items.map((i) => ({
+        fulfillmentId: fulfillment.id,
+        orderItemId: i.orderItemId,
+        quantity: i.quantity,
+      })),
+    );
+  }
+  return fulfillment;
+}
+
+// the per-line breakdown of a line-item refund — refundPaymentId is the
+// negative order_payments row the refund was recorded as
+export async function insertOrderRefundLine(
+  db: TestDb,
+  opts: { refundPaymentId: number; orderItemId: number; quantity: number },
+): Promise<Row<typeof orderRefundLinesTable>> {
+  return one(await db.insert(orderRefundLinesTable).values(opts).returning());
 }

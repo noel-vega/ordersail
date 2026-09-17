@@ -17,6 +17,8 @@ import {
   insertAccount,
   insertApiKey,
   insertLocation,
+  insertOrder,
+  insertOrderItem,
   insertProductWithVariants,
   insertStripeAccount,
   useTestDb,
@@ -180,6 +182,30 @@ describe('storefront-sdk contract', () => {
       email,
     });
     expect(updatedCustomer.firstName).toBe('Updated');
+
+    // customer order history — orders are written by the worker, so seed one
+    // linked to the customer we just signed up
+    const emptyHistory = await client.customer.orders.list();
+    expect(emptyHistory.total).toBe(0);
+
+    const order = await insertOrder(db, {
+      accountId: account.id,
+      customerId: updatedCustomer.id,
+      customerEmail: email,
+    });
+    await insertOrderItem(db, { orderId: order.id, quantity: 2 });
+
+    const history = await client.customer.orders.list({ limit: 10 });
+    expect(history.items.map((o) => o.id)).toEqual([order.id]);
+    expect(history.items[0]?.itemCount).toBe(2);
+
+    const detail = await client.customer.orders.getById(order.id);
+    expect(detail?.id).toBe(order.id);
+    expect(detail?.items[0]?.quantity).toBe(2);
+
+    await expect(
+      client.customer.orders.getById(order.id + 1000),
+    ).resolves.toBeUndefined();
   }, 90000);
 
   // OS-459: refreshAccessToken() must capture the server's rotated
