@@ -8,7 +8,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
-  ApiBearerAuth,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiSecurity,
@@ -23,8 +22,9 @@ import { ListCustomerOrdersQueryDto } from './dto/list-customer-orders-query.dto
 import { PaginatedCustomerOrders } from './entities/paginated-customer-orders.entity';
 import { CustomerOrderDetail } from './entities/customer-order-detail.entity';
 
-@ApiSecurity('AppKey-auth')
-@ApiBearerAuth('CustomerJWT-auth')
+// one requirement object = both schemes required (separate decorators would
+// emit two alternatives, i.e. either one alone would satisfy the contract)
+@ApiSecurity({ 'AppKey-auth': [], 'CustomerJWT-auth': [] })
 @Controller('customer/orders')
 @UseGuards(CustomerAuthGuard)
 export class CustomerOrdersController {

@@ -867,10 +867,8 @@
         },
         "security": [
           {
+            "AppKey-auth": [],
             "CustomerJWT-auth": []
-          },
-          {
-            "AppKey-auth": []
           }
         ],
         "tags": [
@@ -904,10 +902,8 @@
         },
         "security": [
           {
+            "AppKey-auth": [],
             "CustomerJWT-auth": []
-          },
-          {
-            "AppKey-auth": []
           }
         ],
         "tags": [
@@ -952,10 +948,8 @@
         },
         "security": [
           {
+            "AppKey-auth": [],
             "CustomerJWT-auth": []
-          },
-          {
-            "AppKey-auth": []
           }
         ],
         "tags": [
@@ -993,10 +987,8 @@
         },
         "security": [
           {
+            "AppKey-auth": [],
             "CustomerJWT-auth": []
-          },
-          {
-            "AppKey-auth": []
           }
         ],
         "tags": [
