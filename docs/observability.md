@@ -69,8 +69,26 @@ dev the same data is pretty-printed.
 Request-context fields (`correlationId`, `accountId`, `userId`, …) are attached automatically
 from AsyncLocalStorage — **don't pass them by hand**.
 
-Access-log lines (one per HTTP request, OS-82) additionally carry `req.method`, `route`
-(the template, e.g. `/orders/:id`), `res.statusCode` and `responseTime` (ms).
+### Access log
+
+`requestLoggingMiddleware()` from `logging` (registered first in each API's `main.ts`) writes
+one line per HTTP request when the response finishes:
+
+```json
+{"level":40,"service":"merchant-api","correlationId":"…","context":"HTTP","event":"http.request",
+ "req":{"method":"GET"},"route":"/orders/:id","res":{"statusCode":401},"responseTime":1.5,
+ "msg":"GET /orders/:id 401"}
+```
+
+- `route` is the matched **template**, never the raw URL or query string (they can carry IDs
+  and tokens); `null` when nothing matched. Express reads `req.route`; Fastify (merchant-api)
+  reports it via `setRequestRoute()` from an `onRequest` hook.
+- Level: 5xx `error`, 4xx `warn`, otherwise `info`. A client disconnect before the response
+  finishes adds `aborted: true`.
+- `/health` is never logged.
+- The same middleware owns the correlation ID: an inbound `x-request-id` is reused only if it
+  matches `^[A-Za-z0-9._:-]{1,128}$` (it's untrusted input that lands on every line), otherwise
+  a UUID is minted. It's echoed on the response and exposed to browsers via CORS.
 
 ## How to log
 
@@ -166,7 +184,7 @@ If an address is genuinely needed to debug (rare), use `maskEmail()` from `loggi
 
 **Find the correlation ID**
 
-- From the browser: the `x-request-id` response header in devtools (exposed via CORS, OS-82).
+- From the browser: the `x-request-id` response header in devtools (readable from JS too).
 - From a Sentry issue: the `correlation_id` tag — *pending: no Sentry integration yet (OS-67, OS-72)*.
 - From an order or job: search by `orderId` / `jobId` first, then read `correlationId` off the line.
 

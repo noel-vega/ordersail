@@ -1,10 +1,8 @@
 import { env } from "./env"; // validates process.env before anything else loads
-import { randomUUID } from "node:crypto";
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule } from "@nestjs/swagger";
-import { Logger, configureLogging, runWithCorrelationId } from "logging";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import { Logger, configureLogging, requestLoggingMiddleware } from "logging";
 import { AppModule } from "./app.module";
 import { createSwaggerConfig } from "./swagger.config";
 
@@ -19,13 +17,9 @@ async function bootstrap() {
   });
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
-  app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
-    const header = req.headers["x-request-id"];
-    const correlationId =
-      (Array.isArray(header) ? header[0] : header) || randomUUID();
-    res.setHeader("x-request-id", correlationId);
-    runWithCorrelationId(correlationId, next);
-  });
+  // correlation ID (reused from a well-formed inbound x-request-id or minted)
+  // + one access log line per request — see docs/observability.md
+  app.use(requestLoggingMiddleware());
 
   // the POS client is a native app, not a browser — CORS is only relevant
   // for the Swagger UI and any web-based tooling
@@ -33,6 +27,7 @@ async function bootstrap() {
     origin: env.POS_WEB_URL ?? true,
     methods: ["GET", "POST", "PATCH", "DELETE"],
     allowedHeaders: ["content-type", "x-pos-device-token", "x-request-id"],
+    exposedHeaders: ["x-request-id"],
   });
 
   const document = SwaggerModule.createDocument(app, createSwaggerConfig());

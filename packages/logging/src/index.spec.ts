@@ -6,8 +6,12 @@ import {
   Logger,
   maskEmail,
   normalizeLogArgs,
+  requestLoggingMiddleware,
   runWithCorrelationId,
+  setRequestRoute,
 } from './index.ts';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 describe('normalizeLogArgs', () => {
   it('pino style: object first, message second', () => {
@@ -224,5 +228,131 @@ describe('maskEmail', () => {
     assert.equal(maskEmail('not-an-email'), '***');
     assert.equal(maskEmail('@example.com'), '***');
     assert.equal(maskEmail('jane@'), '***');
+  });
+});
+
+describe('requestLoggingMiddleware', () => {
+  // a bare node:http server standing in for Nest: the middleware runs first,
+  // then the handler — which can fake Express's req.route or call
+  // setRequestRoute like the Fastify hook does
+  async function withServer(
+    handler: (req: IncomingMessage & { route?: { path: string } }, res: ServerResponse) => void,
+    run: (url: string) => Promise<void>,
+  ) {
+    const middleware = requestLoggingMiddleware();
+    const server = createServer((req, res) => middleware(req, res, () => handler(req, res)));
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      await run(`http://127.0.0.1:${port}`);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+
+  // the access line is written on 'finish', which can land just after the
+  // client has read the response
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it('logs one line per request with the route template, status and correlation ID', async () => {
+    const lines = captureLogs();
+    await withServer(
+      (req, res) => {
+        req.route = { path: '/orders/:id' };
+        res.end('ok');
+      },
+      async (url) => {
+        const response = await fetch(`${url}/orders/42?token=secret`);
+        await response.text();
+        await settle();
+        const [line] = lines;
+        assert.equal(lines.length, 1);
+        assert.equal(line.level, 30);
+        assert.equal(line.event, 'http.request');
+        assert.equal(line.context, 'HTTP');
+        assert.deepEqual(line.req, { method: 'GET' });
+        assert.equal(line.route, '/orders/:id');
+        assert.deepEqual(line.res, { statusCode: 200 });
+        assert.equal(typeof line.responseTime, 'number');
+        assert.equal(line.correlationId, response.headers.get('x-request-id'));
+        assert.equal(line.msg, 'GET /orders/:id 200');
+        const raw = JSON.stringify(line);
+        assert.ok(!raw.includes('/orders/42'));
+        assert.ok(!raw.includes('secret'));
+      },
+    );
+  });
+
+  it('prefers an explicitly reported route (Fastify)', async () => {
+    const lines = captureLogs();
+    await withServer(
+      (req, res) => {
+        setRequestRoute(req, '/products/:productId');
+        res.end();
+      },
+      async (url) => {
+        await (await fetch(`${url}/products/9`)).text();
+        await settle();
+        assert.equal(lines[0].route, '/products/:productId');
+      },
+    );
+  });
+
+  it('logs unmatched 4xx at warn with a null route, 5xx at error', async () => {
+    const lines = captureLogs();
+    await withServer(
+      (req, res) => {
+        res.statusCode = req.url === '/boom' ? 500 : 404;
+        res.end();
+      },
+      async (url) => {
+        await (await fetch(`${url}/nope`)).text();
+        await (await fetch(`${url}/boom`)).text();
+        await settle();
+        assert.equal(lines[0].level, 40);
+        assert.equal(lines[0].route, null);
+        assert.equal(lines[0].msg, 'GET (unmatched) 404');
+        assert.equal(lines[1].level, 50);
+      },
+    );
+  });
+
+  it('skips /health, with or without a query string', async () => {
+    const lines = captureLogs();
+    await withServer(
+      (_req, res) => res.end(),
+      async (url) => {
+        await (await fetch(`${url}/health`)).text();
+        await (await fetch(`${url}/health?probe=alb`)).text();
+        await settle();
+        assert.equal(lines.length, 0);
+      },
+    );
+  });
+
+  it('reuses a well-formed inbound x-request-id and replaces a malformed one', async () => {
+    captureLogs();
+    const seen: (string | undefined)[] = [];
+    await withServer(
+      (_req, res) => {
+        seen.push(getCorrelationId());
+        res.end();
+      },
+      async (url) => {
+        const good = await fetch(url, { headers: { 'x-request-id': 'abc-123.def:4' } });
+        await good.text();
+        assert.equal(good.headers.get('x-request-id'), 'abc-123.def:4');
+
+        for (const bad of ['has spaces', 'x'.repeat(200), '{"json":1}']) {
+          const response = await fetch(url, { headers: { 'x-request-id': bad } });
+          await response.text();
+          const echoed = response.headers.get('x-request-id');
+          assert.notEqual(echoed, bad);
+          assert.match(echoed ?? '', /^[0-9a-f-]{36}$/);
+        }
+        // the handler ran inside the scope with the same ID that was echoed
+        assert.equal(seen[0], 'abc-123.def:4');
+      },
+    );
   });
 });
