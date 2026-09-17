@@ -84,7 +84,7 @@ one line per HTTP request when the response finishes:
   and tokens); `null` when nothing matched. Express reads `req.route`; Fastify (merchant-api)
   reports it via `setRequestRoute()` from an `onRequest` hook.
 - Level: 5xx `error`, 4xx `warn`, otherwise `info`. A client disconnect before the response
-  finishes adds `aborted: true`.
+  finishes logs `aborted: true` at `warn` with **no** `res.statusCode` (none was sent).
 - `/health` is never logged.
 - The same middleware owns the correlation ID: an inbound `x-request-id` is reused only if it
   matches `^[A-Za-z0-9._:-]{1,128}$` (it's untrusted input that lands on every line), otherwise

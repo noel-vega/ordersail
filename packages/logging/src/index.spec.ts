@@ -246,6 +246,8 @@ describe('requestLoggingMiddleware', () => {
     try {
       await run(`http://127.0.0.1:${port}`);
     } finally {
+      // don't wait out the fetch client's idle keep-alive sockets
+      server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
     }
   }
@@ -313,6 +315,42 @@ describe('requestLoggingMiddleware', () => {
         assert.equal(lines[0].route, null);
         assert.equal(lines[0].msg, 'GET (unmatched) 404');
         assert.equal(lines[1].level, 50);
+      },
+    );
+  });
+
+  it('ignores a concrete baseUrl from a mounted router', async () => {
+    const lines = captureLogs();
+    await withServer(
+      (req, res) => {
+        Object.assign(req, { baseUrl: '/callbacks/secret-token', route: { path: '/complete' } });
+        res.end();
+      },
+      async (url) => {
+        await (await fetch(`${url}/callbacks/secret-token/complete`)).text();
+        await settle();
+        assert.equal(lines[0].route, '/complete');
+        assert.ok(!JSON.stringify(lines[0]).includes('secret-token'));
+      },
+    );
+  });
+
+  it('logs a client abort at warn without a status code', async () => {
+    const lines = captureLogs();
+    await withServer(
+      // never responds; the client gives up first
+      () => undefined,
+      async (url) => {
+        const controller = new AbortController();
+        const pending = fetch(`${url}/slow`, { signal: controller.signal }).catch(() => undefined);
+        setTimeout(() => controller.abort(), 30);
+        await pending;
+        for (let i = 0; i < 50 && lines.length === 0; i++) await settle();
+        const [line] = lines;
+        assert.equal(line.aborted, true);
+        assert.equal(line.res, undefined);
+        assert.equal(line.level, 40);
+        assert.equal(line.msg, 'GET (unmatched) aborted');
       },
     );
   });

@@ -317,11 +317,11 @@ export function setRequestRoute(req: IncomingMessage, url: string | undefined): 
 function resolveRoute(req: IncomingMessage): string | null {
   const explicit = routeTemplates.get(req);
   if (explicit) return explicit;
-  const express = req as IncomingMessage & { baseUrl?: string; route?: { path?: unknown } };
-  if (typeof express.route?.path === 'string') {
-    return `${express.baseUrl ?? ''}${express.route.path}`;
-  }
-  return null;
+  // Nest registers every route on the app itself, so req.route.path is already
+  // the full template. req.baseUrl is deliberately ignored: under a mounted
+  // router it holds the *concrete* matched mount path (e.g. a token value).
+  const express = req as IncomingMessage & { route?: { path?: unknown } };
+  return typeof express.route?.path === 'string' ? express.route.path : null;
 }
 
 export type RequestLoggingOptions = {
@@ -355,7 +355,6 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
         if (logged) return;
         logged = true;
         const route = resolveRoute(req);
-        const statusCode = res.statusCode;
         const responseTime = Number(process.hrtime.bigint() - startedAt) / 1e6;
         const fields = {
           // finish/close fire outside the ALS scope, so the store is read
@@ -364,13 +363,15 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
           event: 'http.request',
           req: { method: req.method },
           route,
-          res: { statusCode },
+          // an aborted response never sent a status — res.statusCode would
+          // still read its default 200 and count as a success in queries
+          ...(aborted ? { aborted: true } : { res: { statusCode: res.statusCode } }),
           responseTime: Math.round(responseTime * 10) / 10,
-          ...(aborted ? { aborted: true } : {}),
         };
-        const msg = `${req.method} ${route ?? '(unmatched)'} ${aborted ? 'aborted' : statusCode}`;
-        if (statusCode >= 500) logger.error(fields, msg);
-        else if (statusCode >= 400) logger.warn(fields, msg);
+        const outcome = aborted ? 'aborted' : res.statusCode;
+        const msg = `${req.method} ${route ?? '(unmatched)'} ${outcome}`;
+        if (!aborted && res.statusCode >= 500) logger.error(fields, msg);
+        else if (aborted || res.statusCode >= 400) logger.warn(fields, msg);
         else logger.info(fields, msg);
       };
       res.once('finish', () => writeAccessLine(false));
