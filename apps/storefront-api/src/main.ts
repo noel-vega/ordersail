@@ -4,17 +4,20 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
-import { CorrelatedLogger, runWithCorrelationId } from 'logging';
+import { Logger, configureLogging, runWithCorrelationId } from 'logging';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AppModule } from './app.module';
 import { createSwaggerConfig } from './swagger.config';
 
 async function bootstrap() {
+  configureLogging({
+    service: 'storefront-api',
+    nodeEnv: env.NODE_ENV,
+    level: env.LOG_LEVEL,
+  });
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
-    logger: new CorrelatedLogger(undefined, {
-      json: env.NODE_ENV === 'production',
-    }),
+    logger: new Logger(),
   });
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 

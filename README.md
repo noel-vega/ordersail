@@ -86,7 +86,7 @@ An Nx-managed npm workspace monorepo.
 | `packages/queue` | Shared BullMQ queue names + job type definitions | BullMQ, ioredis |
 | `packages/storage` | S3/MinIO client wrapper — presigned uploads, public-read bucket | AWS SDK v3 |
 | `packages/email` / `email-templates` | Nodemailer transport + React Email templates | nodemailer, react-email |
-| `packages/logging` | Correlated request logger shared by the NestJS apps | — |
+| `packages/logging` | pino logger + correlation-ID context shared by the NestJS apps (see `docs/observability.md`) | pino |
 | `packages/seed` | Local dev seed — demo "Sneaker Depot" catalog + images | tsx |
 | `packages/ui` | Shared component library used by both React apps | React, Tailwind |
 

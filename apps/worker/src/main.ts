@@ -2,7 +2,7 @@
 // anything else — nothing else in this app imports env early enough
 import { env } from './env';
 import { NestFactory } from '@nestjs/core';
-import { CorrelatedLogger } from 'logging';
+import { Logger, configureLogging } from 'logging';
 import { AppModule } from './app.module';
 
 // still no user-facing HTTP API — this only keeps @Processor classes alive
@@ -10,10 +10,13 @@ import { AppModule } from './app.module';
 // modules/health), so an orchestrator/liveness probe can tell this process
 // apart from one that's silently wedged (e.g. after a Redis outage)
 async function bootstrap() {
+  configureLogging({
+    service: 'worker',
+    nodeEnv: env.NODE_ENV,
+    level: env.LOG_LEVEL,
+  });
   const app = await NestFactory.create(AppModule, {
-    logger: new CorrelatedLogger(undefined, {
-      json: env.NODE_ENV === 'production',
-    }),
+    logger: new Logger(),
   });
   await app.listen(env.PORT);
 }

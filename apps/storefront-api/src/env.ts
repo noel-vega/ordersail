@@ -1,4 +1,5 @@
 import { parseEnv, z } from 'config';
+import { LOG_LEVELS } from 'logging';
 
 // Parsed once, on import. `main.ts` imports this module first so a bad env
 // fails before Nest wires anything up. Schema mirrors the old `?? default`
@@ -25,5 +26,7 @@ export const env = parseEnv(
     NODE_ENV: z
       .enum(['development', 'test', 'production'])
       .default('development'),
+    // unset → info in production, debug elsewhere (see docs/observability.md)
+    LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
   }),
 );
