@@ -3,6 +3,7 @@ import {
   CatchBoundary,
   createFileRoute,
   Outlet,
+  redirect,
   useRouterState,
 } from "@tanstack/react-router";
 import { AppSidebar } from "../../components/app-sidebar";
@@ -14,11 +15,26 @@ import { queryClient } from "../../lib/react-query-client";
 import { getAuthMeQueryOptions } from "../../features/auth/permissions.hooks";
 import { PermissionProvider } from "../../features/auth/permission-context";
 
+// the one route a caller gated by MfaEnrollmentGuard (OS-473) can still
+// reach — enrolling is how they satisfy the gate in the first place
+const MFA_ENROLLMENT_ROUTE = "/app/settings/security";
+
 export const Route = createFileRoute("/app")({
   // load the current user's effective permissions once on entering /app and
-  // expose them on the router context so child routes' beforeLoad can gate
-  beforeLoad: async () => {
+  // expose them on the router context so child routes' beforeLoad can gate.
+  // Also redirects into forced MFA enrollment (OS-475) when the account
+  // requires it and this user hasn't finished — mirrors requirePermission()'s
+  // redirect-to-/app/403 shape, but applies to every route instead of an
+  // opt-in few, since the backend guard blocks almost everything too.
+  beforeLoad: async ({ location }) => {
     const me = await queryClient.ensureQueryData(getAuthMeQueryOptions());
+    if (
+      me &&
+      !me.mfaEnrollmentSatisfied &&
+      location.pathname !== MFA_ENROLLMENT_ROUTE
+    ) {
+      throw redirect({ to: MFA_ENROLLMENT_ROUTE, search: { required: true } });
+    }
     return {
       userId: me?.userId,
       permissions: new Set(me?.permissions ?? []),
