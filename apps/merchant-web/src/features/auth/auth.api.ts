@@ -31,3 +31,15 @@ export const AcceptInviteRequestBodySchema = z.object({
 });
 
 export type AcceptInviteRequestBody = z.infer<typeof AcceptInviteRequestBodySchema>
+export const ForgotPasswordRequestBodySchema = z.object({
+  email: z.email(),
+});
+
+export type ForgotPasswordRequestBody = z.infer<typeof ForgotPasswordRequestBodySchema>
+
+// same 12-char floor as signup; strength/breach rejection comes from the API
+export const ResetPasswordFormSchema = z.object({
+  password: z.string().min(12, "Use at least 12 characters"),
+});
+
+export type ResetPasswordForm = z.infer<typeof ResetPasswordFormSchema>

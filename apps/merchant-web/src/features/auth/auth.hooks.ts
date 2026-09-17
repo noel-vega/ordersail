@@ -95,6 +95,26 @@ export function useRecheckEmailVerifiedMutation(){
     })
 }
 
+export function useForgotPasswordMutation(){
+    return useMutation({
+        meta: { skipGlobalErrorToast: true },
+        mutationFn: (params: Parameters<typeof merchantApi.forgotPassword>[0]) =>
+            merchantApi.forgotPassword(params),
+    })
+}
+
+// the API revokes every session for the user on success, so any cached
+// identity in this tab is stale too
+export function useResetPasswordMutation(){
+    const resetQueryCache = useResetQueryCache()
+    return useMutation({
+        meta: { skipGlobalErrorToast: true },
+        mutationFn: (params: Parameters<typeof merchantApi.resetPassword>[0]) =>
+            merchantApi.resetPassword(params),
+        onSuccess: resetQueryCache,
+    })
+}
+
 export function useLogoutMutation(){
     const resetQueryCache = useResetQueryCache()
     return useMutation({
