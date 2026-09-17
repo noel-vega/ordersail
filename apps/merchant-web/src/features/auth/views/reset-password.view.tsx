@@ -11,10 +11,10 @@ import { Button } from "ui/button";
 import { ResetPasswordFormSchema, type ResetPasswordForm } from "../auth.api";
 import { useResetPasswordMutation } from "../auth.hooks";
 
-export function ResetPasswordView(props: { token: string }) {
+export function ResetPasswordView(props: { token?: string }) {
   const reset = useResetPasswordMutation();
   const navigate = useNavigate();
-  const [linkInvalid, setLinkInvalid] = useState(false);
+  const [linkInvalid, setLinkInvalid] = useState(!props.token);
   const [errorMessage, setErrorMessage] = useState("");
 
   const form = useForm<ResetPasswordForm>({
@@ -24,11 +24,13 @@ export function ResetPasswordView(props: { token: string }) {
 
   function handleSubmit(data: ResetPasswordForm) {
     setErrorMessage("");
+    if (!props.token) return setLinkInvalid(true);
     reset.mutate(
       { token: props.token, password: data.password },
       {
-        // signs every session out server-side and never logs in — the user
-        // signs in fresh (and still passes MFA if they have it)
+        // never logs in: the reset user's sessions are revoked server-side
+        // and this browser is signed out (see useResetPasswordMutation), so
+        // they sign in fresh — still passing MFA if they have it
         onSuccess: () => navigate({ to: "/signin", search: { reset: true } }),
         onError: (err) => {
           if (err instanceof ApiError && err.status === 401) {
