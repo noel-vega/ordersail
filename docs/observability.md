@@ -51,7 +51,7 @@ dev the same data is pretty-printed.
 |---|---|---|
 | `level` | pino | numeric: 20 debug, 30 info, 40 warn, 50 error, 60 fatal |
 | `time` | pino | epoch ms |
-| `service`, `env` | `LoggingModule.forRoot` | constant per process |
+| `service`, `env` | `configureLogging()` in `main.ts` | constant per process |
 | `context` | `new Logger(X.name)` | class that logged |
 | `msg` | caller | short, human, **no interpolated IDs or PII** |
 | `correlationId` | request middleware / job processor | always present inside a request or job |
@@ -146,7 +146,8 @@ Never log:
 - request or response bodies
 
 If an address is genuinely needed to debug (rare), use `maskEmail()` from `logging`
-(`j***@example.com`) — **lands with OS-81**; until then log the user/order/job ID instead. The same rules apply to SNS alert text and Sentry events.
+(`j***@example.com`) — **lands with OS-81**; until then log the user/order/job ID instead.
+The same rules apply to SNS alert text and Sentry events.
 
 pino's `redact` config (OS-81) censors known keys and headers as a **safety net** — it doesn't
 replace these rules.
