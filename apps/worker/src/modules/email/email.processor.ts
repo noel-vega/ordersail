@@ -159,7 +159,7 @@ export class EmailProcessor extends WorkerHost {
   @OnWorkerEvent('completed')
   onCompleted(job: Job<EmailJobData>) {
     runWithCorrelationId(job.data.correlationId, () => {
-      this.logger.log(`Job ${job.id} (${job.name}) sent to ${job.data.to}`);
+      this.logger.log(`Job ${job.id} (${job.name}) sent`);
     });
   }
 }

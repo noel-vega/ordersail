@@ -412,7 +412,6 @@ export class OrdersProcessor extends WorkerHost {
           `Checkout session: ${data.stripeCheckoutSessionId}`,
           `Payment intent:   ${data.stripePaymentIntentId}`,
           `Account:          ${data.accountId}`,
-          `Customer:         ${data.customerEmail}`,
           `Amount:           ${(data.amountTotalCents / 100).toFixed(2)}`,
           `Error:            ${err.message}`,
           `Failed at:        ${new Date().toISOString()}`,

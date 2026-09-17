@@ -35,7 +35,7 @@ export class EmailService {
       );
     } catch (err) {
       this.logger.error(
-        `Failed to enqueue invite email for ${to}`,
+        'Failed to enqueue invite email',
         err instanceof Error ? err.stack : err,
       );
     }
@@ -58,7 +58,7 @@ export class EmailService {
       );
     } catch (err) {
       this.logger.error(
-        `Failed to enqueue verification email for ${to}`,
+        'Failed to enqueue verification email',
         err instanceof Error ? err.stack : err,
       );
     }
@@ -81,7 +81,7 @@ export class EmailService {
       );
     } catch (err) {
       this.logger.error(
-        `Failed to enqueue password reset email for ${to}`,
+        'Failed to enqueue password reset email',
         err instanceof Error ? err.stack : err,
       );
     }

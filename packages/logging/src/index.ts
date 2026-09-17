@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { LoggerService } from '@nestjs/common';
-import { pino, type Logger as PinoLogger } from 'pino';
+import { pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
 
 // ---------------------------------------------------------------------------
 // correlation context
@@ -34,7 +34,90 @@ export type ConfigureLoggingOptions = {
   nodeEnv: 'development' | 'test' | 'production';
   // falls back to info in production, debug elsewhere
   level?: LogLevel;
+  // tests only: capture output instead of stdout / pino-pretty
+  destination?: DestinationStream;
 };
+
+// ---------------------------------------------------------------------------
+// redaction & serializers — the safety net behind docs/observability.md's
+// "Personal data & secrets" rules; call sites still must not log PII
+// ---------------------------------------------------------------------------
+
+// Keys censored wherever they appear at the top level of a log call's fields
+// or one level below (pino/fast-redact has no recursive wildcard — deeper
+// nesting isn't covered, which is one more reason not to log whole payloads).
+//
+// Deliberately absent: `to` (also means a status transition target),
+// `code` (Stripe/Node error codes), `address`/`name` (too generic). Call
+// sites that would put PII under those keys are fixed instead.
+const SENSITIVE_KEYS = [
+  'password',
+  'newPassword',
+  'currentPassword',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'secret',
+  'apiKey',
+  'cartToken',
+  'totp',
+  'mfaCode',
+  'email',
+  'customerEmail',
+  'phone',
+];
+
+export const REDACT_PATHS = [
+  // HTTP request/response logging (OS-82)
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'req.headers["x-app-key"]',
+  'req.headers["x-pos-device-token"]',
+  'req.headers["x-cart-token"]',
+  'res.headers["set-cookie"]',
+  ...SENSITIVE_KEYS,
+  ...SENSITIVE_KEYS.map((key) => `*.${key}`),
+];
+
+// Fields kept from an error. pino's default serializer copies every
+// enumerable property, which for provider SDK errors means Stripe's `raw` /
+// `headers` or Shippo's `rawResponse` / `body` — request params and customer
+// data. Allow-list instead.
+const ERROR_FIELDS = ['code', 'statusCode', 'requestId', 'param'] as const;
+
+type SerializedError = {
+  type: string;
+  message: string;
+  stack?: string;
+  cause?: unknown;
+} & Partial<Record<(typeof ERROR_FIELDS)[number], unknown>>;
+
+export function serializeError(err: unknown, depth = 0): unknown {
+  if (!(err instanceof Error)) return err;
+  const out: SerializedError = {
+    type: err.constructor?.name ?? err.name,
+    message: err.message,
+    stack: err.stack,
+  };
+  const source = err as unknown as Record<string, unknown>;
+  for (const field of ERROR_FIELDS) {
+    if (source[field] !== undefined) out[field] = source[field];
+  }
+  if (err.cause !== undefined && depth < 3) {
+    out.cause = serializeError(err.cause, depth + 1);
+  }
+  return out;
+}
+
+// j***@example.com — for the rare case an address is genuinely needed
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at < 1 || at === email.length - 1) return '***';
+  return `${email[0]}***${email.slice(at)}`;
+}
+
+const redact = { paths: REDACT_PATHS, censor: '[REDACTED]' };
+const serializers = { err: serializeError };
 
 // stamps the ambient correlation ID onto every line; request-context fields
 // (accountId, userId, …) join it here in OS-479
@@ -49,6 +132,8 @@ function mixin(): Record<string, unknown> {
 let root: PinoLogger = pino({
   level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
   mixin,
+  redact,
+  serializers,
 });
 
 // Called once at the top of each service's main.ts, before NestFactory.create.
@@ -57,10 +142,19 @@ let root: PinoLogger = pino({
 // docs/observability.md.
 export function configureLogging(options: ConfigureLoggingOptions): PinoLogger {
   const isProduction = options.nodeEnv === 'production';
-  root = pino({
+  const loggerOptions = {
     level: options.level ?? (isProduction ? 'info' : 'debug'),
     base: { service: options.service, env: options.nodeEnv },
     mixin,
+    redact,
+    serializers,
+  };
+  if (options.destination) {
+    root = pino(loggerOptions, options.destination);
+    return root;
+  }
+  root = pino({
+    ...loggerOptions,
     ...(isProduction
       ? {}
       : {

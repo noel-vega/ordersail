@@ -35,7 +35,7 @@ export class EmailService {
       );
     } catch (err) {
       this.logger.error(
-        `Failed to enqueue thank-you email for ${to}`,
+        'Failed to enqueue thank-you email',
         err instanceof Error ? err.stack : err,
       );
     }

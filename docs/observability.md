@@ -146,11 +146,20 @@ Never log:
 - request or response bodies
 
 If an address is genuinely needed to debug (rare), use `maskEmail()` from `logging`
-(`j***@example.com`) — **lands with OS-81**; until then log the user/order/job ID instead.
-The same rules apply to SNS alert text and Sentry events.
+(`j***@example.com`). The same rules apply to SNS alert text and Sentry events.
 
-pino's `redact` config (OS-81) censors known keys and headers as a **safety net** — it doesn't
-replace these rules.
+`packages/logging` is the **safety net**, not a replacement for these rules:
+
+- `REDACT_PATHS` censors credential headers (`authorization`, `cookie`, `set-cookie`,
+  `x-app-key`, `x-pos-device-token`, `x-cart-token`) and keys such as `password`, `token`,
+  `secret`, `apiKey`, `cartToken`, `email`, `customerEmail`, `phone` — as `[REDACTED]`.
+- Keys are only matched at the top level of the fields object **or one level below**
+  (pino has no recursive wildcard). Deeper payloads aren't covered — don't log them.
+- Generic keys (`to`, `code`, `name`, `address`) are intentionally not redacted; don't put
+  PII under them.
+- `err` is serialized from an allow-list (`type`, `message`, `stack`, `code`, `statusCode`,
+  `requestId`, `param`, `cause`), so provider error payloads (Stripe `raw`/`headers`, Shippo
+  `rawResponse`/`body`) never reach the log.
 
 ## Tracing a bug
 
