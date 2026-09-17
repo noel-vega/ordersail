@@ -915,6 +915,54 @@
         ]
       }
     },
+    "/customer/orders": {
+      "get": {
+        "operationId": "CustomerOrdersController_findAll",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedCustomerOrders"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CustomerJWT-auth": []
+          },
+          {
+            "AppKey-auth": []
+          }
+        ],
+        "tags": [
+          "CustomerOrders"
+        ]
+      }
+    },
     "/auth/signup": {
       "post": {
         "operationId": "AuthController_signup",
@@ -1973,6 +2021,77 @@
             "type": "string"
           }
         }
+      },
+      "CustomerOrderSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "canceled",
+              "payment_failed"
+            ]
+          },
+          "fulfillmentStatus": {
+            "type": "string",
+            "enum": [
+              "unfulfilled",
+              "partially_fulfilled",
+              "fulfilled"
+            ]
+          },
+          "itemCount": {
+            "type": "number"
+          },
+          "amountTotalCents": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "fulfillmentStatus",
+          "itemCount",
+          "amountTotalCents",
+          "createdAt"
+        ]
+      },
+      "PaginatedCustomerOrders": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerOrderSummary"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
       },
       "CustomerSignUpDto": {
         "type": "object",

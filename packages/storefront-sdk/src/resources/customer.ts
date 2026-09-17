@@ -19,5 +19,18 @@ export function createCustomerResource(client: Client<paths>, doRequest: DoFn) {
       );
       return unwrap(result);
     },
+
+    // the signed-in customer's order history. Unlike get(), a 401 throws —
+    // callers should only reach this once they know someone is signed in
+    orders: {
+      list: async (
+        query: paths["/customer/orders"]["get"]["parameters"]["query"] = {},
+      ) => {
+        const result = await doRequest(() =>
+          client.GET("/customer/orders", { params: { query } }),
+        );
+        return unwrap(result);
+      },
+    },
   };
 }

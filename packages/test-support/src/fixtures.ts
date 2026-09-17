@@ -10,10 +10,13 @@ import {
   cartsTable,
   categoriesTable,
   customersTable,
+  fulfillmentItemsTable,
+  fulfillmentsTable,
   inArray,
   inventoryTable,
   locationsTable,
   orderItemsTable,
+  orderShippingTable,
   orderPaymentsTable,
   ordersTable,
   PERMISSIONS_CATALOG,
@@ -700,4 +703,66 @@ export async function insertOrderItem(
       })
       .returning(),
   );
+}
+
+export async function insertOrderShipping(
+  db: TestDb,
+  opts: { orderId: number; locationId?: number | null } & Partial<
+    typeof DEFAULT_ADDRESS
+  >,
+): Promise<Row<typeof orderShippingTable>> {
+  const { orderId, locationId, ...address } = opts;
+  return one(
+    await db
+      .insert(orderShippingTable)
+      .values({
+        orderId,
+        locationId: locationId ?? null,
+        ...DEFAULT_ADDRESS,
+        ...address,
+      })
+      .returning(),
+  );
+}
+
+// a purchased label plus the order-item quantities it covers
+export async function insertFulfillment(
+  db: TestDb,
+  opts: {
+    orderId: number;
+    locationId: number;
+    items: { orderItemId: number; quantity: number }[];
+    shippingCarrier?: string | null;
+    shippingServiceLevel?: string | null;
+    trackingNumber?: string | null;
+    trackingUrl?: string | null;
+    labelUrl?: string | null;
+    amountCents?: number;
+  },
+): Promise<Row<typeof fulfillmentsTable>> {
+  const fulfillment = await one(
+    await db
+      .insert(fulfillmentsTable)
+      .values({
+        orderId: opts.orderId,
+        locationId: opts.locationId,
+        shippingCarrier: opts.shippingCarrier ?? 'USPS',
+        shippingServiceLevel: opts.shippingServiceLevel ?? 'Priority Mail',
+        trackingNumber: opts.trackingNumber ?? `TRACK${uniq()}`,
+        trackingUrl: opts.trackingUrl ?? null,
+        labelUrl: opts.labelUrl ?? null,
+        amountCents: opts.amountCents ?? 850,
+      })
+      .returning(),
+  );
+  if (opts.items.length > 0) {
+    await db.insert(fulfillmentItemsTable).values(
+      opts.items.map((i) => ({
+        fulfillmentId: fulfillment.id,
+        orderItemId: i.orderItemId,
+        quantity: i.quantity,
+      })),
+    );
+  }
+  return fulfillment;
 }

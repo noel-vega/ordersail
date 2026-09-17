@@ -244,6 +244,22 @@ export interface paths {
         patch: operations["CustomerController_update"];
         trace?: never;
     };
+    "/customer/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CustomerOrdersController_findAll"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/signup": {
         parameters: {
             query?: never;
@@ -506,6 +522,23 @@ export interface components {
             firstName?: string;
             lastName?: string;
             email?: string;
+        };
+        CustomerOrderSummary: {
+            id: number;
+            /** @enum {string} */
+            status: "pending" | "paid" | "partially_refunded" | "refunded" | "canceled" | "payment_failed";
+            /** @enum {string} */
+            fulfillmentStatus: "unfulfilled" | "partially_fulfilled" | "fulfilled";
+            itemCount: number;
+            amountTotalCents: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PaginatedCustomerOrders: {
+            items: components["schemas"]["CustomerOrderSummary"][];
+            total: number;
+            limit: number;
+            offset: number;
         };
         CustomerSignUpDto: {
             firstName: string;
@@ -1000,6 +1033,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Customer"];
+                };
+            };
+        };
+    };
+    CustomerOrdersController_findAll: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedCustomerOrders"];
                 };
             };
         };
