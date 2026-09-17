@@ -122,9 +122,12 @@ export function normalizeLogArgs(
 
   const msg = typeof first === 'string' ? first : String(first);
   const extras = [...rest];
-  // Nest passes the context name as the trailing string argument
+  // Nest's own Logger appends its context as the trailing string when it
+  // forwards to the app logger — which is constructed without a context. A
+  // logger that already has one never receives that, so a trailing string
+  // there is caller detail (e.g. a non-Error rejection reason), not a context.
   const last = extras[extras.length - 1];
-  if (typeof last === 'string' && !looksLikeStack(last)) {
+  if (!context && typeof last === 'string' && !looksLikeStack(last)) {
     fields.context = extras.pop();
   }
   for (const extra of extras) {

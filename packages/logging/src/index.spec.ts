@@ -52,6 +52,13 @@ describe('normalizeLogArgs', () => {
     assert.deepEqual(normalizeLogArgs('Svc', err, []), [{ context: 'Svc', err }, 'boom']);
   });
 
+  it('Nest style: a plain-string detail on a logger with its own context stays detail', () => {
+    assert.deepEqual(normalizeLogArgs('EmailService', 'Failed to enqueue', ['queue unavailable']), [
+      { context: 'EmailService', detail: 'queue unavailable' },
+      'Failed to enqueue',
+    ]);
+  });
+
   it('non-Error, non-string extras land in detail', () => {
     assert.deepEqual(normalizeLogArgs('Svc', 'odd rejection', [{ code: 42 }]), [
       { context: 'Svc', detail: { code: 42 } },
