@@ -12,7 +12,10 @@ import { PaginatedUsers } from './entities/paginated-users.entity';
 import { EmailService } from 'src/shared/email/email.service';
 import { resolvePageParams } from 'src/shared/pagination';
 import { PermissionsService } from '../permissions/permissions.service';
-import { generateToken } from '../../shared/common/generate-token.util';
+import {
+  generateToken,
+  hashToken,
+} from '../../shared/common/generate-token.util';
 import { resolveOwned } from '../shared/resolve-owned.util';
 import { groupBy } from '../shared/group-by.util';
 import { assertCanGrant } from '../shared/assert-can-grant.util';
@@ -91,7 +94,7 @@ export class UsersService {
       .select({ user: usersTable, expiresAt: userInvitesTable.expiresAt })
       .from(userInvitesTable)
       .innerJoin(usersTable, eq(userInvitesTable.userId, usersTable.id))
-      .where(eq(userInvitesTable.token, token));
+      .where(eq(userInvitesTable.token, hashToken(token)));
 
     return row;
   }
@@ -217,7 +220,7 @@ export class UsersService {
         const token = generateToken(32);
         await tx.insert(userInvitesTable).values({
           userId: user.id,
-          token,
+          token: hashToken(token),
           expiresAt: new Date(Date.now() + INVITE_TTL_MS),
         });
 
@@ -639,7 +642,10 @@ export class UsersService {
     const token = generateToken(32);
     const [invite] = await this.db
       .update(userInvitesTable)
-      .set({ token, expiresAt: new Date(Date.now() + INVITE_TTL_MS) })
+      .set({
+        token: hashToken(token),
+        expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+      })
       .where(eq(userInvitesTable.userId, userId))
       .returning();
 
