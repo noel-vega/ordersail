@@ -113,7 +113,7 @@ export async function insertUserInvite(
   opts: { userId: number; token?: string; expiresAt?: Date },
 ): Promise<Row<typeof userInvitesTable>> {
   const token = opts.token ?? `invite-${uniq()}`;
-  const row = one(
+  const row = await one(
     await db
       .insert(userInvitesTable)
       .values({
@@ -137,7 +137,7 @@ export async function insertUserPasswordReset(
   opts: { userId: number; token?: string; expiresAt?: Date },
 ): Promise<Row<typeof userPasswordResetsTable>> {
   const token = opts.token ?? `reset-${uniq()}`;
-  const row = one(
+  const row = await one(
     await db
       .insert(userPasswordResetsTable)
       .values({
@@ -160,7 +160,7 @@ export async function insertUserEmailVerification(
   opts: { userId: number; token?: string; expiresAt?: Date },
 ): Promise<Row<typeof userEmailVerificationsTable>> {
   const token = opts.token ?? `verify-${uniq()}`;
-  const row = one(
+  const row = await one(
     await db
       .insert(userEmailVerificationsTable)
       .values({

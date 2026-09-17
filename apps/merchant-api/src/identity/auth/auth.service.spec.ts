@@ -487,6 +487,10 @@ describe('AuthService.resetPassword (OS-469)', () => {
   it('sets the new password, consumes the token, and revokes all sessions', async () => {
     const user = await seedActiveUser();
     const reset = await insertUserPasswordReset(db, { userId: user.id });
+    // fixture returns the full row (not just the overridden raw token)
+    expect(typeof reset.id).toBe('number');
+    expect(reset.userId).toBe(user.id);
+    expect(reset.expiresAt).toBeInstanceOf(Date);
     await db.insert(userRefreshTokensTable).values([
       { userId: user.id, jti: 'jti-1', familyId: 'family-1' },
       { userId: user.id, jti: 'jti-2', familyId: 'family-2' },
@@ -588,6 +592,9 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     const verification = await insertUserEmailVerification(db, {
       userId: user.id,
     });
+    expect(typeof verification.id).toBe('number');
+    expect(verification.userId).toBe(user.id);
+    expect(verification.expiresAt).toBeInstanceOf(Date);
     const service = await build();
 
     const result = await service.verifyEmail(user.id, verification.token);

@@ -301,6 +301,9 @@ describe('UsersService.resendInvite (OS-185)', () => {
       token: 'old-token',
       expiresAt: new Date(Date.now() - 1000),
     });
+    expect(typeof invite.id).toBe('number');
+    expect(invite.userId).toBe(user.id);
+    expect(invite.token).toBe('old-token');
     const service = await build();
 
     const result = await service.resendInvite(user.id, account.id);
