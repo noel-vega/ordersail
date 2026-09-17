@@ -57,6 +57,34 @@ export function useVerifyMfaChallengeMutation(){
     })
 }
 
+export function useVerifyEmailMutation(){
+    const resetQueryCache = useResetQueryCache()
+    return useMutation({
+        meta: { skipGlobalErrorToast: true },
+        mutationFn: (params: Parameters<typeof merchantApi.verifyEmail>[0]) =>
+            merchantApi.verifyEmail(params),
+        onSuccess: resetQueryCache,
+    })
+}
+
+export function useResendVerificationMutation(){
+    return useMutation({
+        meta: { skipGlobalErrorToast: true },
+        mutationFn: () => merchantApi.resendVerification(),
+    })
+}
+
+// for a tab that stayed open while the link was used elsewhere — its access
+// token still carries emailVerified: false, and a refresh recomputes it
+export function useRecheckEmailVerifiedMutation(){
+    const resetQueryCache = useResetQueryCache()
+    return useMutation({
+        meta: { skipGlobalErrorToast: true },
+        mutationFn: () => merchantApi.refreshAccessToken(),
+        onSuccess: resetQueryCache,
+    })
+}
+
 export function useLogoutMutation(){
     const resetQueryCache = useResetQueryCache()
     return useMutation({

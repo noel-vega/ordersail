@@ -224,6 +224,22 @@ export class AdminClient {
     return this.accessToken;
   }
 
+  // public — the emailed link may be opened with no session at all. Logs the
+  // caller in (access token + refresh cookie), like signIn()
+  async verifyEmail(params: components["schemas"]["VerifyEmailDto"]) {
+    const result = unwrap(
+      await this.client.POST("/auth/verify-email", { body: params }),
+    );
+    this.accessToken = result.access_token;
+    return this.accessToken;
+  }
+
+  async resendVerification() {
+    unwrap(
+      await this.do(() => this.client.POST("/auth/verify-email/resend")),
+    );
+  }
+
   async refreshAccessToken() {
     // POST, not GET — this now mutates server-side refresh-token state
     // (rotation), so it shouldn't be reachable via prefetch/link-scanning

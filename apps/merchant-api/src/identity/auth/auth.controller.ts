@@ -325,9 +325,12 @@ export class AuthController {
   // reach this in order to get verified) but still requires a real session
   // — resends to the caller's own account, not an arbitrary email, so
   // there's no new enumeration surface the way forgot-password has to
-  // guard against
+  // guard against. Also exempt from MfaEnrollmentGuard: enrollMfa() requires
+  // a verified email, so an unverified user on an MFA-required account
+  // would otherwise be unable to satisfy either gate
   @AuthenticatedOnly()
   @SkipEmailVerification()
+  @SkipMfaEnrollment()
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @Post('verify-email/resend')
   @ApiBearerAuth('JWT-auth')

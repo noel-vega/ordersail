@@ -6,6 +6,8 @@ import {
   type AuthenticatedRequest,
 } from 'src/shared/auth/decorators';
 import { MfaEnrollmentGuard } from './mfa-enrollment.guard';
+import { EmailVerifiedGuard } from './email-verified.guard';
+import { AuthController } from './auth.controller';
 
 // same shape as email-verified.guard.spec.ts's ctx() helper
 function ctx(opts: {
@@ -76,5 +78,38 @@ describe('MfaEnrollmentGuard (OS-473)', () => {
 
   it('blocks a gated route with no user at all (not @Public(), not @SkipMfaEnrollment())', () => {
     expect(() => guard().canActivate(ctx({}))).toThrow(ForbiddenException);
+  });
+});
+
+// enrollMfa() requires a verified email, so a user who is both unverified
+// and MFA-gated can only get unstuck if resending verification clears both
+// guards — otherwise neither gate can ever be satisfied
+describe('verify-email/resend reachable while email- and MFA-gated', () => {
+  const stuckUser: AuthenticatedRequest['user'] = {
+    ...unsatisfiedUser,
+    emailVerified: false,
+  };
+
+  function realCtx(): ExecutionContext {
+    const request: AuthenticatedRequest = { user: stuckUser };
+    const handler: unknown = Object.getOwnPropertyDescriptor(
+      AuthController.prototype,
+      'resendVerification',
+    )?.value;
+    return {
+      getHandler: () => handler,
+      getClass: () => AuthController,
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
+  }
+
+  it('passes EmailVerifiedGuard', () => {
+    expect(new EmailVerifiedGuard(new Reflector()).canActivate(realCtx())).toBe(
+      true,
+    );
+  });
+
+  it('passes MfaEnrollmentGuard', () => {
+    expect(guard().canActivate(realCtx())).toBe(true);
   });
 });

@@ -14,10 +14,12 @@ import { Route as AppRouteRouteImport } from './routes/app/route'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as SigninRouteImport } from './routes/signin'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as App403RouteImport } from './routes/app/403'
 import { Route as AppProductsRouteRouteImport } from './routes/app/products/route'
 import { Route as AppRolesRouteRouteImport } from './routes/app/roles/route'
+import { Route as AppVerifyEmailRouteImport } from './routes/app/verify-email'
 import { Route as AppCartsIndexRouteImport } from './routes/app/carts/index'
 import { Route as AppCartsIdRouteImport } from './routes/app/carts/$id'
 import { Route as AppCustomersIndexRouteImport } from './routes/app/customers/index'
@@ -74,6 +76,11 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -92,6 +99,11 @@ const AppProductsRouteRoute = AppProductsRouteRouteImport.update({
 const AppRolesRouteRoute = AppRolesRouteRouteImport.update({
   id: '/roles',
   path: '/roles',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppVerifyEmailRoute = AppVerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppCartsIndexRoute = AppCartsIndexRouteImport.update({
@@ -253,9 +265,11 @@ export interface FileRoutesByFullPath {
   '/join': typeof JoinRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/app/products': typeof AppProductsRouteRouteWithChildren
   '/app/roles': typeof AppRolesRouteRouteWithChildren
   '/app/403': typeof App403Route
+  '/app/verify-email': typeof AppVerifyEmailRoute
   '/app/': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
   '/app/customers/$id': typeof AppCustomersIdRoute
@@ -293,7 +307,9 @@ export interface FileRoutesByTo {
   '/join': typeof JoinRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/app/403': typeof App403Route
+  '/app/verify-email': typeof AppVerifyEmailRoute
   '/app': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
   '/app/customers/$id': typeof AppCustomersIdRoute
@@ -333,9 +349,11 @@ export interface FileRoutesById {
   '/join': typeof JoinRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/app/products': typeof AppProductsRouteRouteWithChildren
   '/app/roles': typeof AppRolesRouteRouteWithChildren
   '/app/403': typeof App403Route
+  '/app/verify-email': typeof AppVerifyEmailRoute
   '/app/': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
   '/app/customers/$id': typeof AppCustomersIdRoute
@@ -376,9 +394,11 @@ export interface FileRouteTypes {
     | '/join'
     | '/signin'
     | '/signup'
+    | '/verify-email'
     | '/app/products'
     | '/app/roles'
     | '/app/403'
+    | '/app/verify-email'
     | '/app/'
     | '/app/carts/$id'
     | '/app/customers/$id'
@@ -416,7 +436,9 @@ export interface FileRouteTypes {
     | '/join'
     | '/signin'
     | '/signup'
+    | '/verify-email'
     | '/app/403'
+    | '/app/verify-email'
     | '/app'
     | '/app/carts/$id'
     | '/app/customers/$id'
@@ -455,9 +477,11 @@ export interface FileRouteTypes {
     | '/join'
     | '/signin'
     | '/signup'
+    | '/verify-email'
     | '/app/products'
     | '/app/roles'
     | '/app/403'
+    | '/app/verify-email'
     | '/app/'
     | '/app/carts/$id'
     | '/app/customers/$id'
@@ -497,6 +521,7 @@ export interface RootRouteChildren {
   JoinRoute: typeof JoinRoute
   SigninRoute: typeof SigninRoute
   SignupRoute: typeof SignupRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -536,6 +561,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app/': {
       id: '/app/'
       path: '/'
@@ -562,6 +594,13 @@ declare module '@tanstack/react-router' {
       path: '/roles'
       fullPath: '/app/roles'
       preLoaderRoute: typeof AppRolesRouteRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/verify-email': {
+      id: '/app/verify-email'
+      path: '/verify-email'
+      fullPath: '/app/verify-email'
+      preLoaderRoute: typeof AppVerifyEmailRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/app/carts/': {
@@ -820,6 +859,7 @@ interface AppRouteRouteChildren {
   AppProductsRouteRoute: typeof AppProductsRouteRouteWithChildren
   AppRolesRouteRoute: typeof AppRolesRouteRouteWithChildren
   App403Route: typeof App403Route
+  AppVerifyEmailRoute: typeof AppVerifyEmailRoute
   AppIndexRoute: typeof AppIndexRoute
   AppCartsIdRoute: typeof AppCartsIdRoute
   AppCustomersIdRoute: typeof AppCustomersIdRoute
@@ -847,6 +887,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppProductsRouteRoute: AppProductsRouteRouteWithChildren,
   AppRolesRouteRoute: AppRolesRouteRouteWithChildren,
   App403Route: App403Route,
+  AppVerifyEmailRoute: AppVerifyEmailRoute,
   AppIndexRoute: AppIndexRoute,
   AppCartsIdRoute: AppCartsIdRoute,
   AppCustomersIdRoute: AppCustomersIdRoute,
@@ -880,6 +921,7 @@ const rootRouteChildren: RootRouteChildren = {
   JoinRoute: JoinRoute,
   SigninRoute: SigninRoute,
   SignupRoute: SignupRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
