@@ -82,34 +82,38 @@ describe('MfaEnrollmentGuard (OS-473)', () => {
 });
 
 // enrollMfa() requires a verified email, so a user who is both unverified
-// and MFA-gated can only get unstuck if resending verification clears both
-// guards — otherwise neither gate can ever be satisfied
-describe('verify-email/resend reachable while email- and MFA-gated', () => {
-  const stuckUser: AuthenticatedRequest['user'] = {
-    ...unsatisfiedUser,
-    emailVerified: false,
-  };
+// and MFA-gated can only get unstuck if the email-verification routes clear
+// both guards — otherwise neither gate can ever be satisfied
+describe.each(['resendVerification', 'verifyEmail'])(
+  'AuthController.%s reachable while email- and MFA-gated',
+  (method) => {
+    const stuckUser: AuthenticatedRequest['user'] = {
+      ...unsatisfiedUser,
+      emailVerified: false,
+    };
 
-  function realCtx(): ExecutionContext {
-    const request: AuthenticatedRequest = { user: stuckUser };
-    const handler: unknown = Object.getOwnPropertyDescriptor(
-      AuthController.prototype,
-      'resendVerification',
-    )?.value;
-    return {
-      getHandler: () => handler,
-      getClass: () => AuthController,
-      switchToHttp: () => ({ getRequest: () => request }),
-    } as unknown as ExecutionContext;
-  }
+    function realCtx(): ExecutionContext {
+      const request: AuthenticatedRequest = { user: stuckUser };
+      const handler: unknown = Object.getOwnPropertyDescriptor(
+        AuthController.prototype,
+        method,
+      )?.value;
+      expect(handler).toBeDefined();
+      return {
+        getHandler: () => handler,
+        getClass: () => AuthController,
+        switchToHttp: () => ({ getRequest: () => request }),
+      } as unknown as ExecutionContext;
+    }
 
-  it('passes EmailVerifiedGuard', () => {
-    expect(new EmailVerifiedGuard(new Reflector()).canActivate(realCtx())).toBe(
-      true,
-    );
-  });
+    it('passes EmailVerifiedGuard', () => {
+      expect(
+        new EmailVerifiedGuard(new Reflector()).canActivate(realCtx()),
+      ).toBe(true);
+    });
 
-  it('passes MfaEnrollmentGuard', () => {
-    expect(guard().canActivate(realCtx())).toBe(true);
-  });
-});
+    it('passes MfaEnrollmentGuard', () => {
+      expect(guard().canActivate(realCtx())).toBe(true);
+    });
+  },
+);

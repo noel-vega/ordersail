@@ -14,9 +14,9 @@ import { MfaChallengeStep } from "../components/mfa-challenge-step";
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { InfoIcon } from "lucide-react";
-import { appConfig } from "../../../config";
+import { safeRedirectPath } from "../safe-redirect";
 
-export function SignInView() {
+export function SignInView(props: { redirect?: string }) {
   const signInMutation = useSignInMutation();
   const navigate = useNavigate();
   const [errorMessage, setErrorMessage] = useState("");
@@ -46,9 +46,15 @@ export function SignInView() {
           setChallengeToken(result.challengeToken);
           return;
         }
-        navigate({ to: appConfig.homeRoute });
+        continueAfterSignIn();
       },
     });
+  }
+
+  // back to wherever the root route bounced them from (only same-origin
+  // paths), otherwise home
+  function continueAfterSignIn() {
+    navigate({ href: safeRedirectPath(props.redirect) });
   }
 
   function ErrorMessage() {
@@ -68,7 +74,7 @@ export function SignInView() {
     return (
       <MfaChallengeStep
         challengeToken={challengeToken}
-        onVerified={() => navigate({ to: appConfig.homeRoute })}
+        onVerified={continueAfterSignIn}
         onBack={() => setChallengeToken(null)}
       />
     );

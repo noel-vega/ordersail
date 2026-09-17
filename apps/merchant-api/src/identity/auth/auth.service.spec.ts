@@ -263,8 +263,8 @@ describe('AuthService.refreshTokens (OS-467)', () => {
     const { service, userId, refreshToken } = await seedSession();
 
     // the presented refresh token still carries emailVerified: false — this
-    // simulates a device that verified elsewhere and never got the fresh
-    // pair verify-email mints, so a rotation is the next chance to notice
+    // simulates a device that verified elsewhere and never got the
+    // re-minted access token verify-email returns, so a rotation is the next chance to notice
     await db
       .update(usersTable)
       .set({ emailVerifiedAt: new Date() })
@@ -573,15 +573,19 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     });
   }
 
-  it('verifies the account and returns a token pair with the updated claim', async () => {
+  it('verifies the caller and re-mints their access token with the updated claim', async () => {
     const user = await seedUnverifiedUser();
     const verification = await insertUserEmailVerification(db, {
       userId: user.id,
     });
     const service = await build();
 
-    const result = await service.verifyEmail(verification.token);
-    expect(result.emailVerified).toBe(true);
+    const result = await service.verifyEmail(user.id, verification.token);
+    expect(
+      new JwtService({ secret: 'test-secret' }).decode<{
+        emailVerified: boolean;
+      }>(result.access_token)?.emailVerified,
+    ).toBe(true);
 
     const [updated] = await db
       .select()
@@ -604,16 +608,44 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     });
     const service = await build();
 
-    await expect(service.verifyEmail(verification.token)).rejects.toThrow(
-      'Invalid or expired token',
-    );
+    await expect(
+      service.verifyEmail(user.id, verification.token),
+    ).rejects.toThrow('Invalid or expired token');
   });
 
   it('rejects an unknown token', async () => {
+    const user = await seedUnverifiedUser();
     const service = await build();
-    await expect(service.verifyEmail('not-a-real-token')).rejects.toThrow(
-      'Invalid or expired token',
-    );
+    await expect(
+      service.verifyEmail(user.id, 'not-a-real-token'),
+    ).rejects.toThrow('Invalid or expired token');
+  });
+
+  it("rejects another user's token without consuming it", async () => {
+    const owner = await seedUnverifiedUser();
+    const other = await insertUser(db, {
+      accountId: owner.accountId,
+      email: 'someone-else@store.test',
+      password: 'hashed',
+    });
+    const verification = await insertUserEmailVerification(db, {
+      userId: owner.id,
+    });
+    const service = await build();
+
+    await expect(
+      service.verifyEmail(other.id, verification.token),
+    ).rejects.toThrow('This verification link belongs to a different account');
+
+    const [otherRow] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, other.id));
+    expect(otherRow?.emailVerifiedAt).toBeNull();
+
+    await expect(
+      service.verifyEmail(owner.id, verification.token),
+    ).resolves.toHaveProperty('access_token');
   });
 
   it('rejects a token that has already been used', async () => {
@@ -623,11 +655,11 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     });
     const service = await build();
 
-    await service.verifyEmail(verification.token);
+    await service.verifyEmail(user.id, verification.token);
 
-    await expect(service.verifyEmail(verification.token)).rejects.toThrow(
-      'Invalid or expired token',
-    );
+    await expect(
+      service.verifyEmail(user.id, verification.token),
+    ).rejects.toThrow('Invalid or expired token');
   });
 });
 
@@ -1222,9 +1254,13 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       });
       const service = await build();
 
-      const result = await service.verifyEmail(verification.token);
+      const result = await service.verifyEmail(user.id, verification.token);
 
-      expect(result.mfaEnrollmentSatisfied).toBe(false);
+      expect(
+        new JwtService({ secret: 'test-secret' }).decode<{
+          mfaEnrollmentSatisfied: boolean;
+        }>(result.access_token)?.mfaEnrollmentSatisfied,
+      ).toBe(false);
     });
   });
 

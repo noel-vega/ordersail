@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { merchantApi } from "../../lib/merchant-api-client"
+import { getAuthMeQueryOptions } from "./permissions.hooks"
 
 // Query keys generally aren't scoped by user id, so any cached data (not
 // just ["auth", "me"], which has a 60s staleTime) can leak across an
@@ -75,13 +76,22 @@ export function useResendVerificationMutation(){
 }
 
 // for a tab that stayed open while the link was used elsewhere — its access
-// token still carries emailVerified: false, and a refresh recomputes it
+// token still carries emailVerified: false, and a refresh recomputes it.
+// Refresh and me() both resolve undefined (not throw) when the session is
+// gone, so that's reported as "signed-out" rather than mistaken for
+// "unverified"; real request failures reject into onError.
 export function useRecheckEmailVerifiedMutation(){
-    const resetQueryCache = useResetQueryCache()
+    const queryClient = useQueryClient()
     return useMutation({
         meta: { skipGlobalErrorToast: true },
-        mutationFn: () => merchantApi.refreshAccessToken(),
-        onSuccess: resetQueryCache,
+        mutationFn: async (): Promise<"verified" | "unverified" | "signed-out"> => {
+            const token = await merchantApi.refreshAccessToken()
+            if (!token) return "signed-out"
+            queryClient.clear()
+            const me = await queryClient.fetchQuery(getAuthMeQueryOptions())
+            if (!me) return "signed-out"
+            return me.emailVerified ? "verified" : "unverified"
+        },
     })
 }
 

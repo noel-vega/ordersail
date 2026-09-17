@@ -373,10 +373,21 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid or expired token"
+          },
           "401": {
             "description": ""
+          },
+          "403": {
+            "description": "Token belongs to a different account"
           }
         },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
         "tags": [
           "Auth"
         ]

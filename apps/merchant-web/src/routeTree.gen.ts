@@ -19,7 +19,6 @@ import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as App403RouteImport } from './routes/app/403'
 import { Route as AppProductsRouteRouteImport } from './routes/app/products/route'
 import { Route as AppRolesRouteRouteImport } from './routes/app/roles/route'
-import { Route as AppVerifyEmailRouteImport } from './routes/app/verify-email'
 import { Route as AppCartsIndexRouteImport } from './routes/app/carts/index'
 import { Route as AppCartsIdRouteImport } from './routes/app/carts/$id'
 import { Route as AppCustomersIndexRouteImport } from './routes/app/customers/index'
@@ -99,11 +98,6 @@ const AppProductsRouteRoute = AppProductsRouteRouteImport.update({
 const AppRolesRouteRoute = AppRolesRouteRouteImport.update({
   id: '/roles',
   path: '/roles',
-  getParentRoute: () => AppRouteRoute,
-} as any)
-const AppVerifyEmailRoute = AppVerifyEmailRouteImport.update({
-  id: '/verify-email',
-  path: '/verify-email',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppCartsIndexRoute = AppCartsIndexRouteImport.update({
@@ -269,7 +263,6 @@ export interface FileRoutesByFullPath {
   '/app/products': typeof AppProductsRouteRouteWithChildren
   '/app/roles': typeof AppRolesRouteRouteWithChildren
   '/app/403': typeof App403Route
-  '/app/verify-email': typeof AppVerifyEmailRoute
   '/app/': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
   '/app/customers/$id': typeof AppCustomersIdRoute
@@ -309,7 +302,6 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
   '/app/403': typeof App403Route
-  '/app/verify-email': typeof AppVerifyEmailRoute
   '/app': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
   '/app/customers/$id': typeof AppCustomersIdRoute
@@ -353,7 +345,6 @@ export interface FileRoutesById {
   '/app/products': typeof AppProductsRouteRouteWithChildren
   '/app/roles': typeof AppRolesRouteRouteWithChildren
   '/app/403': typeof App403Route
-  '/app/verify-email': typeof AppVerifyEmailRoute
   '/app/': typeof AppIndexRoute
   '/app/carts/$id': typeof AppCartsIdRoute
   '/app/customers/$id': typeof AppCustomersIdRoute
@@ -398,7 +389,6 @@ export interface FileRouteTypes {
     | '/app/products'
     | '/app/roles'
     | '/app/403'
-    | '/app/verify-email'
     | '/app/'
     | '/app/carts/$id'
     | '/app/customers/$id'
@@ -438,7 +428,6 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-email'
     | '/app/403'
-    | '/app/verify-email'
     | '/app'
     | '/app/carts/$id'
     | '/app/customers/$id'
@@ -481,7 +470,6 @@ export interface FileRouteTypes {
     | '/app/products'
     | '/app/roles'
     | '/app/403'
-    | '/app/verify-email'
     | '/app/'
     | '/app/carts/$id'
     | '/app/customers/$id'
@@ -594,13 +582,6 @@ declare module '@tanstack/react-router' {
       path: '/roles'
       fullPath: '/app/roles'
       preLoaderRoute: typeof AppRolesRouteRouteImport
-      parentRoute: typeof AppRouteRoute
-    }
-    '/app/verify-email': {
-      id: '/app/verify-email'
-      path: '/verify-email'
-      fullPath: '/app/verify-email'
-      preLoaderRoute: typeof AppVerifyEmailRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/app/carts/': {
@@ -859,7 +840,6 @@ interface AppRouteRouteChildren {
   AppProductsRouteRoute: typeof AppProductsRouteRouteWithChildren
   AppRolesRouteRoute: typeof AppRolesRouteRouteWithChildren
   App403Route: typeof App403Route
-  AppVerifyEmailRoute: typeof AppVerifyEmailRoute
   AppIndexRoute: typeof AppIndexRoute
   AppCartsIdRoute: typeof AppCartsIdRoute
   AppCustomersIdRoute: typeof AppCustomersIdRoute
@@ -887,7 +867,6 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppProductsRouteRoute: AppProductsRouteRouteWithChildren,
   AppRolesRouteRoute: AppRolesRouteRouteWithChildren,
   App403Route: App403Route,
-  AppVerifyEmailRoute: AppVerifyEmailRoute,
   AppIndexRoute: AppIndexRoute,
   AppCartsIdRoute: AppCartsIdRoute,
   AppCustomersIdRoute: AppCustomersIdRoute,

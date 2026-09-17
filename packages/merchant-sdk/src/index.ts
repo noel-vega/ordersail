@@ -224,13 +224,20 @@ export class AdminClient {
     return this.accessToken;
   }
 
-  // public — the emailed link may be opened with no session at all. Logs the
-  // caller in (access token + refresh cookie), like signIn()
+  // requires a session — the emailed token only proves inbox control, it
+  // never logs anyone in. Returns the caller's re-minted access token
+  // (emailVerified: true). Retries a 401 once like do(), but deliberately
+  // not through do(): its generic 403 rewrite would hide the API's
+  // "belongs to a different account" message. Bad/expired tokens are 400.
   async verifyEmail(params: components["schemas"]["VerifyEmailDto"]) {
-    const result = unwrap(
-      await this.client.POST("/auth/verify-email", { body: params }),
-    );
-    this.accessToken = result.access_token;
+    const request = () =>
+      this.client.POST("/auth/verify-email", { body: params });
+    let response = await request();
+    if (response.response.status === 401) {
+      await this.refreshAccessToken();
+      response = await request();
+    }
+    this.accessToken = unwrap(response).access_token;
     return this.accessToken;
   }
 
