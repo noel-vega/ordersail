@@ -224,6 +224,24 @@ export class AdminClient {
     return this.accessToken;
   }
 
+  // public; resolves the same whether or not the email has an account, so
+  // callers must not branch on it (no account enumeration)
+  async forgotPassword(params: components["schemas"]["ForgotPasswordDto"]) {
+    unwrap(
+      await this.client.POST("/auth/forgot-password", { body: params }),
+    );
+  }
+
+  // public — the user can't sign in by definition. Never logs in: the API
+  // revokes every session for the user, and MFA still applies on next
+  // sign-in. 401 = bad/expired link, 400 = password rejected by policy.
+  async resetPassword(params: components["schemas"]["ResetPasswordDto"]) {
+    unwrap(
+      await this.client.POST("/auth/reset-password", { body: params }),
+    );
+    this.accessToken = undefined;
+  }
+
   // requires a session — the emailed token only proves inbox control, it
   // never logs anyone in. Returns the caller's re-minted access token
   // (emailVerified: true). Retries a 401 once like do(), but deliberately

@@ -16,7 +16,10 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { InfoIcon } from "lucide-react";
 import { safeRedirectPath } from "../safe-redirect";
 
-export function SignInView(props: { redirect?: string }) {
+export function SignInView(props: {
+  redirect?: string;
+  passwordReset?: boolean;
+}) {
   const signInMutation = useSignInMutation();
   const navigate = useNavigate();
   const [errorMessage, setErrorMessage] = useState("");
@@ -83,6 +86,15 @@ export function SignInView(props: { redirect?: string }) {
   return (
     <div className="h-full flex items-center">
       <div className="max-w-sm mx-auto w-full space-y-8">
+        {props.passwordReset && !errorMessage && (
+          <Alert>
+            <InfoIcon />
+            <AlertTitle>Password updated</AlertTitle>
+            <AlertDescription>
+              Sign in with your new password.
+            </AlertDescription>
+          </Alert>
+        )}
         <ErrorMessage />
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <Controller
@@ -101,7 +113,15 @@ export function SignInView(props: { redirect?: string }) {
             name="password"
             render={({ field }) => (
               <Field>
-                <FieldLabel>Password</FieldLabel>
+                <div className="flex items-center justify-between">
+                  <FieldLabel>Password</FieldLabel>
+                  <Link
+                    to="/forgot-password"
+                    className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
                 <Input type="password" placeholder="*********" {...field} />
               </Field>
             )}

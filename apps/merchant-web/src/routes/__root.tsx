@@ -22,6 +22,7 @@ export const Route = createRootRoute({
         throw redirect({ to: accessToken ? appConfig.homeRoute : "/signin" });
       case "/signin":
       case "/signup":
+      case "/forgot-password":
         if (accessToken) {
           const next = (location.search as { redirect?: string }).redirect;
           throw redirect({ href: safeRedirectPath(next) });
@@ -31,6 +32,11 @@ export const Route = createRootRoute({
         // an invite link must work even if this browser already has an
         // unrelated session active (e.g. the account owner testing their
         // own invite) — never bounce this route away
+        break;
+      case "/reset-password":
+        // public by necessity (the user can't sign in), and never bounced:
+        // the emailed link may be opened in a browser that's signed in as
+        // someone else, or as the same user on another device
         break;
       default:
         // /app is now homeRoute itself, so it belongs here rather than in

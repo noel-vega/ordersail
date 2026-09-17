@@ -95,6 +95,31 @@ export function useRecheckEmailVerifiedMutation(){
     })
 }
 
+export function useForgotPasswordMutation(){
+    return useMutation({
+        meta: { skipGlobalErrorToast: true },
+        mutationFn: (params: Parameters<typeof merchantApi.forgotPassword>[0]) =>
+            merchantApi.forgotPassword(params),
+    })
+}
+
+// A reset always ends signed out in this browser. The API revokes the reset
+// user's sessions, but this browser may hold a session for a *different*
+// account (A opens B's link) — left alone, /signin would bounce straight
+// into A's app and B would never get to sign in. Logout clears whatever
+// refresh cookie is here; best-effort, the reset itself already succeeded.
+export function useResetPasswordMutation(){
+    const resetQueryCache = useResetQueryCache()
+    return useMutation({
+        meta: { skipGlobalErrorToast: true },
+        mutationFn: async (params: Parameters<typeof merchantApi.resetPassword>[0]) => {
+            await merchantApi.resetPassword(params)
+            await merchantApi.logout().catch(() => undefined)
+        },
+        onSuccess: resetQueryCache,
+    })
+}
+
 export function useLogoutMutation(){
     const resetQueryCache = useResetQueryCache()
     return useMutation({
