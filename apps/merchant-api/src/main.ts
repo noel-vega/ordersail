@@ -11,10 +11,15 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
 import { SwaggerModule } from '@nestjs/swagger';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { CorrelatedLogger, runWithCorrelationId } from 'logging';
+import { Logger, configureLogging, runWithCorrelationId } from 'logging';
 import { createSwaggerConfig } from './swagger.config';
 
 async function bootstrap() {
+  configureLogging({
+    service: 'merchant-api',
+    nodeEnv: env.NODE_ENV,
+    level: env.LOG_LEVEL,
+  });
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     // trustProxy: 1 trusts exactly one hop of X-Forwarded-For — the ALB,
@@ -24,9 +29,7 @@ async function bootstrap() {
     new FastifyAdapter({ trustProxy: 1 }),
     {
       rawBody: true,
-      logger: new CorrelatedLogger(undefined, {
-        json: env.NODE_ENV === 'production',
-      }),
+      logger: new Logger(),
     },
   );
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));

@@ -12,7 +12,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.spec.ts"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +23,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@nestjs/common": "^11.0.1"
+    "@nestjs/common": "^11.0.1",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3"
   }
 }
