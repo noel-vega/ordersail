@@ -139,33 +139,57 @@ export class PasskeysService {
     const { credential, credentialDeviceType, credentialBackedUp, aaguid } =
       verification.registrationInfo;
 
-    let inserted: typeof userPasskeysTable.$inferSelect;
-    try {
-      [inserted] = await this.db
-        .insert(userPasskeysTable)
-        .values({
-          userId: user.sub,
-          credentialId: credential.id,
-          publicKey: isoBase64URL.fromBuffer(credential.publicKey),
-          counter: credential.counter,
-          transports: credential.transports ?? [],
-          deviceType: credentialDeviceType,
-          backedUp: credentialBackedUp,
-          aaguid,
-          nickname: nickname?.trim() || 'Passkey',
-        })
-        .returning();
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        throw new ConflictException('This passkey is already registered');
-      }
-      throw err;
-    }
+    // Insert, decide whether this is a first factor, and issue the codes in
+    // ONE locked transaction. Committing the credential first and counting
+    // afterwards has two failure modes: a throw during issuance leaves a
+    // registered passkey with no codes, and two concurrent first
+    // registrations each count two credentials afterwards and each conclude
+    // they weren't first — so the user ends up with two passkeys and no
+    // recovery codes at all, silently.
+    const { inserted, recoveryCodes } = await this.db.transaction(
+      async (tx) => {
+        await this.authService.lockUserFactors(tx, user.sub);
 
-    // A first factor of *either* kind issues the one batch of recovery
-    // codes. Before passkeys this only ever happened in confirmMfa, which
-    // would have left a passkey-only user with no recovery path at all.
-    const recoveryCodes = await this.issueRecoveryCodesIfFirstFactor(user.sub);
+        let row: typeof userPasskeysTable.$inferSelect;
+        try {
+          [row] = await tx
+            .insert(userPasskeysTable)
+            .values({
+              userId: user.sub,
+              credentialId: credential.id,
+              publicKey: isoBase64URL.fromBuffer(credential.publicKey),
+              counter: credential.counter,
+              transports: credential.transports ?? [],
+              deviceType: credentialDeviceType,
+              backedUp: credentialBackedUp,
+              aaguid,
+              nickname: nickname?.trim() || 'Passkey',
+            })
+            .returning();
+        } catch (err) {
+          if (isUniqueViolation(err)) {
+            throw new ConflictException('This passkey is already registered');
+          }
+          throw err;
+        }
+
+        // Counted inside the transaction, so it sees the row just inserted
+        // and nothing a concurrent registration has yet committed. A first
+        // factor of *either* kind issues the one batch of recovery codes —
+        // before passkeys this only happened in confirmMfa, which would have
+        // left a passkey-only user with no recovery path at all.
+        const { totpConfirmed, passkeyCount } =
+          await this.authService.getFactorState(user.sub, tx);
+        const isFirstFactor = !totpConfirmed && passkeyCount === 1;
+
+        return {
+          inserted: row,
+          recoveryCodes: isFirstFactor
+            ? await this.authService.issueRecoveryCodes(tx, user.sub)
+            : null,
+        };
+      },
+    );
 
     // Re-mint so a caller who was being gated isn't stuck behind a stale
     // claim for the rest of their token's 8h life — same reason confirmMfa
@@ -232,34 +256,28 @@ export class PasskeysService {
       .from(accountsTable)
       .where(eq(accountsTable.id, accountId));
 
-    if (account?.requireMfaAt) {
-      const { totpConfirmed, passkeyCount } =
-        await this.authService.getFactorState(userId);
-      const remaining = passkeyCount - 1 + (totpConfirmed ? 1 : 0);
-      if (remaining === 0) {
-        throw new ConflictException(
-          'Your account requires MFA — this is your last factor, add another before removing it',
-        );
+    // Counting and deleting in one locked transaction. Apart, two concurrent
+    // removals of different credentials each see two factors, each conclude
+    // one will remain, and the user lands on zero — as does a removal racing
+    // AuthService.disableMfa, which takes the same lock for that reason.
+    await this.db.transaction(async (tx) => {
+      await this.authService.lockUserFactors(tx, userId);
+
+      if (account?.requireMfaAt) {
+        const { totpConfirmed, passkeyCount } =
+          await this.authService.getFactorState(userId, tx);
+        const remaining = passkeyCount - 1 + (totpConfirmed ? 1 : 0);
+        if (remaining === 0) {
+          throw new ConflictException(
+            'Your account requires MFA — this is your last factor, add another before removing it',
+          );
+        }
       }
-    }
 
-    await this.db
-      .delete(userPasskeysTable)
-      .where(eq(userPasskeysTable.id, passkey.id));
-  }
-
-  private async issueRecoveryCodesIfFirstFactor(
-    userId: number,
-  ): Promise<string[] | null> {
-    const { totpConfirmed, passkeyCount } =
-      await this.authService.getFactorState(userId);
-    // the passkey we just inserted is already counted, so "first factor"
-    // means exactly one passkey and no TOTP
-    if (totpConfirmed || passkeyCount !== 1) return null;
-
-    return this.db.transaction((tx) =>
-      this.authService.issueRecoveryCodes(tx, userId),
-    );
+      await tx
+        .delete(userPasskeysTable)
+        .where(eq(userPasskeysTable.id, passkey.id));
+    });
   }
 
   private async issueChallenge(

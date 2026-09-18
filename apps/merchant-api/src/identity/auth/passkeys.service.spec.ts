@@ -74,8 +74,8 @@ beforeEach(() => {
   webauthn.verifyRegistrationResponse.mockReset();
 });
 
-async function build() {
-  const ref = await Test.createTestingModule({
+async function buildRef() {
+  return Test.createTestingModule({
     providers: [
       AuthService,
       PasskeysService,
@@ -99,7 +99,10 @@ async function build() {
       },
     ],
   }).compile();
-  return ref.get(PasskeysService);
+}
+
+async function build() {
+  return (await buildRef()).get(PasskeysService);
 }
 
 async function seedUser(
@@ -412,6 +415,81 @@ describe('PasskeysService — recovery codes (OS-485)', () => {
     expect(stored).toHaveLength(10);
   });
 
+  // Counting after the insert commits would let two concurrent first
+  // registrations each see two credentials and each conclude they weren't
+  // first — leaving the user with two passkeys and no recovery codes at all.
+  it('issues exactly one batch across two concurrent first registrations', async () => {
+    const { user } = await seedUser();
+    const service = await build();
+    const challengeA = await optionsChallengeFor(service, user.id);
+    const challengeB = await optionsChallengeFor(service, user.id);
+
+    // each ceremony returns its own credential id
+    let call = 0;
+    webauthn.verifyRegistrationResponse.mockImplementation(() => {
+      call += 1;
+      return Promise.resolve({
+        verified: true,
+        registrationInfo: {
+          credential: {
+            id: `concurrent-${call}`,
+            publicKey: new Uint8Array([1, 2, 3, 4]),
+            counter: 0,
+            transports: ['internal'],
+          },
+          credentialDeviceType: 'multiDevice',
+          credentialBackedUp: true,
+          aaguid: '00000000-0000-0000-0000-000000000000',
+        },
+      });
+    });
+
+    const results = await Promise.allSettled([
+      service.verifyRegistration(
+        principal(user),
+        responseFor(challengeA) as never,
+        undefined,
+      ),
+      service.verifyRegistration(
+        principal(user),
+        responseFor(challengeB) as never,
+        undefined,
+      ),
+    ]);
+
+    const issued = results.filter(
+      (r) => r.status === 'fulfilled' && r.value.recoveryCodes,
+    );
+    expect(issued).toHaveLength(1);
+
+    const stored = await db
+      .select()
+      .from(userMfaRecoveryCodesTable)
+      .where(eq(userMfaRecoveryCodesTable.userId, user.id));
+    expect(stored).toHaveLength(10);
+  });
+
+  // The test above only catches the race when the two transactions actually
+  // interleave, which isn't guaranteed. This asserts the mechanism directly:
+  // registration must do its counting behind the shared factor lock, or the
+  // "first factor" decision is a read of state another request can change.
+  it('counts factors behind the shared lock', async () => {
+    const { user } = await seedUser();
+    const ref = await buildRef();
+    const service = ref.get(PasskeysService);
+    const lockSpy = jest.spyOn(ref.get(AuthService), 'lockUserFactors');
+    const challenge = await optionsChallengeFor(service, user.id);
+    verifierReturns('locked');
+
+    await service.verifyRegistration(
+      principal(user),
+      responseFor(challenge) as never,
+      undefined,
+    );
+
+    expect(lockSpy).toHaveBeenCalledWith(expect.anything(), user.id);
+  });
+
   it('does not re-issue on a second passkey', async () => {
     const { user } = await seedUser();
     const service = await build();
@@ -509,6 +587,27 @@ describe('PasskeysService — management (OS-485)', () => {
       await service.remove(user.id, user.accountId, passkey.id, password);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
+    });
+
+    // The rule is a check followed by a delete, so without a lock two
+    // concurrent removals each see two factors, each conclude one will
+    // remain, and the user lands on zero on an account that requires MFA.
+    // Same shape as the concurrent recovery-code redemption test.
+    it('lets only one of two concurrent removals through', async () => {
+      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const first = await insertUserPasskey(db, { userId: user.id });
+      const second = await insertUserPasskey(db, { userId: user.id });
+      const service = await build();
+
+      const results = await Promise.allSettled([
+        service.remove(user.id, user.accountId, first.id, password),
+        service.remove(user.id, user.accountId, second.id, password),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+      // the invariant that actually matters: never zero factors
+      expect(await db.select().from(userPasskeysTable)).toHaveLength(1);
     });
 
     // no requirement to satisfy — the user is free to hold nothing

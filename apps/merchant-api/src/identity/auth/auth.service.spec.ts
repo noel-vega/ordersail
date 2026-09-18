@@ -449,7 +449,24 @@ describe('AuthService.refreshTokens (OS-467)', () => {
     // concurrent tab) gets the same replacement pair back, not a rejection
     const second = await service.refreshTokens(refreshToken);
 
-    expect(second).toEqual(first);
+    // Compared by jti and claims rather than by the raw strings: two mints
+    // in different clock seconds produce different `iat`, so string equality
+    // was really asserting "both calls landed in the same second" and flaked
+    // on a slow runner. The invariant that matters is that the *same*
+    // replacement token is handed back instead of rotating again.
+    const jwt = new JwtService({ secret: 'test-secret' });
+    const firstRefresh = jwt.decode<{ jti: string; sub: number }>(
+      first.refresh_token,
+    );
+    const secondRefresh = jwt.decode<{ jti: string; sub: number }>(
+      second.refresh_token,
+    );
+    expect(secondRefresh.jti).toBe(firstRefresh.jti);
+    expect(secondRefresh.sub).toBe(firstRefresh.sub);
+
+    // and no extra row was minted by the replay
+    const rows = await db.select().from(userRefreshTokensTable);
+    expect(rows).toHaveLength(2);
   });
 
   it('rejects an access token presented to the refresh flow (typ mismatch)', async () => {
