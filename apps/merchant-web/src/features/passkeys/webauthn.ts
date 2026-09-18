@@ -61,13 +61,37 @@ function normalize(err: unknown): PasskeyCeremonyError {
   }
 }
 
-// `optionsJSON` comes back from the API as an open object: @nestjs/swagger
-// can't model PublicKeyCredentialCreationOptionsJSON, so the generated type
-// is untyped. The cast is confined to here rather than spread across call
-// sites.
+// The API publishes the ceremony options as an open object, because
+// @nestjs/swagger can't model PublicKeyCredentialCreationOptionsJSON and
+// openapi-typescript renders any attempt at it as Record<string, never>.
+// Hand-writing a DTO to mirror a browser-spec type would produce types that
+// can silently disagree with what @simplewebauthn actually emits, which is
+// worse than an honest `unknown` — a type that lies is harder to debug than
+// a cast you can see.
+//
+// So the cast stays, confined to these two functions, but it is CHECKED:
+// every ceremony's options must carry a string `challenge`, and failing
+// here gives a readable error at the boundary instead of an opaque
+// DOMException from deep inside the browser API.
+function assertCeremonyOptions(optionsJSON: unknown, kind: string): void {
+  const challenge =
+    typeof optionsJSON === "object" &&
+    optionsJSON !== null &&
+    "challenge" in optionsJSON
+      ? (optionsJSON as { challenge: unknown }).challenge
+      : undefined;
+  if (typeof challenge !== "string" || !challenge) {
+    throw new PasskeyCeremonyError(
+      `The server sent something unexpected for ${kind}. Try again.`,
+      false,
+    );
+  }
+}
+
 export async function runRegistration(
   optionsJSON: unknown,
 ): Promise<RegistrationResponseJSON> {
+  assertCeremonyOptions(optionsJSON, "registration");
   try {
     return await startRegistration({
       optionsJSON: optionsJSON as Parameters<
@@ -79,11 +103,11 @@ export async function runRegistration(
   }
 }
 
-// Same cast confinement as runRegistration — the API's options come back as
-// an open object because @nestjs/swagger can't model the WebAuthn types.
+// Same checked cast as runRegistration.
 export async function runAuthentication(
   optionsJSON: unknown,
 ): Promise<AuthenticationResponseJSON> {
+  assertCeremonyOptions(optionsJSON, "sign-in");
   try {
     return await startAuthentication({
       optionsJSON: optionsJSON as Parameters<
