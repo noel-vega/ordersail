@@ -31,13 +31,13 @@ export function SecurityView(props: { required?: boolean }) {
     }
   }
 
-  const mfaEnabled = me.data?.mfaEnabled ?? false;
+  const totpEnabled = me.data?.totpEnabled ?? false;
 
   return (
     <div className="max-w-lg space-y-4">
       <h1 className="text-xl font-semibold">Security</h1>
 
-      {props.required && !mfaEnabled && (
+      {props.required && !totpEnabled && (
         <Alert>
           <InfoIcon />
           <AlertTitle>Two-factor authentication is required</AlertTitle>
@@ -53,19 +53,19 @@ export function SecurityView(props: { required?: boolean }) {
           <div>
             <h2 className="text-sm font-medium">Two-factor authentication</h2>
             <p className="text-sm text-muted-foreground">
-              {mfaEnabled
+              {totpEnabled
                 ? "Enabled — you'll be asked for a code when signing in."
                 : "Add a second step to sign-in using an authenticator app."}
             </p>
           </div>
-          {mfaEnabled && (
+          {totpEnabled && (
             <ShieldCheckIcon className="size-5 shrink-0 text-primary" />
           )}
         </div>
 
         {enrollError && <p className="text-sm text-destructive">{enrollError}</p>}
 
-        {mfaEnabled ? (
+        {totpEnabled ? (
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setRegenerateOpen(true)}>
               Regenerate recovery codes

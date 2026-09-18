@@ -40,6 +40,7 @@ const unverifiedUser: AuthenticatedRequest['user'] = {
   lastName: 'Y',
   emailVerified: false,
   mfaEnrollmentSatisfied: true,
+  hasMfaFactor: false,
   typ: 'access',
 };
 

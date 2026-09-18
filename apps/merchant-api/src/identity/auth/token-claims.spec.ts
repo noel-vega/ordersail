@@ -13,6 +13,7 @@ const decodedRefreshToken = {
   lastName: 'Scully',
   emailVerified: true,
   mfaEnrollmentSatisfied: false,
+  hasMfaFactor: true,
   typ: 'refresh',
   jti: 'f1f0c0de-0000-4000-8000-000000000000',
   iat: 1_700_000_000,
@@ -29,6 +30,7 @@ describe('claimsFromUser (OS-482)', () => {
       lastName: 'Scully',
       emailVerified: true,
       mfaEnrollmentSatisfied: false,
+      hasMfaFactor: true,
     });
   });
 
@@ -54,6 +56,7 @@ describe('claimsFromUser (OS-482)', () => {
       'email',
       'emailVerified',
       'firstName',
+      'hasMfaFactor',
       'lastName',
       'mfaEnrollmentSatisfied',
       'sub',

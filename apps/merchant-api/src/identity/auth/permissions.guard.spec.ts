@@ -61,6 +61,7 @@ const asUser = (sub: number): AuthenticatedRequest['user'] => ({
   lastName: 'Y',
   emailVerified: true,
   mfaEnrollmentSatisfied: true,
+  hasMfaFactor: false,
   typ: 'access',
 });
 

@@ -15,6 +15,7 @@ import {
   insertUserInvite,
   insertUserMfa,
   insertUserMfaRecoveryCode,
+  insertUserPasskey,
 } from 'test-support';
 import {
   PERMISSIONS_CATALOG,
@@ -27,6 +28,7 @@ import {
   userEmailVerificationsTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
+  userPasskeysTable,
   userPasswordResetsTable,
   userRefreshTokensTable,
   userRolesTable,
@@ -41,6 +43,24 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService, claimsFromSignInResult } from './auth.service';
 
 const db = useTestDb();
+
+// otplib's default verification window is 0: a code is only accepted inside
+// its own 30s step. These specs generate a code and then do real work
+// (bcrypt + a DB transaction) before the service verifies it, so a code
+// generated with a second or two left on the clock can be rejected purely
+// because the step rolled over — which is what flaked CI on OS-484. Waiting
+// out the boundary first makes the timing irrelevant instead of unlikely.
+//
+// The production window is a separate question, filed as its own issue: a
+// merchant whose phone clock drifts, or who types slowly, hits exactly this
+// edge for real.
+async function freshTotpCode(secret: string): Promise<string> {
+  const remaining = authenticator.timeRemaining();
+  if (remaining < 3) {
+    await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1000));
+  }
+  return authenticator.generate(secret);
+}
 
 const emailMock = {
   sendInviteEmail: jest.fn(),
@@ -106,6 +126,7 @@ describe('AuthService token payloads (OS-482)', () => {
     lastName: signupDto.lastName,
     emailVerified: false,
     mfaEnrollmentSatisfied: true,
+    hasMfaFactor: false,
   };
 
   it('signs an access token with exactly the claim set plus typ', async () => {
@@ -118,6 +139,7 @@ describe('AuthService token payloads (OS-482)', () => {
       'emailVerified',
       'exp',
       'firstName',
+      'hasMfaFactor',
       'iat',
       'lastName',
       'mfaEnrollmentSatisfied',
@@ -144,6 +166,7 @@ describe('AuthService token payloads (OS-482)', () => {
       'emailVerified',
       'exp',
       'firstName',
+      'hasMfaFactor',
       'iat',
       'jti',
       'lastName',
@@ -262,6 +285,7 @@ describe('AuthService.me (OS-180)', () => {
       lastName: signupDto.lastName,
       emailVerified: false,
       mfaEnrollmentSatisfied: true,
+      hasMfaFactor: false,
       typ: 'access',
     });
 
@@ -272,7 +296,7 @@ describe('AuthService.me (OS-180)', () => {
       firstName: signupDto.firstName,
       lastName: signupDto.lastName,
       emailVerified: false,
-      mfaEnabled: false,
+      totpEnabled: false,
     });
     // fresh signup → Owner role → every catalog key, sorted
     expect(me.permissions).toEqual(
@@ -280,7 +304,7 @@ describe('AuthService.me (OS-180)', () => {
     );
   });
 
-  it('reports mfaEnabled: true once a factor is confirmed', async () => {
+  it('reports totpEnabled: true once a factor is confirmed', async () => {
     await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
     const service = await build();
     const { userId, accountId } = await service.signup(signupDto);
@@ -294,10 +318,37 @@ describe('AuthService.me (OS-180)', () => {
       lastName: signupDto.lastName,
       emailVerified: false,
       mfaEnrollmentSatisfied: true,
+      hasMfaFactor: false,
       typ: 'access',
     });
 
-    expect(me.mfaEnabled).toBe(true);
+    expect(me.totpEnabled).toBe(true);
+    expect(me.hasMfaFactor).toBe(true);
+    expect(me.passkeyCount).toBe(0);
+  });
+
+  it('reports a passkey-only user as hasMfaFactor with totpEnabled false', async () => {
+    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+    const service = await build();
+    const { userId, accountId } = await service.signup(signupDto);
+    await insertUserPasskey(db, { userId });
+    await insertUserPasskey(db, { userId });
+
+    const me = await service.me({
+      sub: userId,
+      email: signupDto.email,
+      accountId,
+      firstName: signupDto.firstName,
+      lastName: signupDto.lastName,
+      emailVerified: false,
+      mfaEnrollmentSatisfied: true,
+      hasMfaFactor: false,
+      typ: 'access',
+    });
+
+    expect(me.totpEnabled).toBe(false);
+    expect(me.passkeyCount).toBe(2);
+    expect(me.hasMfaFactor).toBe(true);
   });
 });
 
@@ -315,6 +366,7 @@ describe('AuthService.refreshTokens (OS-467)', () => {
         lastName: signupDto.lastName,
         emailVerified: false,
         mfaEnrollmentSatisfied: true,
+        hasMfaFactor: false,
       },
       randomUUID(),
     );
@@ -410,6 +462,7 @@ describe('AuthService.refreshTokens (OS-467)', () => {
       lastName: signupDto.lastName,
       emailVerified: false,
       mfaEnrollmentSatisfied: true,
+      hasMfaFactor: false,
     });
 
     await expect(service.refreshTokens(accessToken)).rejects.toThrow(
@@ -432,6 +485,7 @@ describe('AuthService.logout (OS-467)', () => {
         lastName: signupDto.lastName,
         emailVerified: false,
         mfaEnrollmentSatisfied: true,
+        hasMfaFactor: false,
       },
       randomUUID(),
     );
@@ -946,7 +1000,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const user = await seedUserWithPassword();
       const service = await build();
       const { otpauthUrl } = await service.enrollMfa(user.id);
-      const code = authenticator.generate(extractSecret(otpauthUrl));
+      const code = await freshTotpCode(extractSecret(otpauthUrl));
 
       await expect(
         service.confirmMfa(user.id, code, 'wrong-password'),
@@ -963,7 +1017,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const user = await seedUserWithPassword();
       const service = await build();
       const { otpauthUrl } = await service.enrollMfa(user.id);
-      const code = authenticator.generate(extractSecret(otpauthUrl));
+      const code = await freshTotpCode(extractSecret(otpauthUrl));
 
       const { recoveryCodes } = await service.confirmMfa(
         user.id,
@@ -986,11 +1040,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const service = await build();
       const { otpauthUrl } = await service.enrollMfa(user.id);
       const secret = extractSecret(otpauthUrl);
-      await service.confirmMfa(
-        user.id,
-        authenticator.generate(secret),
-        password,
-      );
+      await service.confirmMfa(user.id, await freshTotpCode(secret), password);
 
       const signInResult = await service.signin({
         email: user.email,
@@ -1000,7 +1050,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
 
       const result = await service.verifyMfaChallenge(
         signInResult.challengeToken,
-        authenticator.generate(secret),
+        await freshTotpCode(secret),
       );
 
       expect(result.access_token).toBeTruthy();
@@ -1112,6 +1162,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         lastName: user.lastname,
         emailVerified: true,
         mfaEnrollmentSatisfied: true,
+        hasMfaFactor: false,
       });
 
       await expect(
@@ -1287,7 +1338,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
 
       const result = await service.verifyMfaChallenge(
         signInResult.challengeToken,
-        authenticator.generate(secret),
+        await freshTotpCode(secret),
       );
 
       expect(result.mfaEnrollmentSatisfied).toBe(true);
@@ -1416,6 +1467,168 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
 
       expect(payload.mfaEnrollmentSatisfied).toBe(true);
+    });
+  });
+});
+
+// A "factor" is now either a confirmed TOTP row or a passkey, and they live
+// in different tables. These cover the passkey half — the TOTP half is the
+// OS-473 block above, which must keep passing unchanged.
+describe('AuthService — factors across TOTP and passkeys (OS-484)', () => {
+  const password = 'correct-horse-battery-staple';
+
+  async function seedAccountAndUser(opts: { requireMfaAt?: Date | null }) {
+    const account = await insertAccount(db);
+    if (opts.requireMfaAt !== undefined) {
+      await db
+        .update(accountsTable)
+        .set({ requireMfaAt: opts.requireMfaAt })
+        .where(eq(accountsTable.id, account.id));
+    }
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: `factors-${randomUUID()}@store.test`,
+      password: await bcrypt.hash(password, 10),
+      emailVerifiedAt: new Date(),
+    });
+    return { account, user };
+  }
+
+  describe('signin', () => {
+    it('sets hasMfaFactor for a passkey-only user', async () => {
+      const { user } = await seedAccountAndUser({});
+      await insertUserPasskey(db, { userId: user.id });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      expect(result.hasMfaFactor).toBe(true);
+    });
+
+    // The whole point of the claim split: this user is blocked by nothing,
+    // but also holds nothing, so a gated action must still stop them.
+    it('leaves hasMfaFactor false for a user with no factor at all', async () => {
+      const { user } = await seedAccountAndUser({});
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      expect(result.mfaEnrollmentSatisfied).toBe(true);
+      expect(result.hasMfaFactor).toBe(false);
+    });
+
+    // A passkey must NOT satisfy an account-wide MFA requirement while
+    // sign-in has no way to make the user prove they hold it. Counting it
+    // would leave a require-MFA account reachable with a password alone —
+    // the user holds a factor nobody ever asks them to present. OS-489
+    // flips this and the challenge branch together.
+    it('does not let a passkey satisfy account-wide MFA yet, but reports it', async () => {
+      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
+      await insertUserPasskey(db, { userId: user.id });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      expect(result.mfaEnrollmentSatisfied).toBe(false);
+      expect(result.hasMfaFactor).toBe(true);
+    });
+
+    it('lets a confirmed TOTP factor satisfy account-wide MFA', async () => {
+      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      // ...by way of the challenge, which is the point: possession is proven
+      expect(result.mfaRequired).toBe(true);
+    });
+
+    // Deliberate until OS-489: the challenge step can't accept a passkey
+    // yet, so widening the challenge branch here would strand this user on a
+    // TOTP-only screen with nothing they can type.
+    it('does NOT issue an MFA challenge for a passkey-only user yet', async () => {
+      const { user } = await seedAccountAndUser({});
+      await insertUserPasskey(db, { userId: user.id });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      expect(result.mfaRequired).toBe(false);
+    });
+
+    it('still issues a challenge when TOTP is confirmed', async () => {
+      const { user } = await seedAccountAndUser({});
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      expect(result.mfaRequired).toBe(true);
+    });
+  });
+
+  describe('refreshTokens', () => {
+    it('picks up a passkey registered mid-session', async () => {
+      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
+      const service = await build();
+      const signInResult = await service.signin({
+        email: user.email,
+        password,
+      });
+      if (signInResult.mfaRequired)
+        throw new Error('expected a normal sign-in');
+      expect(signInResult.hasMfaFactor).toBe(false);
+      expect(signInResult.mfaEnrollmentSatisfied).toBe(false);
+
+      const refreshToken = await service.createRefreshToken(
+        claimsFromSignInResult(signInResult),
+        randomUUID(),
+      );
+
+      await insertUserPasskey(db, { userId: user.id });
+
+      const refreshed = await service.refreshTokens(refreshToken);
+      const payload = new JwtService({ secret: 'test-secret' }).decode<{
+        hasMfaFactor: boolean;
+        mfaEnrollmentSatisfied: boolean;
+      }>(refreshed.access_token);
+
+      expect(payload.hasMfaFactor).toBe(true);
+      // still unsatisfied — see the signin case above; a passkey doesn't
+      // clear an account-wide requirement until the challenge can verify it
+      expect(payload.mfaEnrollmentSatisfied).toBe(false);
+    });
+
+    it('drops hasMfaFactor when the last passkey is removed mid-session', async () => {
+      const { user } = await seedAccountAndUser({});
+      const passkey = await insertUserPasskey(db, { userId: user.id });
+      const service = await build();
+      const signInResult = await service.signin({
+        email: user.email,
+        password,
+      });
+      if (signInResult.mfaRequired)
+        throw new Error('expected a normal sign-in');
+
+      const refreshToken = await service.createRefreshToken(
+        claimsFromSignInResult(signInResult),
+        randomUUID(),
+      );
+
+      await db
+        .delete(userPasskeysTable)
+        .where(eq(userPasskeysTable.id, passkey.id));
+
+      const refreshed = await service.refreshTokens(refreshToken);
+      const payload = new JwtService({ secret: 'test-secret' }).decode<{
+        hasMfaFactor: boolean;
+      }>(refreshed.access_token);
+
+      expect(payload.hasMfaFactor).toBe(false);
     });
   });
 });

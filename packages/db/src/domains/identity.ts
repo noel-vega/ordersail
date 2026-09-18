@@ -15,6 +15,7 @@ export * from '../schema/user-refresh-tokens.js';
 export * from '../schema/rbac.js';
 export * from '../permissions-catalog.js';
 export {
+  count,
   eq,
   ne,
   and,
