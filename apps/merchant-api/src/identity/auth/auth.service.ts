@@ -67,7 +67,7 @@ const MFA_CHALLENGE_TTL = '5m';
 
 const MFA_ISSUER = 'OrderSail';
 
-interface SignInSuccessResult {
+export interface SignInSuccessResult {
   mfaRequired: false;
   userId: number;
   email: string;
@@ -93,9 +93,12 @@ interface FactorClaims {
   mfaEnrollmentSatisfied: boolean;
 }
 
+export type MfaChallengeMethod = 'passkey' | 'totp' | 'recovery';
+
 interface MfaChallengeResult {
   mfaRequired: true;
   challengeToken: string;
+  methods: MfaChallengeMethod[];
 }
 
 type SignInResult = SignInSuccessResult | MfaChallengeResult;
@@ -187,6 +190,14 @@ export class AuthService {
       return {
         mfaRequired: true,
         challengeToken: await this.createMfaChallengeToken(user.id),
+        // what the challenge step should actually offer. Recovery codes are
+        // always accepted alongside whatever else is listed — they're the
+        // way through when the factor itself is unavailable.
+        methods: [
+          ...(factors.passkeyCount > 0 ? (['passkey'] as const) : []),
+          'totp' as const,
+          'recovery' as const,
+        ],
       };
     }
 
@@ -294,7 +305,10 @@ export class AuthService {
     };
   }
 
-  private async buildSignInSuccess(
+  // Public because the passkey branch of the challenge (OS-488) finishes
+  // the same way: a factor the caller just proved possession of always
+  // satisfies an account-wide requirement.
+  async buildSignInSuccess(
     user: {
       id: number;
       email: string;
@@ -343,10 +357,14 @@ export class AuthService {
   // proves the second factor (TOTP or an unused recovery code). The
   // challenge token's own signature/expiry is the only thing standing in
   // for "the password was already checked" — it carries no other claims.
-  async verifyMfaChallenge(
+  // Resolves a signin()-issued challenge token to the user it was minted
+  // for. Public because PasskeysService exchanges the same token on the
+  // passkey branch of the challenge (OS-488) — the `typ` check in particular
+  // must not be reimplemented there, since an access token presented here
+  // would otherwise be accepted as proof of a second factor.
+  async resolveMfaChallengeToken(
     challengeToken: string,
-    code: string,
-  ): Promise<SignInSuccessResult> {
+  ): Promise<typeof usersTable.$inferSelect> {
     let payload: { sub: number; typ: string };
     try {
       payload = await this.jwtService.verifyAsync(challengeToken);
@@ -365,6 +383,14 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Invalid or expired challenge');
     }
+    return user;
+  }
+
+  async verifyMfaChallenge(
+    challengeToken: string,
+    code: string,
+  ): Promise<SignInSuccessResult> {
+    const user = await this.resolveMfaChallengeToken(challengeToken);
 
     const [mfa] = await this.db
       .select()

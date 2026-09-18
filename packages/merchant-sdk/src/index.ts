@@ -115,6 +115,10 @@ export type PasskeyRegistered =
   components["schemas"]["PasskeyRegisteredDto"];
 export type PasskeyRenameDto = components["schemas"]["PasskeyRenameDto"];
 export type PasskeyRemoveDto = components["schemas"]["PasskeyRemoveDto"];
+export type PasskeyChallengeOptionsDto =
+  components["schemas"]["PasskeyChallengeOptionsDto"];
+export type PasskeyChallengeVerifyDto =
+  components["schemas"]["PasskeyChallengeVerifyDto"];
 
 export class AdminClient {
   accessToken: string | undefined;

@@ -487,6 +487,75 @@
         ]
       }
     },
+    "/auth/passkeys/challenge/options": {
+      "post": {
+        "operationId": "PasskeysController_challengeOptions",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyChallengeOptionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Passkeys"
+        ]
+      }
+    },
+    "/auth/passkeys/challenge/verify": {
+      "post": {
+        "operationId": "PasskeysController_challengeVerify",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyChallengeVerifyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTokenDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Passkeys"
+        ]
+      }
+    },
     "/auth/passkeys": {
       "get": {
         "operationId": "PasskeysController_list",
@@ -3842,11 +3911,23 @@
           },
           "challengeToken": {
             "type": "string"
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "passkey",
+                "totp",
+                "recovery"
+              ]
+            }
           }
         },
         "required": [
           "mfaRequired",
-          "challengeToken"
+          "challengeToken",
+          "methods"
         ]
       },
       "SignInDto": {
@@ -4094,6 +4175,33 @@
           "hasMfaFactor",
           "mfaEnrollmentSatisfied",
           "permissions"
+        ]
+      },
+      "PasskeyChallengeOptionsDto": {
+        "type": "object",
+        "properties": {
+          "challengeToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "challengeToken"
+        ]
+      },
+      "PasskeyChallengeVerifyDto": {
+        "type": "object",
+        "properties": {
+          "challengeToken": {
+            "type": "string"
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "challengeToken",
+          "response"
         ]
       },
       "PasskeyDto": {

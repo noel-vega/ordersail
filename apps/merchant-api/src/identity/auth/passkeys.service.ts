@@ -7,8 +7,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import {
+  generateAuthenticationOptions,
   generateRegistrationOptions,
+  verifyAuthenticationResponse,
   verifyRegistrationResponse,
+  type AuthenticationResponseJSON,
+  type PublicKeyCredentialRequestOptionsJSON,
   type RegistrationResponseJSON,
   type PublicKeyCredentialCreationOptionsJSON,
 } from '@simplewebauthn/server';
@@ -28,7 +32,7 @@ import {
 } from 'db/identity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
-import { AuthService } from './auth.service';
+import { AuthService, type SignInSuccessResult } from './auth.service';
 import { claimsFromUser } from './token-claims';
 import { PasskeyDto } from './dto/passkey.dto';
 import { WEBAUTHN_CHALLENGE_TTL_MS, webauthnConfig } from './webauthn.config';
@@ -207,6 +211,126 @@ export class PasskeysService {
       access_token,
       ...(recoveryCodes ? { recoveryCodes } : {}),
     };
+  }
+
+  // The passkey branch of the password-then-second-factor challenge. The
+  // caller holds no access token yet — a signin()-issued challenge token is
+  // the only thing standing in for "the password was already checked" — so
+  // both halves resolve it through AuthService rather than re-implementing
+  // the `typ` check, which is what stops an access token being presented
+  // here as proof of a second factor.
+  async getChallengeAuthenticationOptions(
+    challengeToken: string,
+  ): Promise<PublicKeyCredentialRequestOptionsJSON> {
+    const user =
+      await this.authService.resolveMfaChallengeToken(challengeToken);
+
+    const credentials = await this.db
+      .select()
+      .from(userPasskeysTable)
+      .where(eq(userPasskeysTable.userId, user.id));
+    if (credentials.length === 0) {
+      throw new UnauthorizedException('Invalid or expired challenge');
+    }
+
+    const options = await generateAuthenticationOptions({
+      rpID: webauthnConfig.rpID,
+      userVerification: 'required',
+      // scoped to this user's credentials, unlike the usernameless flow
+      // (OS-490) which deliberately sends an empty list
+      allowCredentials: credentials.map((row) => ({
+        id: row.credentialId,
+        transports: row.transports as never,
+      })),
+    });
+
+    await this.issueChallenge('authentication', options.challenge, user.id);
+    return options;
+  }
+
+  async verifyChallengeAssertion(
+    challengeToken: string,
+    response: AuthenticationResponseJSON,
+  ): Promise<SignInSuccessResult> {
+    const user =
+      await this.authService.resolveMfaChallengeToken(challengeToken);
+
+    const challenge = await this.consumeChallenge(
+      readChallengeFromResponse(response),
+      'authentication',
+      user.id,
+    );
+
+    const [passkey] = await this.db
+      .select()
+      .from(userPasskeysTable)
+      .where(eq(userPasskeysTable.credentialId, response.id));
+
+    // The credential lookup is by credentialId, which is unique GLOBALLY —
+    // without this check any valid passkey would satisfy any user's
+    // challenge, which is the whole second factor.
+    if (!passkey || passkey.userId !== user.id) {
+      throw new UnauthorizedException('Invalid or expired challenge');
+    }
+
+    let verification: Awaited<ReturnType<typeof verifyAuthenticationResponse>>;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response,
+        expectedChallenge: challenge,
+        expectedOrigin: webauthnConfig.expectedOrigins,
+        expectedRPID: webauthnConfig.rpID,
+        requireUserVerification: true,
+        credential: {
+          id: passkey.credentialId,
+          publicKey: isoBase64URL.toBuffer(passkey.publicKey),
+          counter: passkey.counter,
+          transports: passkey.transports as never,
+        },
+      });
+    } catch {
+      throw new UnauthorizedException('Could not verify this passkey');
+    }
+
+    if (!verification.verified) {
+      throw new UnauthorizedException('Could not verify this passkey');
+    }
+
+    // A counter that fails to advance means two authenticators are presenting
+    // the same credential — i.e. one is a clone.
+    //
+    // The exemption is for authenticators that don't implement counters at
+    // all, which report 0 forever; that is only the case when BOTH sides are
+    // 0. Keying it on newCounter alone would let a stored counter of 10 be
+    // "verified" by an assertion reporting 0 — and the update below would
+    // then persist that 0, permanently disarming clone detection for the
+    // credential.
+    //
+    // @simplewebauthn applies the same rule internally, so in practice it
+    // rejects this first. This check is kept deliberately: it's what decides
+    // whether we persist, and these specs mock the verifier, so relying on
+    // the library here would mean relying on behaviour the tests can't see.
+    const { newCounter } = verification.authenticationInfo;
+    const countersInUse = newCounter > 0 || passkey.counter > 0;
+    if (countersInUse && newCounter <= passkey.counter) {
+      throw new UnauthorizedException('Could not verify this passkey');
+    }
+
+    await this.db
+      .update(userPasskeysTable)
+      .set({
+        counter: newCounter,
+        lastUsedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(userPasskeysTable.id, passkey.id));
+
+    // Same terminus as verifyMfaChallenge: a factor the caller just proved
+    // possession of always satisfies an account-wide requirement.
+    return this.authService.buildSignInSuccess(user, {
+      mfaEnrollmentSatisfied: true,
+      hasMfaFactor: true,
+    });
   }
 
   async rename(

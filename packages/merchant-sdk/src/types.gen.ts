@@ -260,6 +260,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/passkeys/challenge/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["PasskeysController_challengeOptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkeys/challenge/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["PasskeysController_challengeVerify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/passkeys": {
         parameters: {
             query?: never;
@@ -1231,6 +1263,7 @@ export interface components {
             /** @enum {boolean} */
             mfaRequired: true;
             challengeToken: string;
+            methods: ("passkey" | "totp" | "recovery")[];
         };
         SignInDto: {
             email: string;
@@ -1294,6 +1327,15 @@ export interface components {
             hasMfaFactor: boolean;
             mfaEnrollmentSatisfied: boolean;
             permissions: string[];
+        };
+        PasskeyChallengeOptionsDto: {
+            challengeToken: string;
+        };
+        PasskeyChallengeVerifyDto: {
+            challengeToken: string;
+            response: {
+                [key: string]: unknown;
+            };
         };
         PasskeyDto: {
             id: number;
@@ -2438,6 +2480,66 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessTokenDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PasskeysController_challengeOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyChallengeOptionsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PasskeysController_challengeVerify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyChallengeVerifyDto"];
+            };
+        };
         responses: {
             200: {
                 headers: {
