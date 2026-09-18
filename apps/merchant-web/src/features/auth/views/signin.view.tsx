@@ -13,8 +13,15 @@ import { useSignInMutation } from "../auth.hooks";
 import { MfaChallengeStep } from "../components/mfa-challenge-step";
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { InfoIcon } from "lucide-react";
+import { InfoIcon, KeyRoundIcon } from "lucide-react";
 import { safeRedirectPath } from "../safe-redirect";
+import { merchantApi } from "../../../lib/merchant-api-client";
+import { queryClient } from "../../../lib/react-query-client";
+import {
+  browserSupportsWebAuthn,
+  PasskeyCeremonyError,
+  runAuthentication,
+} from "../../passkeys/webauthn";
 
 export function SignInView(props: {
   redirect?: string;
@@ -26,6 +33,11 @@ export function SignInView(props: {
   // the whole challenge, not just the token — `methods` says which factors
   // this user can actually present
   const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
+  const [passkeyPending, setPasskeyPending] = useState(false);
+
+  // Hidden rather than disabled on a browser without WebAuthn — a dead
+  // button on the sign-in page is worse than no button.
+  const supportsPasskeys = browserSupportsWebAuthn();
 
   const form = useForm({
     resolver: zodResolver(SignInRequestBodySchema),
@@ -54,6 +66,40 @@ export function SignInView(props: {
         continueAfterSignIn();
       },
     });
+  }
+
+  // The second door: no email, no password. The credential is discoverable,
+  // so the authenticator identifies the user by itself — which is why this
+  // takes no input at all.
+  async function handlePasskeySignIn() {
+    setErrorMessage("");
+    setPasskeyPending(true);
+    try {
+      const options = await merchantApi.passkeys.signInOptions();
+      const response = await runAuthentication(options);
+      await merchantApi.passkeys.signInVerify({
+        response: response as unknown as Record<string, unknown>,
+      });
+      // same reset every other auth mutation does — query keys aren't
+      // user-scoped, so a previous user's cache must not survive sign-in
+      queryClient.clear();
+      continueAfterSignIn();
+    } catch (err) {
+      if (err instanceof PasskeyCeremonyError) {
+        // dismissing the prompt isn't a failure worth reporting
+        if (!err.silent) setErrorMessage(err.message);
+        return;
+      }
+      setErrorMessage(
+        // the API answers a bad or unknown credential with a 401 whose body
+        // says nothing useful
+        err instanceof ApiError && err.status !== 401
+          ? err.message
+          : "That passkey didn't work. Try signing in with your password.",
+      );
+    } finally {
+      setPasskeyPending(false);
+    }
   }
 
   // back to wherever the root route bounced them from (only same-origin
@@ -99,6 +145,29 @@ export function SignInView(props: {
           </Alert>
         )}
         <ErrorMessage />
+
+        {supportsPasskeys && (
+          <>
+            <Button
+              type="button"
+              className="w-full"
+              onClick={handlePasskeySignIn}
+              disabled={passkeyPending}
+            >
+              <KeyRoundIcon />
+              {passkeyPending
+                ? "Waiting for your device..."
+                : "Sign in with a passkey"}
+            </Button>
+
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+          </>
+        )}
+
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <Controller
             control={form.control}
@@ -130,7 +199,11 @@ export function SignInView(props: {
             )}
           />
 
-          <Button type="submit" className="w-full">
+          <Button
+            type="submit"
+            variant={supportsPasskeys ? "outline" : "default"}
+            className="w-full"
+          >
             Sign in
           </Button>
         </form>
