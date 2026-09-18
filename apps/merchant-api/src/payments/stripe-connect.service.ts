@@ -5,6 +5,8 @@ import { DRIZZLE } from 'src/shared/database/database.constants';
 import { STRIPE } from './payments.constants';
 import { StripeConnectStatus } from './entities/stripe-connect-status.entity';
 import { AccountSessionResponse } from './entities/account-session.entity';
+import { OnboardingLinkResponse } from './entities/onboarding-link.entity';
+import { env } from 'src/shared/env';
 
 @Injectable()
 export class StripeConnectService {
@@ -13,36 +15,44 @@ export class StripeConnectService {
     @Inject(STRIPE) private readonly stripe: Stripe,
   ) {}
 
-  // First connect. Creates the Express account if this merchant has none,
-  // and enables the onboarding component — the money action, and the reason
-  // the route carries @RequireMfaFactor (OS-492).
-  async createOnboardingSession(
+  // First connect, or resuming an unfinished one. Creates the Express
+  // account if this merchant has none, then hands back a Stripe-hosted
+  // onboarding URL — the money action, and the reason the route carries
+  // @RequireMfaFactor (OS-492).
+  //
+  // Account Links are single-use and expire within minutes, so every call
+  // mints a fresh one; never cache or pre-mint. Stripe sends the browser to
+  // refresh_url when a link is stale or already spent, and to return_url when
+  // the merchant leaves the flow — which includes "Save for later", so
+  // landing there does NOT mean onboarding finished. Completion still comes
+  // from account.updated / getStatus(refresh).
+  async createOnboardingLink(
     accountId: number,
-  ): Promise<AccountSessionResponse> {
+  ): Promise<OnboardingLinkResponse> {
     const stripeAccountId = await this.ensureConnectedAccount(accountId);
 
-    const session = await this.stripe.accountSessions.create({
+    const link = await this.stripe.accountLinks.create({
       account: stripeAccountId,
-      components: {
-        account_onboarding: { enabled: true },
-        account_management: { enabled: true },
-        balances: { enabled: true },
-        notification_banner: { enabled: true },
-      },
+      type: 'account_onboarding',
+      refresh_url: `${env.MERCHANT_WEB_URL}/app/payments?onboarding=refresh`,
+      return_url: `${env.MERCHANT_WEB_URL}/app/payments?onboarding=return`,
+      // collect everything up front rather than pulling the merchant back
+      // into onboarding the first time a future requirement comes due
+      collection_options: { fields: 'eventually_due' },
     });
 
-    return { clientSecret: session.client_secret };
+    return { url: link.url };
   }
 
   // The session behind the embedded management and balance components, for a
   // merchant who is ALREADY connected.
   //
-  // Deliberately cannot do what createOnboardingSession does: it refuses
-  // when no account exists rather than creating one, and leaves
-  // account_onboarding disabled. Sharing one method made the factor gate on
-  // the onboarding route decorative — the ungated route created the Stripe
-  // account and returned a session with onboarding enabled, which is
-  // precisely what the gate was meant to stand in front of.
+  // Deliberately cannot do what createOnboardingLink does: it refuses when
+  // no account exists rather than creating one, and never enables
+  // account_onboarding. When the two shared one method, the factor gate on
+  // the onboarding route was decorative — the ungated route created the
+  // Stripe account and served onboarding, which is precisely what the gate
+  // was meant to stand in front of.
   async createManagementSession(
     accountId: number,
   ): Promise<AccountSessionResponse> {

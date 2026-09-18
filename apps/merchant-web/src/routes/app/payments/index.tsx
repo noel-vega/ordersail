@@ -5,10 +5,11 @@ import { getStripeConnectStatusQueryOptions } from '../../../features/stripe-con
 import { queryClient } from '../../../lib/react-query-client'
 import { requirePermission } from '../../../lib/require-permission'
 
-// ?onboarding=true — set by the dashboard onboarding checklist's "Connect
-// Stripe" CTA to auto-open the embedded Stripe onboarding flow on arrival
+// ?onboarding=return|refresh — where Stripe-hosted onboarding sends the
+// merchant back to (OS-498). The values are set by merchant-api's
+// createOnboardingLink; anything else is dropped rather than acted on.
 const paymentsSearchSchema = z.object({
-  onboarding: z.boolean().optional().catch(undefined),
+  onboarding: z.enum(['return', 'refresh']).optional().catch(undefined),
 })
 
 export const Route = createFileRoute('/app/payments/')({
