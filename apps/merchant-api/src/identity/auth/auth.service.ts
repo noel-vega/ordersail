@@ -206,13 +206,25 @@ export class AuthService {
   // different parts: the signin challenge branch cares specifically about
   // TOTP, /auth/me reports passkeyCount, and the claim computation only
   // wants hasMfaFactor.
-  private async getFactorState(userId: number): Promise<FactorState> {
+  // Public because PasskeysService needs the same answer when deciding
+  // whether removing a credential would leave the user with no factor.
+  //
+  // Takes an optional transaction so a caller that is *mutating* factors can
+  // read the count inside its own transaction, behind the same lock. Reading
+  // it outside is a time-of-check/time-of-use hole: two concurrent removals
+  // each see two factors, each decide one will remain, and the user lands on
+  // zero. See lockUserFactors().
+  async getFactorState(
+    userId: number,
+    tx?: DbTransaction,
+  ): Promise<FactorState> {
+    const executor = tx ?? this.db;
     const [[mfa], [passkeys]] = await Promise.all([
-      this.db
+      executor
         .select({ confirmedAt: userMfaTable.confirmedAt })
         .from(userMfaTable)
         .where(eq(userMfaTable.userId, userId)),
-      this.db
+      executor
         .select({ value: count() })
         .from(userPasskeysTable)
         .where(eq(userPasskeysTable.userId, userId)),
@@ -225,6 +237,20 @@ export class AuthService {
       passkeyCount,
       hasMfaFactor: totpConfirmed || passkeyCount > 0,
     };
+  }
+
+  // Serializes every read-then-mutate of this user's factors — registering a
+  // passkey, removing one, disabling TOTP, regenerating recovery codes.
+  // They live in two tables and two services, so there is no single row or
+  // constraint to hang the invariant on; the user row is the one thing they
+  // all share. Callers must hold this for the whole check-and-write, or the
+  // "never go to zero factors" rule is only true when nobody double-clicks.
+  async lockUserFactors(tx: DbTransaction, userId: number): Promise<void> {
+    await tx
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .for('update');
   }
 
   private async getFactorClaims(
@@ -449,10 +475,9 @@ export class AuthService {
     return { otpauthUrl: authenticator.keyuri(user.email, MFA_ISSUER, secret) };
   }
 
-  private async verifyPassword(
-    userId: number,
-    password: string,
-  ): Promise<void> {
+  // Public because PasskeysService applies the same re-authentication bar
+  // before removing a credential.
+  async verifyPassword(userId: number, password: string): Promise<void> {
     const [user] = await this.db
       .select()
       .from(usersTable)
@@ -528,16 +553,32 @@ export class AuthService {
       .select({ requireMfaAt: accountsTable.requireMfaAt })
       .from(accountsTable)
       .where(eq(accountsTable.id, accountId));
-    if (account?.requireMfaAt) {
-      throw new ConflictException(
-        'Your account requires MFA — ask an Owner to turn off the requirement before disabling',
-      );
-    }
 
-    await this.db
-      .delete(userMfaRecoveryCodesTable)
-      .where(eq(userMfaRecoveryCodesTable.userId, userId));
-    await this.db.delete(userMfaTable).where(eq(userMfaTable.userId, userId));
+    // One locked transaction for the whole check-and-delete: otherwise this
+    // races PasskeysService.remove (different table, different service) and
+    // both can conclude a factor will remain while each removes the last of
+    // its own kind.
+    await this.db.transaction(async (tx) => {
+      await this.lockUserFactors(tx, userId);
+
+      // Refused only when this would leave the user with nothing. Since
+      // OS-485 a passkey is also a factor, so someone holding both can drop
+      // TOTP and still satisfy the requirement — what must not happen is
+      // going to zero.
+      if (account?.requireMfaAt) {
+        const { passkeyCount } = await this.getFactorState(userId, tx);
+        if (passkeyCount === 0) {
+          throw new ConflictException(
+            'Your account requires MFA — add a passkey first, or ask an Owner to turn off the requirement',
+          );
+        }
+      }
+
+      await tx
+        .delete(userMfaRecoveryCodesTable)
+        .where(eq(userMfaRecoveryCodesTable.userId, userId));
+      await tx.delete(userMfaTable).where(eq(userMfaTable.userId, userId));
+    });
   }
 
   // Requires current-password re-entry (see confirmMfa) — a stolen bearer
@@ -550,12 +591,15 @@ export class AuthService {
     await this.verifyPassword(userId, password);
 
     return this.db.transaction(async (tx) => {
-      const [mfa] = await tx
-        .select({ confirmedAt: userMfaTable.confirmedAt })
-        .from(userMfaTable)
-        .where(eq(userMfaTable.userId, userId))
-        .for('update');
-      if (!mfa?.confirmedAt) {
+      // Locks the user row, not user_mfa: recovery codes belong to the user
+      // rather than to a particular factor, and a passkey-only user has no
+      // user_mfa row to lock at all. Still serializes two concurrent
+      // regenerates, which is what the FOR UPDATE was for — otherwise both
+      // callers are shown a batch and only the second one's is live.
+      await this.lockUserFactors(tx, userId);
+
+      const { hasMfaFactor } = await this.getFactorState(userId, tx);
+      if (!hasMfaFactor) {
         throw new UnauthorizedException('MFA is not enabled');
       }
 
@@ -563,7 +607,9 @@ export class AuthService {
     });
   }
 
-  private async issueRecoveryCodes(
+  // Public because registering a *first* factor of either kind issues the
+  // batch — before passkeys this was only ever reachable from confirmMfa.
+  async issueRecoveryCodes(
     tx: DbTransaction,
     userId: number,
   ): Promise<string[]> {

@@ -449,7 +449,24 @@ describe('AuthService.refreshTokens (OS-467)', () => {
     // concurrent tab) gets the same replacement pair back, not a rejection
     const second = await service.refreshTokens(refreshToken);
 
-    expect(second).toEqual(first);
+    // Compared by jti and claims rather than by the raw strings: two mints
+    // in different clock seconds produce different `iat`, so string equality
+    // was really asserting "both calls landed in the same second" and flaked
+    // on a slow runner. The invariant that matters is that the *same*
+    // replacement token is handed back instead of rotating again.
+    const jwt = new JwtService({ secret: 'test-secret' });
+    const firstRefresh = jwt.decode<{ jti: string; sub: number }>(
+      first.refresh_token,
+    );
+    const secondRefresh = jwt.decode<{ jti: string; sub: number }>(
+      second.refresh_token,
+    );
+    expect(secondRefresh.jti).toBe(firstRefresh.jti);
+    expect(secondRefresh.sub).toBe(firstRefresh.sub);
+
+    // and no extra row was minted by the replay
+    const rows = await db.select().from(userRefreshTokensTable);
+    expect(rows).toHaveLength(2);
   });
 
   it('rejects an access token presented to the refresh flow (typ mismatch)', async () => {
@@ -1222,6 +1239,28 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .where(eq(userMfaTable.userId, user.id));
       expect(mfaRows).toHaveLength(1);
     });
+
+    // Sibling to the case above, not a replacement: the rule is "don't go to
+    // zero factors", and since OS-485 a passkey is one. Someone holding both
+    // can drop TOTP and still satisfy the account-wide requirement.
+    it('allows disabling TOTP when a passkey remains (OS-485)', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      await insertUserPasskey(db, { userId: user.id });
+      await db
+        .update(accountsTable)
+        .set({ requireMfaAt: new Date() })
+        .where(eq(accountsTable.id, user.accountId));
+      const service = await build();
+
+      await service.disableMfa(user.id, user.accountId, password);
+
+      const mfaRows = await db
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, user.id));
+      expect(mfaRows).toHaveLength(0);
+    });
   });
 
   describe('regenerateRecoveryCodes', () => {
@@ -1262,6 +1301,44 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .where(eq(userMfaRecoveryCodesTable.userId, user.id));
       expect(rows).toHaveLength(10);
     });
+  });
+});
+
+// Before passkeys, recovery codes were reachable only through a confirmed
+// TOTP factor — a passkey-only user could never regenerate them.
+describe('AuthService.regenerateRecoveryCodes — any factor (OS-485)', () => {
+  const password = 'correct-horse-battery-staple';
+
+  it('works for a passkey-only user', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      password: await bcrypt.hash(password, 10),
+      emailVerifiedAt: new Date(),
+    });
+    await insertUserPasskey(db, { userId: user.id });
+    const service = await build();
+
+    const { recoveryCodes } = await service.regenerateRecoveryCodes(
+      user.id,
+      password,
+    );
+
+    expect(recoveryCodes).toHaveLength(10);
+  });
+
+  it('still refuses for a user with no factor at all', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      password: await bcrypt.hash(password, 10),
+      emailVerifiedAt: new Date(),
+    });
+    const service = await build();
+
+    await expect(
+      service.regenerateRecoveryCodes(user.id, password),
+    ).rejects.toThrow('MFA is not enabled');
   });
 });
 

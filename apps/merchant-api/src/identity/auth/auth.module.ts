@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { PasskeysController } from './passkeys.controller';
+import { PasskeysService } from './passkeys.service';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { UsersModule } from '../users/users.module';
@@ -46,7 +48,8 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
     MFA_ENROLLMENT_APP_GUARD,
     PERMISSIONS_APP_GUARD,
     AuthService,
+    PasskeysService,
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, PasskeysController],
 })
 export class AuthModule {}
