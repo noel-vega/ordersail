@@ -42,6 +42,15 @@ export function SecurityView(props: { required?: boolean }) {
   const hasMfaFactor = me.data?.hasMfaFactor ?? false;
   const supportsPasskeys = browserSupportsWebAuthn();
 
+  // What the app gate in routes/app/route.tsx actually redirects on. It is
+  // NOT the same as hasMfaFactor: until sign-in can challenge on a passkey
+  // (OS-489), a passkey doesn't clear an account-wide MFA requirement, so a
+  // user can hold a factor and still be blocked. Keying this page's
+  // instructions off the wrong one told them to add a passkey and then
+  // bounced them straight back here.
+  const blockedByRequirement =
+    props.required && !(me.data?.mfaEnrollmentSatisfied ?? true);
+
   // The options call happens here rather than inside the dialog, mirroring
   // how enrollMfa() is called before EnrollMfaDialog opens: the dialog's
   // open state is then derived from having options, so the two can't drift.
@@ -80,14 +89,14 @@ export function SecurityView(props: { required?: boolean }) {
     <div className="max-w-lg space-y-4">
       <h1 className="text-xl font-semibold">Security</h1>
 
-      {props.required && !hasMfaFactor && (
+      {blockedByRequirement && (
         <Alert>
           <InfoIcon />
           <AlertTitle>Your account requires a second factor</AlertTitle>
           <AlertDescription>
-            Add a passkey below to continue — it takes a few seconds and
-            doesn&apos;t need an app. You can use an authenticator app instead
-            if you prefer.
+            Set up an authenticator app below to continue. Passkeys don&apos;t
+            satisfy this requirement yet — you can still add one, but it
+            won&apos;t unblock you.
           </AlertDescription>
         </Alert>
       )}
@@ -99,7 +108,7 @@ export function SecurityView(props: { required?: boolean }) {
           <div>
             <h2 className="text-sm font-medium">Passkeys</h2>
             <p className="text-sm text-muted-foreground">
-              Sign in with Face ID, Touch ID, Windows Hello or your password
+              Confirm with Face ID, Touch ID, Windows Hello or your password
               manager. Nothing to install.
             </p>
           </div>
@@ -108,7 +117,34 @@ export function SecurityView(props: { required?: boolean }) {
           )}
         </div>
 
-        {passkeys.data && passkeys.data.length > 0 ? (
+        {blockedByRequirement && (
+          <p className="text-sm text-muted-foreground">
+            Adding a passkey here won&apos;t lift your account&apos;s
+            requirement yet — set up an authenticator app below for that.
+          </p>
+        )}
+
+        {/* A failed load must not be drawn as "you have none". This is a
+            security inventory: reading it as empty invites adding a
+            duplicate, or believing an old credential was already removed.
+            Query failures are silent here — the global toast is on the
+            mutation cache, not this one. */}
+        {passkeys.isError ? (
+          <div className="flex flex-col items-center gap-2 rounded-md border border-dashed p-6 text-center">
+            <p className="text-sm font-medium">Couldn&apos;t load your passkeys</p>
+            <p className="text-sm text-muted-foreground">
+              This list may be incomplete — try again before adding one.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void passkeys.refetch()}
+              disabled={passkeys.isFetching}
+            >
+              {passkeys.isFetching ? "Retrying..." : "Retry"}
+            </Button>
+          </div>
+        ) : passkeys.data && passkeys.data.length > 0 ? (
           <PasskeyList
             passkeys={passkeys.data}
             onRename={setRenaming}
@@ -122,7 +158,7 @@ export function SecurityView(props: { required?: boolean }) {
               <KeyRoundIcon className="size-5 text-muted-foreground" />
               <p className="text-sm font-medium">No passkeys yet</p>
               <p className="text-sm text-muted-foreground">
-                Add one to sign in without typing a code.
+                Add one for faster sign-in.
               </p>
             </div>
           )
@@ -131,7 +167,11 @@ export function SecurityView(props: { required?: boolean }) {
         {addError && <p className="text-sm text-destructive">{addError}</p>}
 
         {supportsPasskeys ? (
-          <Button onClick={handleAddPasskey} disabled={addPending}>
+          <Button
+            variant={blockedByRequirement ? "outline" : "default"}
+            onClick={handleAddPasskey}
+            disabled={addPending}
+          >
             {addPending ? "Starting..." : "Add a passkey"}
           </Button>
         ) : (
@@ -171,7 +211,7 @@ export function SecurityView(props: { required?: boolean }) {
           </div>
         ) : (
           <Button
-            variant="outline"
+            variant={blockedByRequirement ? "default" : "outline"}
             onClick={handleEnable}
             disabled={enroll.isPending}
           >
