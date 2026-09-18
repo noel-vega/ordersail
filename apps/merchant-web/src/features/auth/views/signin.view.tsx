@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
-import { ApiError } from "merchant-sdk";
+import { ApiError, type MfaChallenge } from "merchant-sdk";
 import {
   SignInRequestBodySchema,
   type SignInRequestBody,
@@ -23,7 +23,9 @@ export function SignInView(props: {
   const signInMutation = useSignInMutation();
   const navigate = useNavigate();
   const [errorMessage, setErrorMessage] = useState("");
-  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  // the whole challenge, not just the token — `methods` says which factors
+  // this user can actually present
+  const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
 
   const form = useForm({
     resolver: zodResolver(SignInRequestBodySchema),
@@ -46,7 +48,7 @@ export function SignInView(props: {
       },
       onSuccess: (result) => {
         if (result && "mfaRequired" in result && result.mfaRequired) {
-          setChallengeToken(result.challengeToken);
+          setChallenge(result);
           return;
         }
         continueAfterSignIn();
@@ -73,12 +75,13 @@ export function SignInView(props: {
     );
   }
 
-  if (challengeToken) {
+  if (challenge) {
     return (
       <MfaChallengeStep
-        challengeToken={challengeToken}
+        challengeToken={challenge.challengeToken}
+        methods={challenge.methods}
         onVerified={continueAfterSignIn}
-        onBack={() => setChallengeToken(null)}
+        onBack={() => setChallenge(null)}
       />
     );
   }

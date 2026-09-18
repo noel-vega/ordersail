@@ -175,18 +175,17 @@ export class AuthService {
 
     const factors = await this.getFactorState(user.id);
 
-    // a confirmed second factor means the password alone isn't enough —
+    // any confirmed second factor means the password alone isn't enough —
     // withhold tokens and hand back a short-lived challenge instead. An
-    // *unconfirmed* enrollment (mid-setup, never finished) doesn't count:
-    // there's nothing to challenge with yet.
+    // *unconfirmed* TOTP enrollment (mid-setup, never finished) doesn't
+    // count: there's nothing to challenge with yet.
     //
-    // Still keyed on TOTP specifically, not factors.hasMfaFactor: the
-    // challenge step can't accept a passkey until the endpoints (OS-488)
-    // and the UI (OS-489) exist. Widening it here first would strand a
-    // passkey-only user on a TOTP-only screen. OS-489 flips it, together
-    // with the matching rule in toFactorClaims() — so a passkey never counts
-    // as enrollment while sign-in has no way to make the user prove it.
-    if (factors.totpConfirmed) {
+    // Widened from TOTP-only to any factor now that the challenge step can
+    // actually accept a passkey assertion (OS-488) and offer it (OS-489).
+    // The matching rule in toFactorClaims() moves in the same commit,
+    // deliberately: a factor counts as enrollment exactly when sign-in can
+    // make the user prove it.
+    if (factors.hasMfaFactor) {
       return {
         mfaRequired: true,
         challengeToken: await this.createMfaChallengeToken(user.id),
@@ -281,15 +280,14 @@ export class AuthService {
   // requires MFA and they haven't enrolled. Account doesn't require it ->
   // trivially satisfied, even with no factor.
   //
-  // Note the deliberate asymmetry: enrollment counts only a CONFIRMED TOTP
-  // factor, while hasMfaFactor also counts passkeys. A factor only satisfies
-  // an account-wide MFA requirement once sign-in can actually make the user
-  // prove it, and nothing verifies a passkey until the challenge accepts an
-  // assertion (OS-488 endpoints, OS-489 UI). Counting one here first would
-  // silently downgrade a require-MFA account to password-only — the user
-  // would hold a factor nobody ever asks them to present. OS-489 widens this
-  // to factors.hasMfaFactor in the same change that lets the challenge
-  // verify one.
+  // These two are now the same question, and were deliberately not always
+  // so: a factor satisfies an account-wide MFA requirement exactly when
+  // sign-in can make the user prove it. Between OS-484 and OS-489 enrollment
+  // counted only a confirmed TOTP factor, because nothing could verify a
+  // passkey yet — counting one would have left a require-MFA account
+  // reachable with a password alone, the user holding a factor nobody ever
+  // asked them to present. Keep them moving together if a third factor type
+  // is ever added.
   private async toFactorClaims(
     accountId: number,
     factors: FactorState,
@@ -301,7 +299,7 @@ export class AuthService {
 
     return {
       hasMfaFactor: factors.hasMfaFactor,
-      mfaEnrollmentSatisfied: !account?.requireMfaAt || factors.totpConfirmed,
+      mfaEnrollmentSatisfied: !account?.requireMfaAt || factors.hasMfaFactor,
     };
   }
 
@@ -396,14 +394,21 @@ export class AuthService {
       .select()
       .from(userMfaTable)
       .where(eq(userMfaTable.userId, user.id));
-    if (!mfa?.confirmedAt) {
-      throw new UnauthorizedException('Invalid or expired challenge');
-    }
 
-    const isValidTotp = authenticator.verify({
-      token: code,
-      secret: decryptMfaSecret(mfa.secret),
-    });
+    // A confirmed TOTP row gates the TOTP branch only — NOT the recovery
+    // branch. Recovery codes belong to the user rather than to a factor
+    // (OS-485 issues them for a first factor of either kind), so requiring
+    // TOTP before considering one locks out exactly the person who needs it:
+    // a passkey-only user who can't present their passkey. That was
+    // unreachable until OS-489 started challenging them, and it failed with
+    // "Invalid or expired challenge", which reads like the challenge expired
+    // rather than "your only fallback doesn't work here".
+    const isValidTotp =
+      mfa?.confirmedAt != null &&
+      authenticator.verify({
+        token: code,
+        secret: decryptMfaSecret(mfa.secret),
+      });
     const isValidRecoveryCode =
       !isValidTotp && (await this.consumeRecoveryCode(user.id, code));
 
