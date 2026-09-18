@@ -296,37 +296,101 @@ export class PasskeysService {
       throw new UnauthorizedException('Could not verify this passkey');
     }
 
-    // A counter that fails to advance means two authenticators are presenting
-    // the same credential — i.e. one is a clone.
-    //
-    // The exemption is for authenticators that don't implement counters at
-    // all, which report 0 forever; that is only the case when BOTH sides are
-    // 0. Keying it on newCounter alone would let a stored counter of 10 be
-    // "verified" by an assertion reporting 0 — and the update below would
-    // then persist that 0, permanently disarming clone detection for the
-    // credential.
-    //
-    // @simplewebauthn applies the same rule internally, so in practice it
-    // rejects this first. This check is kept deliberately: it's what decides
-    // whether we persist, and these specs mock the verifier, so relying on
-    // the library here would mean relying on behaviour the tests can't see.
-    const { newCounter } = verification.authenticationInfo;
-    const countersInUse = newCounter > 0 || passkey.counter > 0;
-    if (countersInUse && newCounter <= passkey.counter) {
-      throw new UnauthorizedException('Could not verify this passkey');
-    }
-
-    await this.db
-      .update(userPasskeysTable)
-      .set({
-        counter: newCounter,
-        lastUsedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(userPasskeysTable.id, passkey.id));
+    await this.stampCredentialUse(passkey, verification.authenticationInfo);
 
     // Same terminus as verifyMfaChallenge: a factor the caller just proved
     // possession of always satisfies an account-wide requirement.
+    return this.authService.buildSignInSuccess(user, {
+      mfaEnrollmentSatisfied: true,
+      hasMfaFactor: true,
+    });
+  }
+
+  // The second door: sign in from a discoverable credential alone, with no
+  // email and no password. What makes it discoverable is the EMPTY
+  // allowCredentials — the authenticator picks from what it holds for this
+  // RP and tells us which one, rather than us naming candidates.
+  async getSignInOptions(): Promise<PublicKeyCredentialRequestOptionsJSON> {
+    const options = await generateAuthenticationOptions({
+      rpID: webauthnConfig.rpID,
+      userVerification: 'required',
+      allowCredentials: [],
+    });
+
+    // userId null: there is no known user yet. That's the whole point, and
+    // it's why webauthn_challenges.userId is nullable.
+    await this.issueChallenge('authentication', options.challenge, null);
+    return options;
+  }
+
+  async verifySignIn(
+    response: AuthenticationResponseJSON,
+  ): Promise<SignInSuccessResult> {
+    const challenge = await this.consumeChallenge(
+      readChallengeFromResponse(response),
+      'authentication',
+      null,
+    );
+
+    // This is how the user is identified — there is no email to go on. It
+    // works only because credentialId is unique globally rather than per
+    // user (see the schema note in user-passkeys.ts).
+    const [passkey] = await this.db
+      .select()
+      .from(userPasskeysTable)
+      .where(eq(userPasskeysTable.credentialId, response.id));
+    if (!passkey) {
+      throw new UnauthorizedException('Could not verify this passkey');
+    }
+
+    const [user] = await this.db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, passkey.userId));
+    // Checked explicitly because this path doesn't go through
+    // UsersService.getByEmail, which is where password sign-in filters
+    // deactivated staff out. A deactivated member's passkey still sits on
+    // their device and would otherwise still work.
+    if (!user || user.deactivatedAt) {
+      throw new UnauthorizedException('Could not verify this passkey');
+    }
+
+    // The handle the authenticator stored at registration. A mismatch means
+    // the credential and the row disagree about who this is — a cheap
+    // consistency check on a lookup that carries the entire sign-in.
+    const userHandle = response.response.userHandle;
+    if (userHandle && userHandle !== user.webauthnHandle) {
+      throw new UnauthorizedException('Could not verify this passkey');
+    }
+
+    let verification: Awaited<ReturnType<typeof verifyAuthenticationResponse>>;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response,
+        expectedChallenge: challenge,
+        expectedOrigin: webauthnConfig.expectedOrigins,
+        expectedRPID: webauthnConfig.rpID,
+        requireUserVerification: true,
+        credential: {
+          id: passkey.credentialId,
+          publicKey: isoBase64URL.toBuffer(passkey.publicKey),
+          counter: passkey.counter,
+          transports: passkey.transports as never,
+        },
+      });
+    } catch {
+      throw new UnauthorizedException('Could not verify this passkey');
+    }
+
+    if (!verification.verified) {
+      throw new UnauthorizedException('Could not verify this passkey');
+    }
+
+    await this.stampCredentialUse(passkey, verification.authenticationInfo);
+
+    // A user-verified assertion is possession plus biometric or PIN in one
+    // gesture, so it satisfies an account-wide requirement on its own —
+    // there is no password step here to add to it.
     return this.authService.buildSignInSuccess(user, {
       mfaEnrollmentSatisfied: true,
       hasMfaFactor: true,
@@ -404,6 +468,41 @@ export class PasskeysService {
     });
   }
 
+  // Clone detection plus the last-used stamp, shared by both assertion paths
+  // so they can't drift.
+  //
+  // A counter that fails to advance means two authenticators are presenting
+  // the same credential — one of them is a clone. The exemption is for
+  // authenticators that don't implement counters at all, which report 0
+  // forever; that is only the case when BOTH sides are 0. Keying it on
+  // newCounter alone would let a stored counter of 10 be "verified" by an
+  // assertion reporting 0 — and the update would then persist that 0,
+  // permanently disarming detection for the credential.
+  //
+  // @simplewebauthn applies the same rule internally, so in practice it
+  // rejects this first. The check is kept deliberately: it's what decides
+  // whether we persist, and these specs mock the verifier, so leaning on the
+  // library here would mean leaning on behaviour the tests can't see.
+  private async stampCredentialUse(
+    passkey: typeof userPasskeysTable.$inferSelect,
+    info: { newCounter: number },
+  ): Promise<void> {
+    const { newCounter } = info;
+    const countersInUse = newCounter > 0 || passkey.counter > 0;
+    if (countersInUse && newCounter <= passkey.counter) {
+      throw new UnauthorizedException('Could not verify this passkey');
+    }
+
+    await this.db
+      .update(userPasskeysTable)
+      .set({
+        counter: newCounter,
+        lastUsedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(userPasskeysTable.id, passkey.id));
+  }
+
   private async issueChallenge(
     type: WebauthnChallengeType,
     challenge: string,
@@ -445,9 +544,14 @@ export class PasskeysService {
           eq(webauthnChallengesTable.type, type),
           isNull(webauthnChallengesTable.consumedAt),
           gt(webauthnChallengesTable.expiresAt, new Date()),
-          ...(userId === null
-            ? []
-            : [eq(webauthnChallengesTable.userId, userId)]),
+          // null means the row must itself be UNSCOPED, not "don't care".
+          // Treating it as "don't care" would let a challenge issued for one
+          // user's second-factor step be spent by the anonymous sign-in
+          // path — one ceremony satisfying another, which is exactly what
+          // scoping a challenge is for.
+          userId === null
+            ? isNull(webauthnChallengesTable.userId)
+            : eq(webauthnChallengesTable.userId, userId),
         ),
       )
       .returning();

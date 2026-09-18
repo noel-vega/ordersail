@@ -885,3 +885,179 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
+
+describe('PasskeysService — usernameless sign-in (OS-490)', () => {
+  async function seedCredential(opts: { deactivated?: boolean } = {}) {
+    const { user } = await seedUser();
+    if (opts.deactivated) {
+      await db
+        .update(usersTable)
+        .set({ deactivatedAt: new Date() })
+        .where(eq(usersTable.id, user.id));
+    }
+    const passkey = await insertUserPasskey(db, {
+      userId: user.id,
+      credentialId: 'discoverable-cred',
+      publicKey: isoBase64URL.fromBuffer(new Uint8Array([4, 4, 4, 4])),
+      counter: 0,
+    });
+    const [row] = await db
+      .select({ handle: usersTable.webauthnHandle })
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id));
+    const service = await build();
+    return { user, passkey, service, handle: row.handle };
+  }
+
+  function assertionFor(
+    challenge: string,
+    opts: { credentialId?: string; userHandle?: string | null } = {},
+  ) {
+    const clientDataJSON = Buffer.from(
+      JSON.stringify({
+        type: 'webauthn.get',
+        challenge,
+        origin: 'http://localhost:5000',
+      }),
+    ).toString('base64url');
+    const credentialId = opts.credentialId ?? 'discoverable-cred';
+    return {
+      id: credentialId,
+      rawId: credentialId,
+      type: 'public-key',
+      response: {
+        clientDataJSON,
+        ...(opts.userHandle === null ? {} : { userHandle: opts.userHandle }),
+      },
+    };
+  }
+
+  // an EMPTY allowCredentials is what makes the credential discoverable —
+  // the authenticator picks one rather than us naming candidates
+  it('issues unscoped options and a challenge with no user', async () => {
+    const { service } = await seedCredential();
+
+    const options = await service.getSignInOptions();
+
+    expect(options.allowCredentials ?? []).toHaveLength(0);
+    expect(options.userVerification).toBe('required');
+    const [row] = await db
+      .select()
+      .from(webauthnChallengesTable)
+      .where(eq(webauthnChallengesTable.challenge, options.challenge));
+    expect(row).toMatchObject({ type: 'authentication', userId: null });
+  });
+
+  it('resolves the user from the credential alone and signs them in', async () => {
+    const { user, passkey, service, handle } = await seedCredential();
+    const options = await service.getSignInOptions();
+    assertionVerifies(3);
+
+    const result = await service.verifySignIn(
+      assertionFor(options.challenge, { userHandle: handle }) as never,
+    );
+
+    expect(result.userId).toBe(user.id);
+    expect(result.hasMfaFactor).toBe(true);
+    // a user-verified assertion is possession + biometric in one gesture
+    expect(result.mfaEnrollmentSatisfied).toBe(true);
+
+    const [stored] = await db
+      .select()
+      .from(userPasskeysTable)
+      .where(eq(userPasskeysTable.id, passkey.id));
+    expect(stored?.counter).toBe(3);
+    expect(stored?.lastUsedAt).not.toBeNull();
+  });
+
+  it('rejects an unknown credential', async () => {
+    const { service } = await seedCredential();
+    const options = await service.getSignInOptions();
+    assertionVerifies();
+
+    await expect(
+      service.verifySignIn(
+        assertionFor(options.challenge, {
+          credentialId: 'never-seen',
+        }) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // password sign-in filters these out via UsersService.getByEmail; this
+  // path doesn't go through it, and the credential still sits on the
+  // ex-staff member's device
+  it('rejects a deactivated user', async () => {
+    const { service, handle } = await seedCredential({ deactivated: true });
+    const options = await service.getSignInOptions();
+    assertionVerifies();
+
+    await expect(
+      service.verifySignIn(
+        assertionFor(options.challenge, { userHandle: handle }) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects a userHandle that disagrees with the stored one', async () => {
+    const { service } = await seedCredential();
+    const options = await service.getSignInOptions();
+    assertionVerifies();
+
+    await expect(
+      service.verifySignIn(
+        assertionFor(options.challenge, {
+          userHandle: 'someone-elses-handle',
+        }) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects a replayed challenge', async () => {
+    const { service, handle } = await seedCredential();
+    const options = await service.getSignInOptions();
+    assertionVerifies();
+    await service.verifySignIn(
+      assertionFor(options.challenge, { userHandle: handle }) as never,
+    );
+
+    await expect(
+      service.verifySignIn(
+        assertionFor(options.challenge, { userHandle: handle }) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects a regressed counter here too', async () => {
+    const { passkey, service, handle } = await seedCredential();
+    await db
+      .update(userPasskeysTable)
+      .set({ counter: 10 })
+      .where(eq(userPasskeysTable.id, passkey.id));
+    const options = await service.getSignInOptions();
+    assertionVerifies(2);
+
+    await expect(
+      service.verifySignIn(
+        assertionFor(options.challenge, { userHandle: handle }) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // a scoped challenge belongs to one user's second-factor step; it must
+  // not double as an anonymous sign-in
+  it('rejects a challenge that was scoped to a user', async () => {
+    const { user, service, handle } = await seedCredential();
+    const scoped = await insertWebauthnChallenge(db, {
+      type: 'authentication',
+      userId: user.id,
+    });
+    assertionVerifies();
+
+    await expect(
+      service.verifySignIn(
+        assertionFor(scoped.challenge, { userHandle: handle }) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});

@@ -487,6 +487,62 @@
         ]
       }
     },
+    "/auth/passkeys/signin/options": {
+      "post": {
+        "operationId": "PasskeysController_signInOptions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Passkeys"
+        ]
+      }
+    },
+    "/auth/passkeys/signin/verify": {
+      "post": {
+        "operationId": "PasskeysController_signInVerify",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeySignInVerifyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTokenDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Passkeys"
+        ]
+      }
+    },
     "/auth/passkeys/challenge/options": {
       "post": {
         "operationId": "PasskeysController_challengeOptions",
@@ -4175,6 +4231,18 @@
           "hasMfaFactor",
           "mfaEnrollmentSatisfied",
           "permissions"
+        ]
+      },
+      "PasskeySignInVerifyDto": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "response"
         ]
       },
       "PasskeyChallengeOptionsDto": {

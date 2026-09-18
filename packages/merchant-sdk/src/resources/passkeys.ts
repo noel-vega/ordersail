@@ -69,6 +69,26 @@ export function createPasskeysResource(
       return result;
     },
 
+    // No arguments: there is no user to name. The options come back with an
+    // empty allowCredentials, which is what lets the authenticator pick a
+    // credential and identify the user by itself.
+    signInOptions: async () =>
+      unwrap(
+        await doRequest(() => client.POST("/auth/passkeys/signin/options")),
+      ),
+
+    signInVerify: async (
+      params: components["schemas"]["PasskeySignInVerifyDto"],
+    ) => {
+      const result = unwrap(
+        await doRequest(() =>
+          client.POST("/auth/passkeys/signin/verify", { body: params }),
+        ),
+      );
+      if (result.access_token) setAccessToken(result.access_token);
+      return result;
+    },
+
     rename: async (
       id: number,
       params: components["schemas"]["PasskeyRenameDto"],
