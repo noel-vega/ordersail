@@ -12,7 +12,6 @@ type ChecklistItem = {
   done: boolean
   cta: string
   to: LinkProps["to"]
-  search?: LinkProps["search"]
   // the CTA only shows for a user who can actually do the step
   permission: string
 }
@@ -29,9 +28,9 @@ export function OnboardingChecklist() {
       label: "Connect Stripe so you can accept payments",
       done: status.data.stripeConnected,
       cta: "Connect Stripe",
+      // lands on the page, not in the flow: onboarding is a redirect to
+      // Stripe now, and its links are single-use — starting one takes a click
       to: "/app/payments",
-      // auto-open the embedded Stripe onboarding flow on arrival (OS-167)
-      search: { onboarding: true },
       permission: "payments:write",
     },
     {
@@ -76,7 +75,7 @@ export function OnboardingChecklist() {
             </span>
             {!item.done && (
               <Can permission={item.permission}>
-                <Link to={item.to} search={item.search}>
+                <Link to={item.to}>
                   <Button variant="outline" size="sm">
                     {item.cta}
                   </Button>

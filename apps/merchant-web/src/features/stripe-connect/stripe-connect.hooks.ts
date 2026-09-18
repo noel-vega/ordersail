@@ -12,9 +12,9 @@ export function useStripeConnectStatusQuery() {
   return useQuery(getStripeConnectStatusQueryOptions())
 }
 
-// called right after the embedded onboarding component exits — webhook
-// delivery can lag, so this does a live Stripe lookup instead of trusting
-// the cached DB status
+// called when the merchant lands back from Stripe-hosted onboarding —
+// webhook delivery can lag the redirect, so this does a live Stripe lookup
+// instead of trusting the cached DB status
 export function useRefreshStripeConnectStatus() {
   const queryClient = useQueryClient()
   return async () => {
@@ -28,19 +28,25 @@ export function useRefreshStripeConnectStatus() {
   }
 }
 
-// Two sessions, because they are two different actions (OS-492).
+// Two calls, because they are two different actions (OS-492, OS-498).
 //
-// Onboarding creates the Stripe account when there isn't one and enables the
-// onboarding component; it's the money action, and it's gated on holding a
-// passkey or authenticator. The management session is for a merchant who has
-// already finished — it refuses when no account exists and never enables
-// onboarding, so it can't be used to slip past that gate.
-export function useCreateOnboardingSessionMutation() {
+// The onboarding link creates the Stripe account when there isn't one and
+// returns a Stripe-hosted URL; it's the money action, gated on holding a
+// passkey or authenticator. The link is single-use and expires in minutes, so
+// this is a mutation fired from a click, never a query. The error is rendered
+// next to the button that caused it, so the global toast would only repeat
+// it — but the MFA_FACTOR_REQUIRED backstop sits above that opt-out and still
+// fires.
+export function useCreateOnboardingLinkMutation() {
   return useMutation({
-    mutationFn: () => merchantApi.stripeConnect.createOnboardingSession(),
+    mutationFn: () => merchantApi.stripeConnect.createOnboardingLink(),
+    meta: { skipGlobalErrorToast: true },
   })
 }
 
+// The session behind the embedded management and balance components, for a
+// merchant who has already finished — it refuses when no account exists and
+// never enables onboarding, so it can't be used to slip past that gate.
 export function useCreateAccountSessionMutation() {
   return useMutation({
     mutationFn: () => merchantApi.stripeConnect.createAccountSession(),
