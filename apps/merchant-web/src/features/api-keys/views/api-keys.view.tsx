@@ -1,4 +1,6 @@
 import { useState } from "react"
+import { useAuthMe } from "../../auth/permissions.hooks"
+import { FactorRequiredDialog } from "../../passkeys/components/factor-required-dialog"
 import { PlusIcon } from "lucide-react"
 import type { ApiKey } from "merchant-sdk"
 import {
@@ -24,6 +26,19 @@ export function ApiKeysView() {
   const keys = apiKeys.data ?? []
   const [creating, setCreating] = useState(false)
   const [revoking, setRevoking] = useState<ApiKey | null>(null)
+  const [factorPrompt, setFactorPrompt] = useState(false)
+  const me = useAuthMe()
+
+  // Checked before opening the form rather than after the API refuses: the
+  // 403 is correct either way, but asking for a factor up front is a much
+  // better moment than after someone has filled a name in.
+  function startCreating() {
+    if (!(me.data?.hasMfaFactor ?? true)) {
+      setFactorPrompt(true)
+      return
+    }
+    setCreating(true)
+  }
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -38,7 +53,7 @@ export function ApiKeysView() {
                 safe to include in client-side code.
               </CardDescription>
             </div>
-            <Button size="sm" onClick={() => setCreating(true)}>
+            <Button size="sm" onClick={startCreating}>
               <PlusIcon /> Create key
             </Button>
           </div>
@@ -80,6 +95,12 @@ export function ApiKeysView() {
       </Card>
 
       <CreateApiKeyDialog open={creating} onOpenChange={setCreating} />
+      <FactorRequiredDialog
+        open={factorPrompt}
+        onOpenChange={setFactorPrompt}
+        action="create an API key"
+        onReady={() => setCreating(true)}
+      />
       <RevokeApiKeyDialog
         apiKey={revoking}
         isLastKey={keys.length === 1}

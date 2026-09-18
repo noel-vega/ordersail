@@ -26,6 +26,28 @@ export const queryClient = new QueryClient({
   mutationCache: new MutationCache({
     onError: (error, _vars, _ctx, mutation) => {
       if (mutation.meta?.skipGlobalErrorToast) return;
+
+      // Backstop for the factor gate (OS-492). The three gated actions check
+      // hasMfaFactor before firing, so this should never be reached — but a
+      // stale claim or a future gated route would otherwise show a bare
+      // message with nothing to do about it. The action makes it recoverable.
+      //
+      // A toast rather than a modal, deliberately: opening a dialog from a
+      // module-level cache needs a provider and an imperative handle wired
+      // through the app shell, which is a lot of machinery for a path that
+      // shouldn't fire.
+      if (error instanceof ApiError && error.code === "MFA_FACTOR_REQUIRED") {
+        toast.error(error.message, {
+          action: {
+            label: "Set one up",
+            onClick: () => {
+              window.location.href = "/app/settings/security";
+            },
+          },
+        });
+        return;
+      }
+
       toast.error(
         error instanceof ApiError
           ? error.message

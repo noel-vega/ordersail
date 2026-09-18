@@ -12,6 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "ui/ca
 import { Badge } from "ui/badge";
 import { Button } from "ui/button";
 import { usePermissions } from "../../auth/permission-context";
+import { useAuthMe } from "../../auth/permissions.hooks";
+import { FactorRequiredDialog } from "../../passkeys/components/factor-required-dialog";
 import {
   useCreateAccountSessionMutation,
   useCreateOnboardingSessionMutation,
@@ -37,6 +39,8 @@ export function PaymentsView() {
   const status = useStripeConnectStatusQuery();
   const createAccountSession = useCreateAccountSessionMutation();
   const createOnboardingSession = useCreateOnboardingSessionMutation();
+  const me = useAuthMe();
+  const [factorPrompt, setFactorPrompt] = useState(false);
   const refreshStatus = useRefreshStripeConnectStatus();
   const canConnect = usePermissions().has("payments:write");
   const { onboarding } = route.useSearch();
@@ -64,6 +68,19 @@ export function PaymentsView() {
   // would hand them a management session with no onboarding component and
   // leave them unable to resume.
   const needsOnboarding = !(status.data?.detailsSubmitted ?? false);
+
+  // Checked before Connect.js initializes, not after. The gated session call
+  // happens inside fetchClientSecret, where a 403 surfaces as an opaque
+  // Stripe error rather than anything the merchant can act on — so this is
+  // the one call site where the proactive check isn't just nicer, it's the
+  // difference between an explanation and a dead embed.
+  function startOnboarding() {
+    if (!(me.data?.hasMfaFactor ?? true)) {
+      setFactorPrompt(true);
+      return;
+    }
+    setShowOnboarding(true);
+  }
 
   // a single Connect instance is reused for every embedded component below —
   // fetchClientSecret is called again automatically by Connect.js if the
@@ -105,7 +122,7 @@ export function PaymentsView() {
         {!showOnboarding && !status.data?.chargesEnabled && (
           <CardContent>
             {canConnect ? (
-              <Button onClick={() => setShowOnboarding(true)}>
+              <Button onClick={startOnboarding}>
                 {status.data?.connected
                   ? "Continue onboarding"
                   : "Connect with Stripe"}
@@ -162,6 +179,12 @@ export function PaymentsView() {
           )}
         </ConnectComponentsProvider>
       )}
+      <FactorRequiredDialog
+        open={factorPrompt}
+        onOpenChange={setFactorPrompt}
+        action="connect Stripe"
+        onReady={() => setShowOnboarding(true)}
+      />
     </div>
   );
 }
