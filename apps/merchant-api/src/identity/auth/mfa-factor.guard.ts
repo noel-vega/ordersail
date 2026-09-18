@@ -11,6 +11,7 @@ import {
   REQUIRE_MFA_FACTOR_KEY,
   type AuthenticatedRequest,
 } from 'src/shared/auth/decorators';
+import { AuthService } from './auth.service';
 
 // Allow-by-default with opt-ins, the same polarity as PermissionsGuard —
 // and deliberately NOT folded into MfaEnrollmentGuard, which is
@@ -24,9 +25,12 @@ import {
 // that matters before connecting a bank account or minting an API key.
 @Injectable()
 export class MfaFactorGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    private readonly authService: AuthService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -44,7 +48,27 @@ export class MfaFactorGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    if (!request.user?.hasMfaFactor) {
+    const user = request.user;
+
+    // Read the factor state LIVE rather than trusting the token's claim.
+    //
+    // hasMfaFactor is baked in at mint time and only recomputed on refresh,
+    // so an access token asserts it for up to 8h. On an account that doesn't
+    // require MFA a user can remove their last factor and keep using that
+    // stale `true` to connect Stripe or mint an API key — with no factor at
+    // all, which is exactly what this gate exists to prevent.
+    //
+    // The other guards deliberately avoid a per-request lookup because they
+    // run on every route. This one is opt-in on a handful of money and
+    // access actions, so one indexed read is a fair price for the claim
+    // being true at the moment it matters rather than some hours ago. It
+    // also means enrolling mid-session works immediately, without waiting
+    // for a token refresh.
+    const holdsFactor =
+      user != null &&
+      (await this.authService.getFactorState(user.sub)).hasMfaFactor;
+
+    if (!holdsFactor) {
       // The `code` is the point: merchant-web has to tell this apart from a
       // permission denial to offer setting a factor up, and a message alone
       // can only be matched by string comparison (see merchant-sdk's do()).

@@ -1,5 +1,10 @@
 import { Controller, Get, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiOkResponse,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { StripeConnectService } from './stripe-connect.service';
 import { StripeConnectStatus } from './entities/stripe-connect-status.entity';
 import { AccountSessionResponse } from './entities/account-session.entity';
@@ -35,17 +40,20 @@ export class StripeConnectController {
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: AccountSessionResponse })
   createOnboardingSession(@CurrentUser() user: AuthenticatedUser) {
-    return this.stripeConnectService.createAccountSession(user.accountId);
+    return this.stripeConnectService.createOnboardingSession(user.accountId);
   }
 
   // Ungated: the embedded management and balance components call this on
-  // every Payments page load for a merchant who is already connected.
+  // every Payments page load for a merchant who is already connected. It
+  // cannot create an account or serve onboarding, so it isn't a way around
+  // the gate above.
   @Post('account-session')
   @RequirePermissions('payments:write')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: AccountSessionResponse })
+  @ApiConflictResponse()
   createAccountSession(@CurrentUser() user: AuthenticatedUser) {
-    return this.stripeConnectService.createAccountSession(user.accountId);
+    return this.stripeConnectService.createManagementSession(user.accountId);
   }
 
   @Get('status')
