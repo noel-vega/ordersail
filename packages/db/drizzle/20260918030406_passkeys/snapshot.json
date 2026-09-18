@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "abfd277f-b082-442d-af90-eeb7b69b7a78",
+  "id": "dd99ea27-9449-43ad-91c6-a538933e6d9c",
   "prevIds": [
     "1f0c7b2a-8f63-4114-8e56-303322a7277e"
   ],
@@ -6413,6 +6413,17 @@
       ],
       "nullsNotDistinct": false,
       "name": "users_email_key",
+      "schema": "public",
+      "table": "users",
+      "entityType": "uniques"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "webauthn_handle"
+      ],
+      "nullsNotDistinct": false,
+      "name": "users_webauthn_handle_key",
       "schema": "public",
       "table": "users",
       "entityType": "uniques"

@@ -24,7 +24,17 @@ CREATE TABLE "webauthn_challenges" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+-- NOTE: gen_random_uuid() is VOLATILE, so this does not take Postgres 11+'s
+-- fast path for adding a defaulted column: it rewrites `users` under an
+-- ACCESS EXCLUSIVE lock, evaluating the default per row. That is exactly
+-- what we want here (every existing user needs a *distinct* handle, and a
+-- non-volatile default would give them all the same one), and `users` is
+-- small pre-launch so the lock is momentary.
+-- If this table ever grows large, do NOT copy this pattern for another
+-- column: add it nullable, backfill in batches, then set the default and
+-- NOT NULL separately.
 ALTER TABLE "users" ADD COLUMN "webauthn_handle" text DEFAULT gen_random_uuid() NOT NULL;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_webauthn_handle_key" UNIQUE("webauthn_handle");--> statement-breakpoint
 CREATE INDEX "user_passkeys_user_id_idx" ON "user_passkeys" ("userId");--> statement-breakpoint
 CREATE INDEX "webauthn_challenges_expires_at_idx" ON "webauthn_challenges" ("expires_at");--> statement-breakpoint
 ALTER TABLE "user_passkeys" ADD CONSTRAINT "user_passkeys_userId_users_id_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE;--> statement-breakpoint

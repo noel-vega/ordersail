@@ -93,6 +93,9 @@ export async function insertUser(
     deactivatedAt?: Date | null;
     // omitted → null (unverified); pass a Date for an already-verified user
     emailVerifiedAt?: Date | null;
+    // omitted → the column's random default, which is what real code always
+    // relies on; pass one only to exercise the uniqueness constraint
+    webauthnHandle?: string;
   },
 ): Promise<Row<typeof usersTable>> {
   return one(
@@ -106,6 +109,9 @@ export async function insertUser(
         password: opts.password ?? null,
         deactivatedAt: opts.deactivatedAt ?? null,
         emailVerifiedAt: opts.emailVerifiedAt ?? null,
+        ...(opts.webauthnHandle !== undefined && {
+          webauthnHandle: opts.webauthnHandle,
+        }),
       })
       .returning(),
   );

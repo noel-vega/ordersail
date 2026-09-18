@@ -100,6 +100,25 @@ describe('users.webauthn_handle (OS-483)', () => {
     expect(handles).not.toContain(String(a.id));
     expect(handles).not.toContain(String(b.id));
   });
+
+  // The random default makes a collision implausible, but InsertUserSchema
+  // lets a caller pass a handle explicitly — so the constraint is what
+  // actually forbids two accounts presenting one WebAuthn identity.
+  it('rejects two users sharing a handle', async () => {
+    const account = await insertAccount(db);
+    await insertUser(db, {
+      accountId: account.id,
+      email: 'dupe-a@passkeys.test',
+      webauthnHandle: 'shared-handle',
+    });
+
+    const err = await insertUser(db, {
+      accountId: account.id,
+      email: 'dupe-b@passkeys.test',
+      webauthnHandle: 'shared-handle',
+    }).catch((e: unknown) => e);
+    expect(isUniqueViolation(err)).toBe(true);
+  });
 });
 
 describe('webauthn_challenges (OS-483)', () => {

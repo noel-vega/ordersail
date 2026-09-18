@@ -37,8 +37,16 @@ export const usersTable = pgTable("users", {
   // It belongs on the user, not on user_passkeys, because it must be stable
   // across every credential they register — a per-credential handle makes
   // password managers show one separate entry per passkey.
+  //
+  // Unique because it *is* an identity as far as an authenticator is
+  // concerned: password managers group credentials by (rpId, userHandle),
+  // so two users sharing a handle would show up as one account and could
+  // overwrite each other's entries. The random default makes a collision
+  // implausible, but InsertUserSchema lets a caller pass one explicitly —
+  // the constraint is what actually forbids it.
   webauthnHandle: text("webauthn_handle")
     .notNull()
+    .unique()
     .default(sql`gen_random_uuid()::text`),
   createdAt: timestampAt("created_at"),
   updatedAt: timestampAt("updated_at"),
