@@ -4,6 +4,8 @@ export * from './users.js';
 export * from './user-email-verifications.js';
 export * from './user-invites.js';
 export * from './user-mfa.js';
+export * from './user-passkeys.js';
+export * from './webauthn-challenges.js';
 export * from './user-password-resets.js';
 export * from './user-refresh-tokens.js';
 export * from './customers.js';

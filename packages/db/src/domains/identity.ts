@@ -8,6 +8,8 @@ export * from '../schema/users.js';
 export * from '../schema/user-email-verifications.js';
 export * from '../schema/user-invites.js';
 export * from '../schema/user-mfa.js';
+export * from '../schema/user-passkeys.js';
+export * from '../schema/webauthn-challenges.js';
 export * from '../schema/user-password-resets.js';
 export * from '../schema/user-refresh-tokens.js';
 export * from '../schema/rbac.js';

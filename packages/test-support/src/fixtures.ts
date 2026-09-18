@@ -35,10 +35,12 @@ import {
   userInvitesTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
+  userPasskeysTable,
   userPasswordResetsTable,
   userRolesTable,
   usersTable,
   variantOptionValuesTable,
+  webauthnChallengesTable,
 } from 'db';
 import type { TestDb } from './test-db/db.js';
 
@@ -216,6 +218,72 @@ export async function insertUserMfaRecoveryCode(
         userId: opts.userId,
         codeHash: opts.codeHash ?? `hash-${uniq()}`,
         usedAt: opts.usedAt ?? null,
+      })
+      .returning(),
+  );
+}
+
+// A registered WebAuthn credential. `credentialId` and `publicKey` are
+// opaque base64url blobs to everything except @simplewebauthn's verifier, so
+// the defaults here are readable placeholders — a spec that actually
+// verifies an assertion mocks the verifier rather than producing real
+// attestation. `credentialId` is globally unique, so the default is
+// uniquified.
+export async function insertUserPasskey(
+  db: TestDb,
+  opts: {
+    userId: number;
+    credentialId?: string;
+    publicKey?: string;
+    counter?: number;
+    nickname?: string;
+    transports?: string[];
+    deviceType?: string;
+    backedUp?: boolean;
+    lastUsedAt?: Date | null;
+  },
+): Promise<Row<typeof userPasskeysTable>> {
+  return one(
+    await db
+      .insert(userPasskeysTable)
+      .values({
+        userId: opts.userId,
+        credentialId: opts.credentialId ?? `credential-${uniq()}`,
+        publicKey: opts.publicKey ?? `public-key-${uniq()}`,
+        counter: opts.counter ?? 0,
+        nickname: opts.nickname ?? 'Test passkey',
+        transports: opts.transports ?? ['internal'],
+        deviceType: opts.deviceType ?? 'multiDevice',
+        backedUp: opts.backedUp ?? true,
+        lastUsedAt: opts.lastUsedAt ?? null,
+      })
+      .returning(),
+  );
+}
+
+// An in-flight WebAuthn ceremony nonce. Defaults to a live registration
+// challenge five minutes out; pass a past `expiresAt` or a `consumedAt` to
+// exercise the rejection paths, and `userId: null` for the usernameless
+// sign-in ceremony, which has no known user until the credential comes back.
+export async function insertWebauthnChallenge(
+  db: TestDb,
+  opts: {
+    type: 'registration' | 'authentication';
+    challenge?: string;
+    userId?: number | null;
+    expiresAt?: Date;
+    consumedAt?: Date | null;
+  },
+): Promise<Row<typeof webauthnChallengesTable>> {
+  return one(
+    await db
+      .insert(webauthnChallengesTable)
+      .values({
+        challenge: opts.challenge ?? `challenge-${uniq()}`,
+        type: opts.type,
+        userId: opts.userId ?? null,
+        expiresAt: opts.expiresAt ?? new Date(Date.now() + 5 * 60 * 1000),
+        consumedAt: opts.consumedAt ?? null,
       })
       .returning(),
   );

@@ -1,4 +1,5 @@
 import { integer, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { timestampAt } from "../utils.js";
 import { accountsTable } from "./accounts.js";
 import { createInsertSchema, createSelectSchema } from "drizzle-orm/zod";
@@ -27,6 +28,18 @@ export const usersTable = pgTable("users", {
   // blocked on this (OS-470) — an unverified account is gated post-login
   // instead, by EmailVerifiedGuard reading the JWT's emailVerified claim.
   emailVerifiedAt: timestamp("email_verified_at"),
+  // The WebAuthn user handle — the opaque id handed to the authenticator at
+  // registration, which then lives in the user's password manager or synced
+  // keychain for as long as the passkey does. Deliberately not the primary
+  // key: user.id is sequential and tenant-scoped, and there's no reason to
+  // persist that in a third party's storage.
+  //
+  // It belongs on the user, not on user_passkeys, because it must be stable
+  // across every credential they register — a per-credential handle makes
+  // password managers show one separate entry per passkey.
+  webauthnHandle: text("webauthn_handle")
+    .notNull()
+    .default(sql`gen_random_uuid()::text`),
   createdAt: timestampAt("created_at"),
   updatedAt: timestampAt("updated_at"),
 });

@@ -16,7 +16,7 @@ root.
 
 | Context | `src/` folder | Modules | Owns (schema tables) |
 |---|---|---|---|
-| **identity** | `identity/` | auth, users, roles, permissions, api-keys, account | `accounts`, `users`, `user_invites`, `account_api_keys`, `roles`, `permissions`, `role_permissions`, `user_roles` |
+| **identity** | `identity/` | auth, users, roles, permissions, api-keys, account | `accounts`, `users`, `user_invites`, `account_api_keys`, `roles`, `permissions`, `role_permissions`, `user_roles`, `user_passkeys`, `webauthn_challenges` |
 | **catalog** | `catalog/` | products, brands, categories | `products`, `brands`, `categories`, `product_options`, `product_option_values`, `product_variants`, `variant_option_values`, `product_categories`, `product_images`, `product_barcodes` |
 | **stock** | `stock/` | inventory, locations | `locations`, `inventory`, `inventory_movements` |
 | **sales** | `sales/` | orders, fulfillments, carts, customers, checkout-orders | `orders`, `order_shipping`, `order_payments`, `order_items`, `fulfillments`, `fulfillment_items`, `carts`, `cart_items`, `customers` |
