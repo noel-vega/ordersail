@@ -1551,7 +1551,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
 // A "factor" is now either a confirmed TOTP row or a passkey, and they live
 // in different tables. These cover the passkey half — the TOTP half is the
 // OS-473 block above, which must keep passing unchanged.
-describe('AuthService — factors across TOTP and passkeys (OS-484)', () => {
+describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () => {
   const password = 'correct-horse-battery-staple';
 
   async function seedAccountAndUser(opts: { requireMfaAt?: Date | null }) {
@@ -1572,15 +1572,57 @@ describe('AuthService — factors across TOTP and passkeys (OS-484)', () => {
   }
 
   describe('signin', () => {
-    it('sets hasMfaFactor for a passkey-only user', async () => {
+    // Flipped by OS-489: between OS-484 and OS-489 a passkey-only user got
+    // straight through, because the challenge step couldn't accept a
+    // passkey. Now it can, so a passkey is challenged like any other factor.
+    it('challenges a passkey-only user and offers the passkey', async () => {
       const { user } = await seedAccountAndUser({});
       await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
       const result = await service.signin({ email: user.email, password });
 
-      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      if (!result.mfaRequired) throw new Error('expected a challenge');
+      expect(result.methods).toEqual(['passkey', 'totp', 'recovery']);
+    });
+
+    // The lockout this milestone exists to avoid. A passkey-only user is
+    // challenged from OS-489 on; if they can't present the passkey — lost
+    // device, different machine, a browser without WebAuthn — the recovery
+    // code is their only way in. verifyMfaChallenge used to require a
+    // confirmed TOTP row before even looking at the code, which rejected
+    // them with "Invalid or expired challenge".
+    it('accepts a recovery code from a passkey-only user', async () => {
+      const { user } = await seedAccountAndUser({});
+      await insertUserPasskey(db, { userId: user.id });
+      const recoveryCode = 'ABCDE-FGHJK';
+      await insertUserMfaRecoveryCode(db, {
+        userId: user.id,
+        codeHash: await bcrypt.hash(recoveryCode, 10),
+      });
+      const service = await build();
+
+      const challenge = await service.signin({ email: user.email, password });
+      if (!challenge.mfaRequired) throw new Error('expected a challenge');
+
+      const result = await service.verifyMfaChallenge(
+        challenge.challengeToken,
+        recoveryCode,
+      );
+
+      expect(result.access_token).toBeTruthy();
       expect(result.hasMfaFactor).toBe(true);
+    });
+
+    it('does not offer the passkey branch to a TOTP-only user', async () => {
+      const { user } = await seedAccountAndUser({});
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      if (!result.mfaRequired) throw new Error('expected a challenge');
+      expect(result.methods).toEqual(['totp', 'recovery']);
     });
 
     // The whole point of the claim split: this user is blocked by nothing,
@@ -1596,21 +1638,19 @@ describe('AuthService — factors across TOTP and passkeys (OS-484)', () => {
       expect(result.hasMfaFactor).toBe(false);
     });
 
-    // A passkey must NOT satisfy an account-wide MFA requirement while
-    // sign-in has no way to make the user prove they hold it. Counting it
-    // would leave a require-MFA account reachable with a password alone —
-    // the user holds a factor nobody ever asks them to present. OS-489
-    // flips this and the challenge branch together.
-    it('does not let a passkey satisfy account-wide MFA yet, but reports it', async () => {
+    // The other half of the OS-489 flip. A passkey now satisfies an
+    // account-wide requirement — but only because the user has to present it
+    // at the challenge first, which is what makes it a factor rather than a
+    // row in a table.
+    it('lets a passkey satisfy account-wide MFA, via the challenge', async () => {
       const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
       await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
       const result = await service.signin({ email: user.email, password });
 
-      if (result.mfaRequired) throw new Error('expected a normal sign-in');
-      expect(result.mfaEnrollmentSatisfied).toBe(false);
-      expect(result.hasMfaFactor).toBe(true);
+      // no tokens without presenting it
+      expect(result.mfaRequired).toBe(true);
     });
 
     it('lets a confirmed TOTP factor satisfy account-wide MFA', async () => {
@@ -1622,19 +1662,6 @@ describe('AuthService — factors across TOTP and passkeys (OS-484)', () => {
 
       // ...by way of the challenge, which is the point: possession is proven
       expect(result.mfaRequired).toBe(true);
-    });
-
-    // Deliberate until OS-489: the challenge step can't accept a passkey
-    // yet, so widening the challenge branch here would strand this user on a
-    // TOTP-only screen with nothing they can type.
-    it('does NOT issue an MFA challenge for a passkey-only user yet', async () => {
-      const { user } = await seedAccountAndUser({});
-      await insertUserPasskey(db, { userId: user.id });
-      const service = await build();
-
-      const result = await service.signin({ email: user.email, password });
-
-      expect(result.mfaRequired).toBe(false);
     });
 
     it('still issues a challenge when TOTP is confirmed', async () => {
@@ -1675,37 +1702,49 @@ describe('AuthService — factors across TOTP and passkeys (OS-484)', () => {
       }>(refreshed.access_token);
 
       expect(payload.hasMfaFactor).toBe(true);
-      // still unsatisfied — see the signin case above; a passkey doesn't
-      // clear an account-wide requirement until the challenge can verify it
-      expect(payload.mfaEnrollmentSatisfied).toBe(false);
+      // and since OS-489 that also clears the account-wide requirement,
+      // without waiting for a re-login
+      expect(payload.mfaEnrollmentSatisfied).toBe(true);
     });
 
     it('drops hasMfaFactor when the last passkey is removed mid-session', async () => {
       const { user } = await seedAccountAndUser({});
-      const passkey = await insertUserPasskey(db, { userId: user.id });
       const service = await build();
+      // sign in BEFORE the passkey exists — a user holding one is now
+      // challenged, and this test is about the claim, not the challenge
       const signInResult = await service.signin({
         email: user.email,
         password,
       });
       if (signInResult.mfaRequired)
         throw new Error('expected a normal sign-in');
+      const passkey = await insertUserPasskey(db, { userId: user.id });
 
       const refreshToken = await service.createRefreshToken(
         claimsFromSignInResult(signInResult),
         randomUUID(),
       );
 
+      const jwt = new JwtService({ secret: 'test-secret' });
+
+      // the claim first has to become true, or "drops" proves nothing
+      const withPasskey = await service.refreshTokens(refreshToken);
+      expect(
+        jwt.decode<{ hasMfaFactor: boolean }>(withPasskey.access_token)
+          .hasMfaFactor,
+      ).toBe(true);
+
       await db
         .delete(userPasskeysTable)
         .where(eq(userPasskeysTable.id, passkey.id));
 
-      const refreshed = await service.refreshTokens(refreshToken);
-      const payload = new JwtService({ secret: 'test-secret' }).decode<{
-        hasMfaFactor: boolean;
-      }>(refreshed.access_token);
-
-      expect(payload.hasMfaFactor).toBe(false);
+      const afterRemoval = await service.refreshTokens(
+        withPasskey.refresh_token,
+      );
+      expect(
+        jwt.decode<{ hasMfaFactor: boolean }>(afterRemoval.access_token)
+          .hasMfaFactor,
+      ).toBe(false);
     });
   });
 });

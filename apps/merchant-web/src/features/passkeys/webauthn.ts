@@ -1,6 +1,8 @@
 import {
   browserSupportsWebAuthn,
+  startAuthentication,
   startRegistration,
+  type AuthenticationResponseJSON,
   type RegistrationResponseJSON,
 } from "@simplewebauthn/browser";
 
@@ -70,6 +72,22 @@ export async function runRegistration(
     return await startRegistration({
       optionsJSON: optionsJSON as Parameters<
         typeof startRegistration
+      >[0]["optionsJSON"],
+    });
+  } catch (err) {
+    throw normalize(err);
+  }
+}
+
+// Same cast confinement as runRegistration — the API's options come back as
+// an open object because @nestjs/swagger can't model the WebAuthn types.
+export async function runAuthentication(
+  optionsJSON: unknown,
+): Promise<AuthenticationResponseJSON> {
+  try {
+    return await startAuthentication({
+      optionsJSON: optionsJSON as Parameters<
+        typeof startAuthentication
       >[0]["optionsJSON"],
     });
   } catch (err) {
