@@ -180,7 +180,9 @@ export class AuthService {
     // Still keyed on TOTP specifically, not factors.hasMfaFactor: the
     // challenge step can't accept a passkey until the endpoints (OS-488)
     // and the UI (OS-489) exist. Widening it here first would strand a
-    // passkey-only user on a TOTP-only screen. OS-489 flips it.
+    // passkey-only user on a TOTP-only screen. OS-489 flips it, together
+    // with the matching rule in toFactorClaims() — so a passkey never counts
+    // as enrollment while sign-in has no way to make the user prove it.
     if (factors.totpConfirmed) {
       return {
         mfaRequired: true,
@@ -188,15 +190,10 @@ export class AuthService {
       };
     }
 
-    const [account] = await this.db
-      .select({ requireMfaAt: accountsTable.requireMfaAt })
-      .from(accountsTable)
-      .where(eq(accountsTable.id, user.accountId));
-
-    return this.buildSignInSuccess(user, {
-      hasMfaFactor: factors.hasMfaFactor,
-      mfaEnrollmentSatisfied: !account?.requireMfaAt || factors.hasMfaFactor,
-    });
+    return this.buildSignInSuccess(
+      user,
+      await this.toFactorClaims(user.accountId, factors),
+    );
   }
 
   // What second factors this user actually holds. A "factor" is a confirmed
@@ -230,6 +227,14 @@ export class AuthService {
     };
   }
 
+  private async getFactorClaims(
+    accountId: number,
+    userId: number,
+  ): Promise<FactorClaims> {
+    const factors = await this.getFactorState(userId);
+    return this.toFactorClaims(accountId, factors);
+  }
+
   // The two token claims that depend on factor state.
   //
   // hasMfaFactor: does the user hold any factor at all — read by the
@@ -238,19 +243,28 @@ export class AuthService {
   // mfaEnrollmentSatisfied: is anything *blocking* this user — the account
   // requires MFA and they haven't enrolled. Account doesn't require it ->
   // trivially satisfied, even with no factor.
-  private async getFactorClaims(
+  //
+  // Note the deliberate asymmetry: enrollment counts only a CONFIRMED TOTP
+  // factor, while hasMfaFactor also counts passkeys. A factor only satisfies
+  // an account-wide MFA requirement once sign-in can actually make the user
+  // prove it, and nothing verifies a passkey until the challenge accepts an
+  // assertion (OS-488 endpoints, OS-489 UI). Counting one here first would
+  // silently downgrade a require-MFA account to password-only — the user
+  // would hold a factor nobody ever asks them to present. OS-489 widens this
+  // to factors.hasMfaFactor in the same change that lets the challenge
+  // verify one.
+  private async toFactorClaims(
     accountId: number,
-    userId: number,
+    factors: FactorState,
   ): Promise<FactorClaims> {
-    const { hasMfaFactor } = await this.getFactorState(userId);
     const [account] = await this.db
       .select({ requireMfaAt: accountsTable.requireMfaAt })
       .from(accountsTable)
       .where(eq(accountsTable.id, accountId));
 
     return {
-      hasMfaFactor,
-      mfaEnrollmentSatisfied: !account?.requireMfaAt || hasMfaFactor,
+      hasMfaFactor: factors.hasMfaFactor,
+      mfaEnrollmentSatisfied: !account?.requireMfaAt || factors.totpConfirmed,
     };
   }
 

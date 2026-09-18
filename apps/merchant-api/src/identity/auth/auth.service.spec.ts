@@ -44,6 +44,24 @@ import { AuthService, claimsFromSignInResult } from './auth.service';
 
 const db = useTestDb();
 
+// otplib's default verification window is 0: a code is only accepted inside
+// its own 30s step. These specs generate a code and then do real work
+// (bcrypt + a DB transaction) before the service verifies it, so a code
+// generated with a second or two left on the clock can be rejected purely
+// because the step rolled over — which is what flaked CI on OS-484. Waiting
+// out the boundary first makes the timing irrelevant instead of unlikely.
+//
+// The production window is a separate question, filed as its own issue: a
+// merchant whose phone clock drifts, or who types slowly, hits exactly this
+// edge for real.
+async function freshTotpCode(secret: string): Promise<string> {
+  const remaining = authenticator.timeRemaining();
+  if (remaining < 3) {
+    await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1000));
+  }
+  return authenticator.generate(secret);
+}
+
 const emailMock = {
   sendInviteEmail: jest.fn(),
   sendPasswordResetEmail: jest.fn(),
@@ -982,7 +1000,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const user = await seedUserWithPassword();
       const service = await build();
       const { otpauthUrl } = await service.enrollMfa(user.id);
-      const code = authenticator.generate(extractSecret(otpauthUrl));
+      const code = await freshTotpCode(extractSecret(otpauthUrl));
 
       await expect(
         service.confirmMfa(user.id, code, 'wrong-password'),
@@ -999,7 +1017,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const user = await seedUserWithPassword();
       const service = await build();
       const { otpauthUrl } = await service.enrollMfa(user.id);
-      const code = authenticator.generate(extractSecret(otpauthUrl));
+      const code = await freshTotpCode(extractSecret(otpauthUrl));
 
       const { recoveryCodes } = await service.confirmMfa(
         user.id,
@@ -1022,11 +1040,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const service = await build();
       const { otpauthUrl } = await service.enrollMfa(user.id);
       const secret = extractSecret(otpauthUrl);
-      await service.confirmMfa(
-        user.id,
-        authenticator.generate(secret),
-        password,
-      );
+      await service.confirmMfa(user.id, await freshTotpCode(secret), password);
 
       const signInResult = await service.signin({
         email: user.email,
@@ -1036,7 +1050,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
 
       const result = await service.verifyMfaChallenge(
         signInResult.challengeToken,
-        authenticator.generate(secret),
+        await freshTotpCode(secret),
       );
 
       expect(result.access_token).toBeTruthy();
@@ -1324,7 +1338,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
 
       const result = await service.verifyMfaChallenge(
         signInResult.challengeToken,
-        authenticator.generate(secret),
+        await freshTotpCode(secret),
       );
 
       expect(result.mfaEnrollmentSatisfied).toBe(true);
@@ -1505,7 +1519,12 @@ describe('AuthService — factors across TOTP and passkeys (OS-484)', () => {
       expect(result.hasMfaFactor).toBe(false);
     });
 
-    it('satisfies an account-wide MFA requirement with a passkey', async () => {
+    // A passkey must NOT satisfy an account-wide MFA requirement while
+    // sign-in has no way to make the user prove they hold it. Counting it
+    // would leave a require-MFA account reachable with a password alone —
+    // the user holds a factor nobody ever asks them to present. OS-489
+    // flips this and the challenge branch together.
+    it('does not let a passkey satisfy account-wide MFA yet, but reports it', async () => {
       const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
       await insertUserPasskey(db, { userId: user.id });
       const service = await build();
@@ -1513,8 +1532,19 @@ describe('AuthService — factors across TOTP and passkeys (OS-484)', () => {
       const result = await service.signin({ email: user.email, password });
 
       if (result.mfaRequired) throw new Error('expected a normal sign-in');
-      expect(result.mfaEnrollmentSatisfied).toBe(true);
+      expect(result.mfaEnrollmentSatisfied).toBe(false);
       expect(result.hasMfaFactor).toBe(true);
+    });
+
+    it('lets a confirmed TOTP factor satisfy account-wide MFA', async () => {
+      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      // ...by way of the challenge, which is the point: possession is proven
+      expect(result.mfaRequired).toBe(true);
     });
 
     // Deliberate until OS-489: the challenge step can't accept a passkey
@@ -1568,7 +1598,9 @@ describe('AuthService — factors across TOTP and passkeys (OS-484)', () => {
       }>(refreshed.access_token);
 
       expect(payload.hasMfaFactor).toBe(true);
-      expect(payload.mfaEnrollmentSatisfied).toBe(true);
+      // still unsatisfied — see the signin case above; a passkey doesn't
+      // clear an account-wide requirement until the challenge can verify it
+      expect(payload.mfaEnrollmentSatisfied).toBe(false);
     });
 
     it('drops hasMfaFactor when the last passkey is removed mid-session', async () => {
