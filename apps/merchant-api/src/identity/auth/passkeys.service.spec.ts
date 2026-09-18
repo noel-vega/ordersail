@@ -825,6 +825,33 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  // The exemption for counter-less authenticators must not apply when the
+  // STORED counter is positive: that's a 10 -> 0 regression, and the update
+  // would persist the 0 and disarm clone detection from then on. The
+  // verifier is mocked here, so this only passes if our own check is right.
+  it('rejects an assertion reporting zero against a positive stored counter', async () => {
+    const { passkey, service, token } = await seedChallengedUser();
+    await db
+      .update(userPasskeysTable)
+      .set({ counter: 10 })
+      .where(eq(userPasskeysTable.id, passkey.id));
+    const options = await service.getChallengeAuthenticationOptions(token);
+    assertionVerifies(0);
+
+    await expect(
+      service.verifyChallengeAssertion(
+        token,
+        assertionFor(options.challenge) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    const [stored] = await db
+      .select()
+      .from(userPasskeysTable)
+      .where(eq(userPasskeysTable.id, passkey.id));
+    expect(stored?.counter).toBe(10);
+  });
+
   // most platform authenticators don't implement counters and always
   // report 0 — that must not look like a clone
   it('accepts a counter that stays at zero', async () => {

@@ -296,12 +296,23 @@ export class PasskeysService {
       throw new UnauthorizedException('Could not verify this passkey');
     }
 
-    // A counter that goes backwards means two authenticators are presenting
-    // the same credential — i.e. one is a clone. Skipped when both sides are
-    // 0, because most platform authenticators don't implement counters at
-    // all and always report 0.
+    // A counter that fails to advance means two authenticators are presenting
+    // the same credential — i.e. one is a clone.
+    //
+    // The exemption is for authenticators that don't implement counters at
+    // all, which report 0 forever; that is only the case when BOTH sides are
+    // 0. Keying it on newCounter alone would let a stored counter of 10 be
+    // "verified" by an assertion reporting 0 — and the update below would
+    // then persist that 0, permanently disarming clone detection for the
+    // credential.
+    //
+    // @simplewebauthn applies the same rule internally, so in practice it
+    // rejects this first. This check is kept deliberately: it's what decides
+    // whether we persist, and these specs mock the verifier, so relying on
+    // the library here would mean relying on behaviour the tests can't see.
     const { newCounter } = verification.authenticationInfo;
-    if (newCounter > 0 && newCounter <= passkey.counter) {
+    const countersInUse = newCounter > 0 || passkey.counter > 0;
+    if (countersInUse && newCounter <= passkey.counter) {
       throw new UnauthorizedException('Could not verify this passkey');
     }
 
