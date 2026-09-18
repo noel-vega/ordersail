@@ -38,7 +38,7 @@ import { EmailService } from 'src/shared/email/email.service';
 import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
-import { AuthService } from './auth.service';
+import { AuthService, claimsFromSignInResult } from './auth.service';
 
 const db = useTestDb();
 
@@ -240,13 +240,15 @@ describe('AuthService.refreshTokens (OS-467)', () => {
     const service = await build();
     const { userId, accountId } = await service.signup(signupDto);
     const refreshToken = await service.createRefreshToken(
-      userId,
-      signupDto.email,
-      accountId,
-      signupDto.firstName,
-      signupDto.lastName,
-      false,
-      true,
+      {
+        sub: userId,
+        email: signupDto.email,
+        accountId,
+        firstName: signupDto.firstName,
+        lastName: signupDto.lastName,
+        emailVerified: false,
+        mfaEnrollmentSatisfied: true,
+      },
       randomUUID(),
     );
     return { service, userId, accountId, refreshToken };
@@ -333,15 +335,15 @@ describe('AuthService.refreshTokens (OS-467)', () => {
 
   it('rejects an access token presented to the refresh flow (typ mismatch)', async () => {
     const { service, userId, accountId } = await seedSession();
-    const accessToken = await service.createAccessToken(
-      userId,
-      signupDto.email,
+    const accessToken = await service.createAccessToken({
+      sub: userId,
+      email: signupDto.email,
       accountId,
-      signupDto.firstName,
-      signupDto.lastName,
-      false,
-      true,
-    );
+      firstName: signupDto.firstName,
+      lastName: signupDto.lastName,
+      emailVerified: false,
+      mfaEnrollmentSatisfied: true,
+    });
 
     await expect(service.refreshTokens(accessToken)).rejects.toThrow(
       'Invalid or expired token',
@@ -355,13 +357,15 @@ describe('AuthService.logout (OS-467)', () => {
     const service = await build();
     const { userId, accountId } = await service.signup(signupDto);
     const refreshToken = await service.createRefreshToken(
-      userId,
-      signupDto.email,
-      accountId,
-      signupDto.firstName,
-      signupDto.lastName,
-      false,
-      true,
+      {
+        sub: userId,
+        email: signupDto.email,
+        accountId,
+        firstName: signupDto.firstName,
+        lastName: signupDto.lastName,
+        emailVerified: false,
+        mfaEnrollmentSatisfied: true,
+      },
       randomUUID(),
     );
 
@@ -1033,15 +1037,15 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
     it('rejects a real access token presented as a challenge token', async () => {
       const user = await seedUserWithPassword();
       const service = await build();
-      const accessToken = await service.createAccessToken(
-        user.id,
-        user.email,
-        user.accountId,
-        user.firstname,
-        user.lastname,
-        true,
-        true,
-      );
+      const accessToken = await service.createAccessToken({
+        sub: user.id,
+        email: user.email,
+        accountId: user.accountId,
+        firstName: user.firstname,
+        lastName: user.lastname,
+        emailVerified: true,
+        mfaEnrollmentSatisfied: true,
+      });
 
       await expect(
         service.verifyMfaChallenge(accessToken, '123456'),
@@ -1301,13 +1305,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       if (signInResult.mfaRequired)
         throw new Error('expected a normal sign-in');
       const refreshToken = await service.createRefreshToken(
-        signInResult.userId,
-        signInResult.email,
-        signInResult.accountId,
-        signInResult.firstName,
-        signInResult.lastName,
-        signInResult.emailVerified,
-        signInResult.mfaEnrollmentSatisfied,
+        claimsFromSignInResult(signInResult),
         randomUUID(),
       );
 
@@ -1338,13 +1336,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
         throw new Error('expected a normal sign-in');
       expect(signInResult.mfaEnrollmentSatisfied).toBe(false);
       const refreshToken = await service.createRefreshToken(
-        signInResult.userId,
-        signInResult.email,
-        signInResult.accountId,
-        signInResult.firstName,
-        signInResult.lastName,
-        signInResult.emailVerified,
-        signInResult.mfaEnrollmentSatisfied,
+        claimsFromSignInResult(signInResult),
         randomUUID(),
       );
 
