@@ -88,6 +88,73 @@ const signupDto = {
   password: 'supersecret',
 };
 
+// Pins the wire format itself, not just the mappers that feed it. The
+// claim set is still growing (hasMfaFactor lands next), so these key-set
+// assertions are meant to fail loudly when it does — adding a claim should
+// be a deliberate edit here, not something that slips through.
+describe('AuthService token payloads (OS-482)', () => {
+  const decode = (token: string) =>
+    new JwtService({ secret: 'test-secret' }).decode<Record<string, unknown>>(
+      token,
+    );
+
+  const claims = {
+    sub: 0, // replaced per-test with a real user id where an FK needs one
+    email: signupDto.email,
+    accountId: 0,
+    firstName: signupDto.firstName,
+    lastName: signupDto.lastName,
+    emailVerified: false,
+    mfaEnrollmentSatisfied: true,
+  };
+
+  it('signs an access token with exactly the claim set plus typ', async () => {
+    const service = await build();
+    const payload = decode(await service.createAccessToken(claims));
+
+    expect(Object.keys(payload).sort()).toEqual([
+      'accountId',
+      'email',
+      'emailVerified',
+      'exp',
+      'firstName',
+      'iat',
+      'lastName',
+      'mfaEnrollmentSatisfied',
+      'sub',
+      'typ',
+    ]);
+    expect(payload).toMatchObject({ ...claims, typ: 'access' });
+  });
+
+  it('signs a refresh token with the same claims plus typ and jti', async () => {
+    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+    const service = await build();
+    const { userId, accountId } = await service.signup(signupDto);
+    const payload = decode(
+      await service.createRefreshToken(
+        { ...claims, sub: userId, accountId },
+        randomUUID(),
+      ),
+    );
+
+    expect(Object.keys(payload).sort()).toEqual([
+      'accountId',
+      'email',
+      'emailVerified',
+      'exp',
+      'firstName',
+      'iat',
+      'jti',
+      'lastName',
+      'mfaEnrollmentSatisfied',
+      'sub',
+      'typ',
+    ]);
+    expect(payload).toMatchObject({ typ: 'refresh', sub: userId });
+  });
+});
+
 describe('AuthService.signup — first-run seed (OS-173)', () => {
   it('seeds the account, api key, Default location, Owner user + role', async () => {
     // permissions are normally upserted at boot by PermissionsService
