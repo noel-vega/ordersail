@@ -37,6 +37,7 @@ import {
   PasskeyChallengeOptionsDto,
   PasskeyChallengeVerifyDto,
 } from './dto/passkey-challenge.dto';
+import { PasskeySignInVerifyDto } from './dto/passkey-signin.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
 import { AuthService, claimsFromSignInResult } from './auth.service';
 import { env } from 'src/shared/env';
@@ -70,6 +71,42 @@ export class PasskeysController {
       path: '/',
       maxAge: 60 * 60 * 24 * 7,
     });
+  }
+
+  // No body: there is no user to name yet. The options come back with an
+  // empty allowCredentials, which is what makes the credential discoverable
+  // — the authenticator picks one and tells us which.
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('signin/options')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  async signInOptions(): Promise<Record<string, unknown>> {
+    const options = await this.passkeysService.getSignInOptions();
+    return options as unknown as Record<string, unknown>;
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('signin/verify')
+  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiUnauthorizedResponse()
+  async signInVerify(
+    @Body() dto: PasskeySignInVerifyDto,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    const result = await this.passkeysService.verifySignIn(
+      dto.response as unknown as AuthenticationResponseJSON,
+    );
+
+    // randomUUID() here is the new session's refresh-token familyId, the
+    // same as every other entry point that starts a session
+    const refreshToken = await this.authService.createRefreshToken(
+      claimsFromSignInResult(result),
+      randomUUID(),
+    );
+    this.setRefreshCookie(res, refreshToken);
+
+    return { access_token: result.access_token };
   }
 
   // Both challenge routes are @Public() for the same reason /auth/mfa/verify

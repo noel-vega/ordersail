@@ -119,6 +119,8 @@ export type PasskeyChallengeOptionsDto =
   components["schemas"]["PasskeyChallengeOptionsDto"];
 export type PasskeyChallengeVerifyDto =
   components["schemas"]["PasskeyChallengeVerifyDto"];
+export type PasskeySignInVerifyDto =
+  components["schemas"]["PasskeySignInVerifyDto"];
 
 export class AdminClient {
   accessToken: string | undefined;
