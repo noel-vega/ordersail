@@ -9,7 +9,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { AuthService } from './auth.service';
+import { AuthService, claimsFromSignInResult } from './auth.service';
+import { claimsFromUser } from './token-claims';
 import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
@@ -92,13 +93,7 @@ export class AuthController {
     }
 
     const refreshToken = await this.authService.createRefreshToken(
-      result.userId,
-      result.email,
-      result.accountId,
-      result.firstName,
-      result.lastName,
-      result.emailVerified,
-      result.mfaEnrollmentSatisfied,
+      claimsFromSignInResult(result),
       randomUUID(),
     );
 
@@ -126,13 +121,7 @@ export class AuthController {
     );
 
     const refreshToken = await this.authService.createRefreshToken(
-      result.userId,
-      result.email,
-      result.accountId,
-      result.firstName,
-      result.lastName,
-      result.emailVerified,
-      result.mfaEnrollmentSatisfied,
+      claimsFromSignInResult(result),
       randomUUID(),
     );
 
@@ -176,15 +165,10 @@ export class AuthController {
     // (mfaEnrollmentSatisfied: false baked into their current access
     // token) — re-mint immediately with the now-satisfied claim so they
     // aren't stuck until their token naturally refreshes
-    const access_token = await this.authService.createAccessToken(
-      user.sub,
-      user.email,
-      user.accountId,
-      user.firstName,
-      user.lastName,
-      user.emailVerified,
-      true,
-    );
+    const access_token = await this.authService.createAccessToken({
+      ...claimsFromUser(user),
+      mfaEnrollmentSatisfied: true,
+    });
 
     return { recoveryCodes: result.recoveryCodes, access_token };
   }
@@ -229,13 +213,7 @@ export class AuthController {
     const result = await this.authService.signup(signupDto);
 
     const refreshToken = await this.authService.createRefreshToken(
-      result.userId,
-      result.email,
-      result.accountId,
-      result.firstName,
-      result.lastName,
-      result.emailVerified,
-      result.mfaEnrollmentSatisfied,
+      claimsFromSignInResult(result),
       randomUUID(),
     );
 
@@ -257,13 +235,7 @@ export class AuthController {
     const result = await this.authService.acceptInvite(acceptInviteDto);
 
     const refreshToken = await this.authService.createRefreshToken(
-      result.userId,
-      result.email,
-      result.accountId,
-      result.firstName,
-      result.lastName,
-      result.emailVerified,
-      result.mfaEnrollmentSatisfied,
+      claimsFromSignInResult(result),
       randomUUID(),
     );
 

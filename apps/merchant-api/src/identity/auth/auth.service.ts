@@ -16,6 +16,7 @@ import { RolesService } from '../roles/roles.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
+import { type TokenClaims } from './token-claims';
 import { AuthMe } from './entities/auth-me.entity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
@@ -82,6 +83,28 @@ interface MfaChallengeResult {
 }
 
 type SignInResult = SignInSuccessResult | MfaChallengeResult;
+
+// A successful sign-in already carries every claim the caller's refresh
+// token needs — AuthController mints one right after signin/signup/
+// accept-invite/verify-mfa, and this keeps that mapping in one place
+// instead of four identical argument lists.
+//
+// Typed structurally rather than as SignInSuccessResult because signup()
+// and acceptInvite() return the same claim-bearing fields without the
+// `mfaRequired` discriminant.
+export function claimsFromSignInResult(
+  result: Omit<SignInSuccessResult, 'mfaRequired' | 'access_token'>,
+): TokenClaims {
+  return {
+    sub: result.userId,
+    email: result.email,
+    accountId: result.accountId,
+    firstName: result.firstName,
+    lastName: result.lastName,
+    emailVerified: result.emailVerified,
+    mfaEnrollmentSatisfied: result.mfaEnrollmentSatisfied,
+  };
+}
 
 // the callback param drizzle hands a `db.transaction()` caller — same
 // query-builder surface as `db` itself, scoped to one transaction
@@ -158,7 +181,7 @@ export class AuthService {
       .where(eq(accountsTable.id, user.accountId));
     const mfaEnrollmentSatisfied = !account?.requireMfaAt;
 
-    return this.buildSignInSuccess(user, mfaEnrollmentSatisfied);
+    return this.buildSignInSuccess(user, { mfaEnrollmentSatisfied });
   }
 
   // Account requires MFA -> satisfied only with a confirmed factor.
@@ -192,18 +215,19 @@ export class AuthService {
       lastname: string;
       emailVerifiedAt: Date | null;
     },
-    mfaEnrollmentSatisfied: boolean,
+    flags: { mfaEnrollmentSatisfied: boolean },
   ): Promise<SignInSuccessResult> {
     const emailVerified = user.emailVerifiedAt !== null;
-    const access_token = await this.createAccessToken(
-      user.id,
-      user.email,
-      user.accountId,
-      user.firstname,
-      user.lastname,
+    const { mfaEnrollmentSatisfied } = flags;
+    const access_token = await this.createAccessToken({
+      sub: user.id,
+      email: user.email,
+      accountId: user.accountId,
+      firstName: user.firstname,
+      lastName: user.lastname,
       emailVerified,
       mfaEnrollmentSatisfied,
-    );
+    });
 
     return {
       mfaRequired: false,
@@ -273,7 +297,7 @@ export class AuthService {
 
     // a confirmed factor the caller just proved possession of always
     // satisfies any account-wide MFA requirement
-    return this.buildSignInSuccess(user, true);
+    return this.buildSignInSuccess(user, { mfaEnrollmentSatisfied: true });
   }
 
   // The update is conditioned on isNull(usedAt) too, not just the row id —
@@ -544,15 +568,15 @@ export class AuthService {
 
       // brand-new account, created moments ago — requireMfaAt is never set
       // at creation, so there's nothing to satisfy yet
-      const access_token = await this.createAccessToken(
-        user.id,
-        user.email,
-        user.accountId,
-        user.firstname,
-        user.lastname,
-        false,
-        true,
-      );
+      const access_token = await this.createAccessToken({
+        sub: user.id,
+        email: user.email,
+        accountId: user.accountId,
+        firstName: user.firstname,
+        lastName: user.lastname,
+        emailVerified: false,
+        mfaEnrollmentSatisfied: true,
+      });
 
       return {
         userId: user.id,
@@ -600,15 +624,15 @@ export class AuthService {
       user.accountId,
       user.id,
     );
-    const access_token = await this.createAccessToken(
-      user.id,
-      user.email,
-      user.accountId,
-      user.firstName,
-      user.lastName,
-      true,
+    const access_token = await this.createAccessToken({
+      sub: user.id,
+      email: user.email,
+      accountId: user.accountId,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      emailVerified: true,
       mfaEnrollmentSatisfied,
-    );
+    });
 
     return {
       userId: user.id,
@@ -666,15 +690,15 @@ export class AuthService {
       user.accountId,
       user.id,
     );
-    const access_token = await this.createAccessToken(
-      user.id,
-      user.email,
-      user.accountId,
-      user.firstname,
-      user.lastname,
-      true,
+    const access_token = await this.createAccessToken({
+      sub: user.id,
+      email: user.email,
+      accountId: user.accountId,
+      firstName: user.firstname,
+      lastName: user.lastname,
+      emailVerified: true,
       mfaEnrollmentSatisfied,
-    );
+    });
 
     return { access_token };
   }
@@ -804,54 +828,12 @@ export class AuthService {
     return await this.jwtService.signAsync(payload, { expiresIn });
   }
 
-  async createAccessToken(
-    sub: number,
-    email: string,
-    accountId: number,
-    firstName: string,
-    lastName: string,
-    emailVerified: boolean,
-    mfaEnrollmentSatisfied: boolean,
-  ) {
-    return await this.sign(
-      {
-        sub,
-        email,
-        accountId,
-        firstName,
-        lastName,
-        emailVerified,
-        mfaEnrollmentSatisfied,
-        typ: 'access',
-      },
-      '8h',
-    );
+  async createAccessToken(claims: TokenClaims) {
+    return await this.sign({ ...claims, typ: 'access' }, '8h');
   }
 
-  private async signRefreshToken(
-    sub: number,
-    email: string,
-    accountId: number,
-    firstName: string,
-    lastName: string,
-    emailVerified: boolean,
-    mfaEnrollmentSatisfied: boolean,
-    jti: string,
-  ) {
-    return await this.sign(
-      {
-        sub,
-        email,
-        accountId,
-        firstName,
-        lastName,
-        emailVerified,
-        mfaEnrollmentSatisfied,
-        typ: 'refresh',
-        jti,
-      },
-      '7d',
-    );
+  private async signRefreshToken(claims: TokenClaims, jti: string) {
+    return await this.sign({ ...claims, typ: 'refresh', jti }, '7d');
   }
 
   // Allocates a fresh jti, records it against `familyId`, and signs a token
@@ -860,52 +842,22 @@ export class AuthService {
   // unchanged on every rotation (refreshTokens) — it's the unit reuse
   // detection revokes as a whole.
   private async mintRefreshToken(
-    sub: number,
-    email: string,
-    accountId: number,
-    firstName: string,
-    lastName: string,
-    emailVerified: boolean,
-    mfaEnrollmentSatisfied: boolean,
+    claims: TokenClaims,
     familyId: string,
   ): Promise<{ token: string; jti: string }> {
     const jti = randomUUID();
     await this.db
       .insert(userRefreshTokensTable)
-      .values({ userId: sub, jti, familyId });
-    const token = await this.signRefreshToken(
-      sub,
-      email,
-      accountId,
-      firstName,
-      lastName,
-      emailVerified,
-      mfaEnrollmentSatisfied,
-      jti,
-    );
+      .values({ userId: claims.sub, jti, familyId });
+    const token = await this.signRefreshToken(claims, jti);
     return { token, jti };
   }
 
   async createRefreshToken(
-    sub: number,
-    email: string,
-    accountId: number,
-    firstName: string,
-    lastName: string,
-    emailVerified: boolean,
-    mfaEnrollmentSatisfied: boolean,
+    claims: TokenClaims,
     familyId: string,
   ): Promise<string> {
-    const { token } = await this.mintRefreshToken(
-      sub,
-      email,
-      accountId,
-      firstName,
-      lastName,
-      emailVerified,
-      mfaEnrollmentSatisfied,
-      familyId,
-    );
+    const { token } = await this.mintRefreshToken(claims, familyId);
     return token;
   }
 
@@ -972,6 +924,18 @@ export class AuthService {
       payload.sub,
     );
 
+    // identity fields ride along from the presented token; the two
+    // recomputed above deliberately override whatever it carried
+    const claims: TokenClaims = {
+      sub: payload.sub,
+      email: payload.email,
+      accountId: payload.accountId,
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      emailVerified,
+      mfaEnrollmentSatisfied,
+    };
+
     const [record] = await this.db
       .select()
       .from(userRefreshTokensTable)
@@ -997,25 +961,8 @@ export class AuthService {
         // unnecessary rotation (or worse, get mistaken for reuse)
         if (replacement && !replacement.revokedAt) {
           return {
-            access_token: await this.createAccessToken(
-              payload.sub,
-              payload.email,
-              payload.accountId,
-              payload.firstName,
-              payload.lastName,
-              emailVerified,
-              mfaEnrollmentSatisfied,
-            ),
-            refresh_token: await this.signRefreshToken(
-              payload.sub,
-              payload.email,
-              payload.accountId,
-              payload.firstName,
-              payload.lastName,
-              emailVerified,
-              mfaEnrollmentSatisfied,
-              replacement.jti,
-            ),
+            access_token: await this.createAccessToken(claims),
+            refresh_token: await this.signRefreshToken(claims, replacement.jti),
           };
         }
       }
@@ -1027,13 +974,7 @@ export class AuthService {
     }
 
     const { token: refresh_token, jti: nextJti } = await this.mintRefreshToken(
-      payload.sub,
-      payload.email,
-      payload.accountId,
-      payload.firstName,
-      payload.lastName,
-      emailVerified,
-      mfaEnrollmentSatisfied,
+      claims,
       record.familyId,
     );
     await this.db
@@ -1041,15 +982,7 @@ export class AuthService {
       .set({ revokedAt: new Date(), replacedByJti: nextJti })
       .where(eq(userRefreshTokensTable.id, record.id));
 
-    const access_token = await this.createAccessToken(
-      payload.sub,
-      payload.email,
-      payload.accountId,
-      payload.firstName,
-      payload.lastName,
-      emailVerified,
-      mfaEnrollmentSatisfied,
-    );
+    const access_token = await this.createAccessToken(claims);
 
     return { access_token, refresh_token };
   }
