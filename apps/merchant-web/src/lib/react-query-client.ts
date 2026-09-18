@@ -25,12 +25,14 @@ export const queryClient = new QueryClient({
   },
   mutationCache: new MutationCache({
     onError: (error, _vars, _ctx, mutation) => {
-      if (mutation.meta?.skipGlobalErrorToast) return;
-
-      // Backstop for the factor gate (OS-492). The three gated actions check
-      // hasMfaFactor before firing, so this should never be reached — but a
-      // stale claim or a future gated route would otherwise show a bare
-      // message with nothing to do about it. The action makes it recoverable.
+      // Backstop for the factor gate (OS-492), checked BEFORE
+      // skipGlobalErrorToast. That flag means "this form shows its own
+      // message", which is right for a validation error and wrong here: the
+      // gated mutations mostly set it, so honouring it first suppressed the
+      // backstop on exactly the paths it exists for. The realistic case is a
+      // stale claim — removing the last factor in another tab while this
+      // one's /auth/me is still inside its 60s staleTime — where the form
+      // would otherwise render a bare string with no way to act on it.
       //
       // A toast rather than a modal, deliberately: opening a dialog from a
       // module-level cache needs a provider and an imperative handle wired
@@ -41,12 +43,25 @@ export const queryClient = new QueryClient({
           action: {
             label: "Set one up",
             onClick: () => {
-              window.location.href = "/app/settings/security";
+              // Dynamic import, not a static one: main.tsx owns the router
+              // and renders on import, and it already imports this module —
+              // a static import would be a cycle that re-enters the entry
+              // point. By the time this callback can run, main has long been
+              // evaluated, so this resolves the existing instance.
+              //
+              // Routing rather than window.location: a hard reload throws
+              // away in-flight router and query state, including whatever
+              // the user had typed into the form that just failed.
+              void import("../main").then(({ router }) =>
+                router.navigate({ to: "/app/settings/security" }),
+              );
             },
           },
         });
         return;
       }
+
+      if (mutation.meta?.skipGlobalErrorToast) return;
 
       toast.error(
         error instanceof ApiError

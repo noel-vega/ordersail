@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
-import type { PosDevice, PosDevicePairing } from "merchant-sdk";
+import { ApiError, type PosDevice, type PosDevicePairing } from "merchant-sdk";
 import { format } from "date-fns";
 import {
   KeyRoundIcon,
@@ -160,8 +160,15 @@ export function ListPosDevicesView() {
   } | null>(null);
   const [showCodeError, setShowCodeError] = useState<string | null>(null);
 
+  // rotate-pairing is gated too (OS-492) — it hands out a fresh pairing code,
+  // which is the same power as minting a device. Four gated endpoints, not
+  // three.
   async function handleShowCode(device: PosDevice) {
     setShowCodeError(null);
+    if (!(me.data?.hasMfaFactor ?? true)) {
+      setFactorPrompt(true);
+      return;
+    }
     try {
       const pairing = await rotate.mutateAsync(device.id);
       if (!pairing) {
@@ -169,8 +176,15 @@ export function ListPosDevicesView() {
         return;
       }
       setRevealing({ pairing, locationName: device.locationName });
-    } catch {
-      setShowCodeError("Couldn't generate a pairing code.");
+    } catch (err) {
+      // don't overwrite the server's reason with a generic one — a gated 403
+      // says something specific and actionable, and replacing it left the
+      // user reading a wrong message next to a correct toast
+      setShowCodeError(
+        err instanceof ApiError
+          ? err.message
+          : "Couldn't generate a pairing code.",
+      );
     }
   }
 

@@ -47,11 +47,17 @@ export function FactorRequiredDialog(props: {
 
   const supportsPasskeys = browserSupportsWebAuthn();
 
+  // Each nested flow CLOSES this dialog rather than opening on top of it —
+  // two stacked modals means two focus traps and two scroll locks fighting
+  // each other. Cancelling a nested flow drops the user back on the page
+  // rather than back here; they can trigger the action again, which is a
+  // cheaper trade than managing a reopen.
   async function startPasskey() {
     setError(null);
     setStarting(true);
     try {
       const options = await merchantApi.passkeys.registerOptions();
+      props.onOpenChange(false);
       setPasskeyOptions(options as Record<string, unknown>);
     } catch (err) {
       setError(
@@ -67,7 +73,10 @@ export function FactorRequiredDialog(props: {
     setStarting(true);
     try {
       const result = await enroll.mutateAsync();
-      if (result) setEnrollment(result);
+      if (result) {
+        props.onOpenChange(false);
+        setEnrollment(result);
+      }
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Couldn't start — try again.",
@@ -84,12 +93,19 @@ export function FactorRequiredDialog(props: {
     props.onReady();
   }
 
+  // Without this a failed registerOptions() leaves its message behind, and
+  // the next gated action reopens the dialog already showing a stale failure
+  // the user hasn't caused yet.
+  function handleOpenChange(next: boolean) {
+    if (!next) {
+      props.onOpenChange(false);
+      setTimeout(() => setError(null), 200);
+    }
+  }
+
   return (
     <>
-      <Dialog
-        open={props.open}
-        onOpenChange={(next) => !next && props.onOpenChange(false)}
-      >
+      <Dialog open={props.open} onOpenChange={handleOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add a second factor first</DialogTitle>
