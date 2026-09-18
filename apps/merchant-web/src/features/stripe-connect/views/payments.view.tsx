@@ -14,6 +14,7 @@ import { Button } from "ui/button";
 import { usePermissions } from "../../auth/permission-context";
 import {
   useCreateAccountSessionMutation,
+  useCreateOnboardingSessionMutation,
   useRefreshStripeConnectStatus,
   useStripeConnectStatusQuery,
 } from "../stripe-connect.hooks";
@@ -35,6 +36,7 @@ const route = getRouteApi("/app/payments/");
 export function PaymentsView() {
   const status = useStripeConnectStatusQuery();
   const createAccountSession = useCreateAccountSessionMutation();
+  const createOnboardingSession = useCreateOnboardingSessionMutation();
   const refreshStatus = useRefreshStripeConnectStatus();
   const canConnect = usePermissions().has("payments:write");
   const { onboarding } = route.useSearch();
@@ -56,21 +58,30 @@ export function PaymentsView() {
   // just while the onboarding flow is open
   const shouldInitConnect = showOnboarding || (status.data?.connected ?? false);
 
+  // Which session to ask for. "Still needs onboarding" covers both a
+  // first-time merchant (no Stripe account at all) and one who started and
+  // didn't finish — the latter has a row, so keying this off `connected`
+  // would hand them a management session with no onboarding component and
+  // leave them unable to resume.
+  const needsOnboarding = !(status.data?.detailsSubmitted ?? false);
+
   // a single Connect instance is reused for every embedded component below —
   // fetchClientSecret is called again automatically by Connect.js if the
-  // session expires, and createAccountSession is idempotent
+  // session expires, and both session calls are idempotent
   const connectInstance = useMemo(() => {
     if (!shouldInitConnect) return null;
     return loadConnectAndInitialize({
       publishableKey: import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY,
       fetchClientSecret: async () => {
-        const session = await createAccountSession.mutateAsync();
+        const session = needsOnboarding
+          ? await createOnboardingSession.mutateAsync()
+          : await createAccountSession.mutateAsync();
         if (!session) throw new Error("Failed to create Stripe account session");
         return session.clientSecret;
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shouldInitConnect]);
+  }, [shouldInitConnect, needsOnboarding]);
 
   return (
     <div className="max-w-3xl space-y-4">

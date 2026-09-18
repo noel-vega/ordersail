@@ -16,9 +16,11 @@ import {
   CurrentUser,
   RequirePermissions,
   type AuthenticatedUser,
+  NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
 
 @Controller('customers')
+@NoMfaFactorRequired()
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 

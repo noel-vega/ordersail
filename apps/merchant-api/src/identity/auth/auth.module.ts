@@ -13,6 +13,7 @@ import { AUTH_APP_GUARD } from './auth.guard';
 import { EMAIL_VERIFIED_APP_GUARD } from './email-verified.guard';
 import { MFA_ENROLLMENT_APP_GUARD } from './mfa-enrollment.guard';
 import { PERMISSIONS_APP_GUARD } from './permissions.guard';
+import { MFA_FACTOR_APP_GUARD } from './mfa-factor.guard';
 import { THROTTLER_APP_GUARD } from './throttler.guard';
 
 @Module({
@@ -47,6 +48,10 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
     EMAIL_VERIFIED_APP_GUARD,
     MFA_ENROLLMENT_APP_GUARD,
     PERMISSIONS_APP_GUARD,
+    // Last, deliberately: someone who lacks the permission entirely should
+    // be told that, not asked to add a passkey for an action they could
+    // never perform anyway.
+    MFA_FACTOR_APP_GUARD,
     AuthService,
     PasskeysService,
   ],

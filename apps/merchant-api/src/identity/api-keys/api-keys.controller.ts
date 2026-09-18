@@ -18,12 +18,15 @@ import {
   CurrentUser,
   RequirePermissions,
   type AuthenticatedUser,
+  NoMfaFactorRequired,
+  RequireMfaFactor,
 } from 'src/shared/auth/decorators';
 import { ApiKeyDto } from './dto/api-key.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 
 @ApiBearerAuth('JWT-auth')
 @Controller('api-keys')
+@NoMfaFactorRequired()
 export class ApiKeysController {
   constructor(private readonly apiKeysService: ApiKeysService) {}
 
@@ -34,8 +37,11 @@ export class ApiKeysController {
     return this.apiKeysService.listForAccount(user.accountId);
   }
 
+  // A leaked key is silent, long-lived and account-wide — the worst thing
+  // on this list to hand an attacker.
   @Post()
   @RequirePermissions('api_keys:write')
+  @RequireMfaFactor()
   @ApiCreatedResponse({ type: ApiKeyDto })
   async create(
     @Body() dto: CreateApiKeyDto,

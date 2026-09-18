@@ -28,6 +28,19 @@ export function useRefreshStripeConnectStatus() {
   }
 }
 
+// Two sessions, because they are two different actions (OS-492).
+//
+// Onboarding creates the Stripe account when there isn't one and enables the
+// onboarding component; it's the money action, and it's gated on holding a
+// passkey or authenticator. The management session is for a merchant who has
+// already finished — it refuses when no account exists and never enables
+// onboarding, so it can't be used to slip past that gate.
+export function useCreateOnboardingSessionMutation() {
+  return useMutation({
+    mutationFn: () => merchantApi.stripeConnect.createOnboardingSession(),
+  })
+}
+
 export function useCreateAccountSessionMutation() {
   return useMutation({
     mutationFn: () => merchantApi.stripeConnect.createAccountSession(),

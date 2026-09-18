@@ -1,10 +1,14 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse } from '@nestjs/swagger';
-import { AuthenticatedOnly } from 'src/shared/auth/decorators';
+import {
+  AuthenticatedOnly,
+  NoMfaFactorRequired,
+} from 'src/shared/auth/decorators';
 import { PermissionsService } from './permissions.service';
 import { Permission } from './entities/permission.entity';
 
 @Controller('permissions')
+@NoMfaFactorRequired()
 export class PermissionsController {
   constructor(private readonly permissionsService: PermissionsService) {}
 

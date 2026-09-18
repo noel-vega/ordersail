@@ -4,11 +4,13 @@ import {
   AuthenticatedOnly,
   CurrentUser,
   type AuthenticatedUser,
+  NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
 import { OnboardingService } from './onboarding.service';
 import { OnboardingStatus } from './entities/onboarding-status.entity';
 
 @Controller('onboarding')
+@NoMfaFactorRequired()
 export class OnboardingController {
   constructor(private readonly onboardingService: OnboardingService) {}
 

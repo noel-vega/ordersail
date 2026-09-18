@@ -34,6 +34,7 @@ import {
   SkipEmailVerification,
   SkipMfaEnrollment,
   type AuthenticatedUser,
+  NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
 import { env } from 'src/shared/env';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -51,6 +52,7 @@ import {
 const REFRESH_TOKEN_COOKIE = 'refresh_token';
 
 @Controller('auth')
+@NoMfaFactorRequired()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
@@ -172,6 +174,10 @@ export class AuthController {
     const access_token = await this.authService.createAccessToken({
       ...claimsFromUser(user),
       mfaEnrollmentSatisfied: true,
+      // they hold one now — passkey registration sets this too, and without
+      // it a caller who just enrolled TOTP keeps failing every gated action
+      // until their next refresh
+      hasMfaFactor: true,
     });
 
     return { recoveryCodes: result.recoveryCodes, access_token };

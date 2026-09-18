@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import type Stripe from 'stripe';
 import { type db as Db, eq, stripeAccountsTable } from 'db/payments';
 import { DRIZZLE } from 'src/shared/database/database.constants';
@@ -13,7 +13,10 @@ export class StripeConnectService {
     @Inject(STRIPE) private readonly stripe: Stripe,
   ) {}
 
-  async createAccountSession(
+  // First connect. Creates the Express account if this merchant has none,
+  // and enables the onboarding component — the money action, and the reason
+  // the route carries @RequireMfaFactor (OS-492).
+  async createOnboardingSession(
     accountId: number,
   ): Promise<AccountSessionResponse> {
     const stripeAccountId = await this.ensureConnectedAccount(accountId);
@@ -22,6 +25,41 @@ export class StripeConnectService {
       account: stripeAccountId,
       components: {
         account_onboarding: { enabled: true },
+        account_management: { enabled: true },
+        balances: { enabled: true },
+        notification_banner: { enabled: true },
+      },
+    });
+
+    return { clientSecret: session.client_secret };
+  }
+
+  // The session behind the embedded management and balance components, for a
+  // merchant who is ALREADY connected.
+  //
+  // Deliberately cannot do what createOnboardingSession does: it refuses
+  // when no account exists rather than creating one, and leaves
+  // account_onboarding disabled. Sharing one method made the factor gate on
+  // the onboarding route decorative — the ungated route created the Stripe
+  // account and returned a session with onboarding enabled, which is
+  // precisely what the gate was meant to stand in front of.
+  async createManagementSession(
+    accountId: number,
+  ): Promise<AccountSessionResponse> {
+    const [existing] = await this.db
+      .select()
+      .from(stripeAccountsTable)
+      .where(eq(stripeAccountsTable.accountId, accountId));
+
+    if (!existing) {
+      throw new ConflictException(
+        'This account is not connected to Stripe yet',
+      );
+    }
+
+    const session = await this.stripe.accountSessions.create({
+      account: existing.stripeAccountId,
+      components: {
         account_management: { enabled: true },
         balances: { enabled: true },
         notification_banner: { enabled: true },

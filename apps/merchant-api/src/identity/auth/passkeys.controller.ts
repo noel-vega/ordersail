@@ -26,6 +26,7 @@ import {
   Public,
   SkipMfaEnrollment,
   type AuthenticatedUser,
+  NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
 import { PasskeysService } from './passkeys.service';
 import { PasskeyDto } from './dto/passkey.dto';
@@ -54,6 +55,7 @@ import { randomUUID } from 'node:crypto';
 // @SkipEmailVerification() — getRegistrationOptions refuses an unverified
 // address anyway, and the gate is the right default for the rest.
 @Controller('auth/passkeys')
+@NoMfaFactorRequired()
 export class PasskeysController {
   constructor(
     private readonly passkeysService: PasskeysService,
