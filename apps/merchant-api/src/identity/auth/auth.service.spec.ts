@@ -1222,6 +1222,28 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .where(eq(userMfaTable.userId, user.id));
       expect(mfaRows).toHaveLength(1);
     });
+
+    // Sibling to the case above, not a replacement: the rule is "don't go to
+    // zero factors", and since OS-485 a passkey is one. Someone holding both
+    // can drop TOTP and still satisfy the account-wide requirement.
+    it('allows disabling TOTP when a passkey remains (OS-485)', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      await insertUserPasskey(db, { userId: user.id });
+      await db
+        .update(accountsTable)
+        .set({ requireMfaAt: new Date() })
+        .where(eq(accountsTable.id, user.accountId));
+      const service = await build();
+
+      await service.disableMfa(user.id, user.accountId, password);
+
+      const mfaRows = await db
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, user.id));
+      expect(mfaRows).toHaveLength(0);
+    });
   });
 
   describe('regenerateRecoveryCodes', () => {
@@ -1262,6 +1284,44 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .where(eq(userMfaRecoveryCodesTable.userId, user.id));
       expect(rows).toHaveLength(10);
     });
+  });
+});
+
+// Before passkeys, recovery codes were reachable only through a confirmed
+// TOTP factor — a passkey-only user could never regenerate them.
+describe('AuthService.regenerateRecoveryCodes — any factor (OS-485)', () => {
+  const password = 'correct-horse-battery-staple';
+
+  it('works for a passkey-only user', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      password: await bcrypt.hash(password, 10),
+      emailVerifiedAt: new Date(),
+    });
+    await insertUserPasskey(db, { userId: user.id });
+    const service = await build();
+
+    const { recoveryCodes } = await service.regenerateRecoveryCodes(
+      user.id,
+      password,
+    );
+
+    expect(recoveryCodes).toHaveLength(10);
+  });
+
+  it('still refuses for a user with no factor at all', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      password: await bcrypt.hash(password, 10),
+      emailVerifiedAt: new Date(),
+    });
+    const service = await build();
+
+    await expect(
+      service.regenerateRecoveryCodes(user.id, password),
+    ).rejects.toThrow('MFA is not enabled');
   });
 });
 

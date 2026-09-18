@@ -20,6 +20,17 @@ export const env = parseEnv(
     MFA_ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/),
     MERCHANT_WEB_URL: z.url().default('http://localhost:5000'),
 
+    // WebAuthn relying-party identity (OS-485). All optional — derived from
+    // MERCHANT_WEB_URL when unset, which is already correct in every
+    // environment. Override only to change the RP ID deliberately, since it
+    // is baked into every credential ever issued and cannot be migrated.
+    // See identity/auth/webauthn.config.ts.
+    WEBAUTHN_RP_ID: z.string().min(1).optional(),
+    // comma-separated; the browser origins allowed to complete a ceremony
+    WEBAUTHN_ORIGINS: z.string().min(1).optional(),
+    // shown by the authenticator / password manager when saving a passkey
+    WEBAUTHN_RP_NAME: z.string().min(1).default('OrderSail'),
+
     // one platform-owned Stripe/Shippo account, shared with storefront-api
     STRIPE_SECRET_KEY: z.string().startsWith('sk_'),
     // the one Stripe Dashboard event destination → POST /webhooks/stripe

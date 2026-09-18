@@ -206,7 +206,9 @@ export class AuthService {
   // different parts: the signin challenge branch cares specifically about
   // TOTP, /auth/me reports passkeyCount, and the claim computation only
   // wants hasMfaFactor.
-  private async getFactorState(userId: number): Promise<FactorState> {
+  // Public because PasskeysService needs the same answer when deciding
+  // whether removing a credential would leave the user with no factor.
+  async getFactorState(userId: number): Promise<FactorState> {
     const [[mfa], [passkeys]] = await Promise.all([
       this.db
         .select({ confirmedAt: userMfaTable.confirmedAt })
@@ -449,10 +451,9 @@ export class AuthService {
     return { otpauthUrl: authenticator.keyuri(user.email, MFA_ISSUER, secret) };
   }
 
-  private async verifyPassword(
-    userId: number,
-    password: string,
-  ): Promise<void> {
+  // Public because PasskeysService applies the same re-authentication bar
+  // before removing a credential.
+  async verifyPassword(userId: number, password: string): Promise<void> {
     const [user] = await this.db
       .select()
       .from(usersTable)
@@ -528,10 +529,18 @@ export class AuthService {
       .select({ requireMfaAt: accountsTable.requireMfaAt })
       .from(accountsTable)
       .where(eq(accountsTable.id, accountId));
+
+    // Refused only when this would leave the user with nothing. Since
+    // OS-485 a passkey is also a factor, so someone holding both can drop
+    // TOTP and still satisfy the requirement — what must not happen is
+    // going to zero.
     if (account?.requireMfaAt) {
-      throw new ConflictException(
-        'Your account requires MFA — ask an Owner to turn off the requirement before disabling',
-      );
+      const { passkeyCount } = await this.getFactorState(userId);
+      if (passkeyCount === 0) {
+        throw new ConflictException(
+          'Your account requires MFA — add a passkey first, or ask an Owner to turn off the requirement',
+        );
+      }
     }
 
     await this.db
@@ -550,12 +559,19 @@ export class AuthService {
     await this.verifyPassword(userId, password);
 
     return this.db.transaction(async (tx) => {
-      const [mfa] = await tx
-        .select({ confirmedAt: userMfaTable.confirmedAt })
-        .from(userMfaTable)
-        .where(eq(userMfaTable.userId, userId))
+      // Locks the user row, not user_mfa: recovery codes belong to the user
+      // rather than to a particular factor, and a passkey-only user has no
+      // user_mfa row to lock at all. Still serializes two concurrent
+      // regenerates, which is what the FOR UPDATE was for — otherwise both
+      // callers are shown a batch and only the second one's is live.
+      await tx
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId))
         .for('update');
-      if (!mfa?.confirmedAt) {
+
+      const { hasMfaFactor } = await this.getFactorState(userId);
+      if (!hasMfaFactor) {
         throw new UnauthorizedException('MFA is not enabled');
       }
 
@@ -563,7 +579,9 @@ export class AuthService {
     });
   }
 
-  private async issueRecoveryCodes(
+  // Public because registering a *first* factor of either kind issues the
+  // batch — before passkeys this was only ever reachable from confirmMfa.
+  async issueRecoveryCodes(
     tx: DbTransaction,
     userId: number,
   ): Promise<string[]> {

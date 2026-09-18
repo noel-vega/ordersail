@@ -21,6 +21,7 @@ export {
   and,
   or,
   gt,
+  lt,
   inArray,
   notInArray,
   isNull,

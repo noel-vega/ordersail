@@ -22,6 +22,7 @@ import { createRolesResource } from "./resources/roles.js";
 import { createPermissionsResource } from "./resources/permissions.js";
 import { createPosDevicesResource } from "./resources/pos-devices.js";
 import { createMfaResource } from "./resources/mfa.js";
+import { createPasskeysResource } from "./resources/passkeys.js";
 
 export type ApiKey = components["schemas"]["ApiKeyDto"];
 export type CreateApiKeyDto = components["schemas"]["CreateApiKeyDto"];
@@ -107,6 +108,13 @@ export type MfaRegenerateRecoveryCodesDto =
   components["schemas"]["MfaRegenerateRecoveryCodesDto"];
 export type MfaVerifyDto = components["schemas"]["MfaVerifyDto"];
 export type MfaChallenge = components["schemas"]["MfaChallengeDto"];
+export type Passkey = components["schemas"]["PasskeyDto"];
+export type PasskeyRegisterVerifyDto =
+  components["schemas"]["PasskeyRegisterVerifyDto"];
+export type PasskeyRegistered =
+  components["schemas"]["PasskeyRegisteredDto"];
+export type PasskeyRenameDto = components["schemas"]["PasskeyRenameDto"];
+export type PasskeyRemoveDto = components["schemas"]["PasskeyRemoveDto"];
 
 export class AdminClient {
   accessToken: string | undefined;
@@ -132,6 +140,7 @@ export class AdminClient {
   permissions: ReturnType<typeof createPermissionsResource>;
   posDevices: ReturnType<typeof createPosDevicesResource>;
   mfa: ReturnType<typeof createMfaResource>;
+  passkeys: ReturnType<typeof createPasskeysResource>;
 
   // every request needs the bearer token and the cross-origin cookie
   // (for the refresh_token) — centralized here instead of at each call site.
@@ -170,6 +179,11 @@ export class AdminClient {
     this.permissions = createPermissionsResource(this.client, doRequest);
     this.posDevices = createPosDevicesResource(this.client, doRequest);
     this.mfa = createMfaResource(
+      this.client,
+      doRequest,
+      (token) => (this.accessToken = token),
+    );
+    this.passkeys = createPasskeysResource(
       this.client,
       doRequest,
       (token) => (this.accessToken = token),
