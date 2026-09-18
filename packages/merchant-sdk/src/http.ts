@@ -12,14 +12,39 @@ export type DoFn = <T>(
 
 // A non-2xx response from the API. `message` is the server's message when it
 // sends one (NestJS `{ message }`, string or string[]), otherwise a fallback.
+//
+// `code` is a machine-readable discriminator the API attaches to the
+// exceptions a caller has to *branch* on rather than just display. A plain
+// message can't be branched on without string matching, which breaks the
+// moment the wording changes.
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+// NestJS error bodies are `{ message, ...}` where message is a string or, from
+// the validation pipe, an array of them. A handler can also throw an object
+// literal, which is how `code` arrives.
+export function readErrorBody(body: unknown): {
+  message: string | undefined;
+  code: string | undefined;
+} {
+  if (!body || typeof body !== "object")
+    return { message: undefined, code: undefined };
+  const raw = "message" in body ? (body as { message: unknown }).message : undefined;
+  const message = Array.isArray(raw)
+    ? raw.join(", ")
+    : typeof raw === "string" && raw
+      ? raw
+      : undefined;
+  const rawCode = "code" in body ? (body as { code: unknown }).code : undefined;
+  return { message, code: typeof rawCode === "string" ? rawCode : undefined };
 }
 
 // openapi-fetch resolves non-2xx as { error } rather than throwing. Resource
@@ -36,15 +61,10 @@ export function unwrap<T>(result: {
   response: Response;
 }): T {
   if (result.response.ok) return result.data as T;
-  const body = result.error;
-  const raw =
-    body && typeof body === "object" && "message" in body
-      ? (body as { message: unknown }).message
-      : undefined;
-  const message = Array.isArray(raw)
-    ? raw.join(", ")
-    : typeof raw === "string" && raw
-      ? raw
-      : `Request failed (${result.response.status})`;
-  throw new ApiError(message, result.response.status);
+  const { message, code } = readErrorBody(result.error);
+  throw new ApiError(
+    message ?? `Request failed (${result.response.status})`,
+    result.response.status,
+    code,
+  );
 }
