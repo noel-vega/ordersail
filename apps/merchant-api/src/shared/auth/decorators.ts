@@ -62,6 +62,12 @@ export interface AuthenticatedUser {
   // immediately via a token re-mint in AuthService.confirmMfa, rather than
   // waiting for their next refresh.
   mfaEnrollmentSatisfied: boolean;
+  // true when the caller holds ANY second factor — a confirmed TOTP row or
+  // at least one passkey (OS-484). Distinct from mfaEnrollmentSatisfied,
+  // which asks whether anything is *blocking* them: a user on an account
+  // that doesn't require MFA is satisfied with no factor at all. Read by
+  // MfaFactorGuard to gate money/access-sensitive actions (OS-492).
+  hasMfaFactor: boolean;
   // only present on refresh tokens — identifies the user_refresh_tokens row
   // this specific token corresponds to (rotation/reuse-detection, OS-467)
   jti?: string;

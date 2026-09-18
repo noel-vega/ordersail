@@ -6,7 +6,8 @@ import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 //
 // This exists as one object rather than a positional parameter list because
 // the claim set is mostly booleans and is still growing (emailVerified came
-// with OS-470, mfaEnrollmentSatisfied with OS-473). Past seven positionals
+// with OS-470, mfaEnrollmentSatisfied with OS-473, hasMfaFactor with
+// OS-484). Past seven positionals
 // with three adjacent booleans, a transposed argument type-checks cleanly
 // and silently mints a wrong auth claim.
 export interface TokenClaims {
@@ -17,6 +18,7 @@ export interface TokenClaims {
   lastName: string;
   emailVerified: boolean;
   mfaEnrollmentSatisfied: boolean;
+  hasMfaFactor: boolean;
 }
 
 // Maps a request's decoded token back to the claim set, for the handlers
@@ -35,5 +37,6 @@ export function claimsFromUser(user: AuthenticatedUser): TokenClaims {
     lastName: user.lastName,
     emailVerified: user.emailVerified,
     mfaEnrollmentSatisfied: user.mfaEnrollmentSatisfied,
+    hasMfaFactor: user.hasMfaFactor,
   };
 }

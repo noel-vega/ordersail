@@ -1209,7 +1209,9 @@ export interface components {
             lastName: string;
             accountId: number;
             emailVerified: boolean;
-            mfaEnabled: boolean;
+            totpEnabled: boolean;
+            passkeyCount: number;
+            hasMfaFactor: boolean;
             mfaEnrollmentSatisfied: boolean;
             permissions: string[];
         };

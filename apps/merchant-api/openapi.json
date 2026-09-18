@@ -3873,7 +3873,13 @@
           "emailVerified": {
             "type": "boolean"
           },
-          "mfaEnabled": {
+          "totpEnabled": {
+            "type": "boolean"
+          },
+          "passkeyCount": {
+            "type": "number"
+          },
+          "hasMfaFactor": {
             "type": "boolean"
           },
           "mfaEnrollmentSatisfied": {
@@ -3893,7 +3899,9 @@
           "lastName",
           "accountId",
           "emailVerified",
-          "mfaEnabled",
+          "totpEnabled",
+          "passkeyCount",
+          "hasMfaFactor",
           "mfaEnrollmentSatisfied",
           "permissions"
         ]

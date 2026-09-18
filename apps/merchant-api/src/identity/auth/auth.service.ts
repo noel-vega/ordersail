@@ -31,6 +31,7 @@ import {
   accountApiKeysTable,
   accountsTable,
   and,
+  count,
   type db as Db,
   eq,
   isNull,
@@ -38,6 +39,7 @@ import {
   userEmailVerificationsTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
+  userPasskeysTable,
   userPasswordResetsTable,
   userRefreshTokensTable,
   usersTable,
@@ -74,7 +76,21 @@ interface SignInSuccessResult {
   lastName: string;
   emailVerified: boolean;
   mfaEnrollmentSatisfied: boolean;
+  hasMfaFactor: boolean;
   access_token: string;
+}
+
+// what second factors a user holds, across both factor tables
+interface FactorState {
+  totpConfirmed: boolean;
+  passkeyCount: number;
+  hasMfaFactor: boolean;
+}
+
+// the two factor-derived token claims — see getFactorClaims()
+interface FactorClaims {
+  hasMfaFactor: boolean;
+  mfaEnrollmentSatisfied: boolean;
 }
 
 interface MfaChallengeResult {
@@ -103,6 +119,7 @@ export function claimsFromSignInResult(
     lastName: result.lastName,
     emailVerified: result.emailVerified,
     mfaEnrollmentSatisfied: result.mfaEnrollmentSatisfied,
+    hasMfaFactor: result.hasMfaFactor,
   };
 }
 
@@ -124,10 +141,7 @@ export class AuthService {
   async me(user: AuthenticatedUser): Promise<AuthMe> {
     const permissions =
       await this.permissionsService.getEffectivePermissionKeys(user.sub);
-    const [mfa] = await this.db
-      .select({ confirmedAt: userMfaTable.confirmedAt })
-      .from(userMfaTable)
-      .where(eq(userMfaTable.userId, user.sub));
+    const factors = await this.getFactorState(user.sub);
     return {
       userId: user.sub,
       email: user.email,
@@ -135,7 +149,9 @@ export class AuthService {
       lastName: user.lastName,
       accountId: user.accountId,
       emailVerified: user.emailVerified,
-      mfaEnabled: mfa?.confirmedAt != null,
+      totpEnabled: factors.totpConfirmed,
+      passkeyCount: factors.passkeyCount,
+      hasMfaFactor: factors.hasMfaFactor,
       mfaEnrollmentSatisfied: user.mfaEnrollmentSatisfied,
       permissions: [...permissions].sort(),
     };
@@ -154,56 +170,88 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
+    const factors = await this.getFactorState(user.id);
+
     // a confirmed second factor means the password alone isn't enough —
     // withhold tokens and hand back a short-lived challenge instead. An
     // *unconfirmed* enrollment (mid-setup, never finished) doesn't count:
     // there's nothing to challenge with yet.
-    const [mfa] = await this.db
-      .select({ confirmedAt: userMfaTable.confirmedAt })
-      .from(userMfaTable)
-      .where(eq(userMfaTable.userId, user.id));
-
-    if (mfa?.confirmedAt) {
+    //
+    // Still keyed on TOTP specifically, not factors.hasMfaFactor: the
+    // challenge step can't accept a passkey until the endpoints (OS-488)
+    // and the UI (OS-489) exist. Widening it here first would strand a
+    // passkey-only user on a TOTP-only screen. OS-489 flips it.
+    if (factors.totpConfirmed) {
       return {
         mfaRequired: true,
         challengeToken: await this.createMfaChallengeToken(user.id),
       };
     }
 
-    // not confirmed, so the only way mfaEnrollmentSatisfied can be false
-    // here is the account requiring MFA and this user never having
-    // finished enrolling — no need for the (unconfirmed) user_mfa lookup
-    // isMfaEnrollmentSatisfied() would otherwise do, we already have that
-    // answer from the query above
     const [account] = await this.db
       .select({ requireMfaAt: accountsTable.requireMfaAt })
       .from(accountsTable)
       .where(eq(accountsTable.id, user.accountId));
-    const mfaEnrollmentSatisfied = !account?.requireMfaAt;
 
-    return this.buildSignInSuccess(user, { mfaEnrollmentSatisfied });
+    return this.buildSignInSuccess(user, {
+      hasMfaFactor: factors.hasMfaFactor,
+      mfaEnrollmentSatisfied: !account?.requireMfaAt || factors.hasMfaFactor,
+    });
   }
 
-  // Account requires MFA -> satisfied only with a confirmed factor.
-  // Doesn't require MFA -> trivially satisfied. Used wherever the caller
-  // doesn't already know the user's confirmed-MFA state from a query it
-  // just ran for another reason (signin/verifyMfaChallenge do, and skip
-  // this to avoid a redundant lookup).
-  private async isMfaEnrollmentSatisfied(
+  // What second factors this user actually holds. A "factor" is a confirmed
+  // TOTP row OR at least one passkey — the two live in different tables
+  // (user_mfa is one-per-user, user_passkeys is many), so every "do they
+  // have one" question goes through here rather than reading either table
+  // directly.
+  //
+  // Returns the components and not just the boolean because callers need
+  // different parts: the signin challenge branch cares specifically about
+  // TOTP, /auth/me reports passkeyCount, and the claim computation only
+  // wants hasMfaFactor.
+  private async getFactorState(userId: number): Promise<FactorState> {
+    const [[mfa], [passkeys]] = await Promise.all([
+      this.db
+        .select({ confirmedAt: userMfaTable.confirmedAt })
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, userId)),
+      this.db
+        .select({ value: count() })
+        .from(userPasskeysTable)
+        .where(eq(userPasskeysTable.userId, userId)),
+    ]);
+
+    const totpConfirmed = mfa?.confirmedAt != null;
+    const passkeyCount = passkeys?.value ?? 0;
+    return {
+      totpConfirmed,
+      passkeyCount,
+      hasMfaFactor: totpConfirmed || passkeyCount > 0,
+    };
+  }
+
+  // The two token claims that depend on factor state.
+  //
+  // hasMfaFactor: does the user hold any factor at all — read by the
+  // per-route gate (OS-492) for money/access-sensitive actions.
+  //
+  // mfaEnrollmentSatisfied: is anything *blocking* this user — the account
+  // requires MFA and they haven't enrolled. Account doesn't require it ->
+  // trivially satisfied, even with no factor.
+  private async getFactorClaims(
     accountId: number,
     userId: number,
-  ): Promise<boolean> {
+  ): Promise<FactorClaims> {
+    const { hasMfaFactor } = await this.getFactorState(userId);
     const [account] = await this.db
       .select({ requireMfaAt: accountsTable.requireMfaAt })
       .from(accountsTable)
       .where(eq(accountsTable.id, accountId));
-    if (!account?.requireMfaAt) return true;
 
-    const [mfa] = await this.db
-      .select({ confirmedAt: userMfaTable.confirmedAt })
-      .from(userMfaTable)
-      .where(eq(userMfaTable.userId, userId));
-    return mfa?.confirmedAt != null;
+    return {
+      hasMfaFactor,
+      mfaEnrollmentSatisfied: !account?.requireMfaAt || hasMfaFactor,
+    };
   }
 
   private async buildSignInSuccess(
@@ -215,10 +263,10 @@ export class AuthService {
       lastname: string;
       emailVerifiedAt: Date | null;
     },
-    flags: { mfaEnrollmentSatisfied: boolean },
+    flags: FactorClaims,
   ): Promise<SignInSuccessResult> {
     const emailVerified = user.emailVerifiedAt !== null;
-    const { mfaEnrollmentSatisfied } = flags;
+    const { mfaEnrollmentSatisfied, hasMfaFactor } = flags;
     const access_token = await this.createAccessToken({
       sub: user.id,
       email: user.email,
@@ -227,6 +275,7 @@ export class AuthService {
       lastName: user.lastname,
       emailVerified,
       mfaEnrollmentSatisfied,
+      hasMfaFactor,
     });
 
     return {
@@ -238,6 +287,7 @@ export class AuthService {
       lastName: user.lastname,
       emailVerified,
       mfaEnrollmentSatisfied,
+      hasMfaFactor,
       access_token,
     };
   }
@@ -297,7 +347,10 @@ export class AuthService {
 
     // a confirmed factor the caller just proved possession of always
     // satisfies any account-wide MFA requirement
-    return this.buildSignInSuccess(user, { mfaEnrollmentSatisfied: true });
+    return this.buildSignInSuccess(user, {
+      mfaEnrollmentSatisfied: true,
+      hasMfaFactor: true,
+    });
   }
 
   // The update is conditioned on isNull(usedAt) too, not just the row id —
@@ -576,6 +629,7 @@ export class AuthService {
         lastName: user.lastname,
         emailVerified: false,
         mfaEnrollmentSatisfied: true,
+        hasMfaFactor: false,
       });
 
       return {
@@ -586,6 +640,7 @@ export class AuthService {
         lastName: user.lastname,
         emailVerified: false,
         mfaEnrollmentSatisfied: true,
+        hasMfaFactor: false,
         access_token,
       };
     } catch (err) {
@@ -620,10 +675,7 @@ export class AuthService {
     // unlike signup(), this account may already exist with requireMfaAt
     // set by the time a new staff member joins — check for real, don't
     // assume unsatisfied like a brand-new account
-    const mfaEnrollmentSatisfied = await this.isMfaEnrollmentSatisfied(
-      user.accountId,
-      user.id,
-    );
+    const factorClaims = await this.getFactorClaims(user.accountId, user.id);
     const access_token = await this.createAccessToken({
       sub: user.id,
       email: user.email,
@@ -631,7 +683,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       emailVerified: true,
-      mfaEnrollmentSatisfied,
+      ...factorClaims,
     });
 
     return {
@@ -641,7 +693,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       emailVerified: true,
-      mfaEnrollmentSatisfied,
+      ...factorClaims,
       access_token,
     };
   }
@@ -686,10 +738,7 @@ export class AuthService {
     // this user could never have a confirmed MFA factor yet (enrollMfa()
     // requires emailVerifiedAt already set), so this only ever depends on
     // whether the account requires MFA at all
-    const mfaEnrollmentSatisfied = await this.isMfaEnrollmentSatisfied(
-      user.accountId,
-      user.id,
-    );
+    const factorClaims = await this.getFactorClaims(user.accountId, user.id);
     const access_token = await this.createAccessToken({
       sub: user.id,
       email: user.email,
@@ -697,7 +746,7 @@ export class AuthService {
       firstName: user.firstname,
       lastName: user.lastname,
       emailVerified: true,
-      mfaEnrollmentSatisfied,
+      ...factorClaims,
     });
 
     return { access_token };
@@ -919,7 +968,7 @@ export class AuthService {
     // same rationale as emailVerified above — recomputed fresh so an
     // account turning "require MFA" on, or a user finishing enrollment,
     // is picked up by the next rotation rather than carrying a stale claim
-    const mfaEnrollmentSatisfied = await this.isMfaEnrollmentSatisfied(
+    const factorClaims = await this.getFactorClaims(
       payload.accountId,
       payload.sub,
     );
@@ -933,7 +982,7 @@ export class AuthService {
       firstName: payload.firstName,
       lastName: payload.lastName,
       emailVerified,
-      mfaEnrollmentSatisfied,
+      ...factorClaims,
     };
 
     const [record] = await this.db
