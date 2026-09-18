@@ -30,7 +30,7 @@ import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
 import { PasskeysService } from './passkeys.service';
-import { isoBase64URL } from '@simplewebauthn/server/helpers';
+import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 
 // The WebAuthn verifier itself is mocked. Its COSE/CBOR parsing and
@@ -909,6 +909,12 @@ describe('PasskeysService — usernameless sign-in (OS-490)', () => {
     return { user, passkey, service, handle: row.handle };
   }
 
+  // A real browser returns userHandle BASE64URL-ENCODED — registration hands
+  // the authenticator raw bytes and @simplewebauthn/browser serializes them
+  // back with bufferToBase64URLString. Encoding it here rather than passing
+  // the raw string is the whole point: the first version of these specs sent
+  // the raw handle, which agreed with the bug in the code and let a sign-in
+  // path that rejected every real authenticator pass its tests.
   function assertionFor(
     challenge: string,
     opts: { credentialId?: string; userHandle?: string | null } = {},
@@ -927,7 +933,13 @@ describe('PasskeysService — usernameless sign-in (OS-490)', () => {
       type: 'public-key',
       response: {
         clientDataJSON,
-        ...(opts.userHandle === null ? {} : { userHandle: opts.userHandle }),
+        ...(opts.userHandle === null || opts.userHandle === undefined
+          ? {}
+          : {
+              userHandle: isoBase64URL.fromBuffer(
+                isoUint8Array.fromUTF8String(opts.userHandle),
+              ),
+            }),
       },
     };
   }

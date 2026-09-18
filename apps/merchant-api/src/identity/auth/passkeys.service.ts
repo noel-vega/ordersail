@@ -358,8 +358,19 @@ export class PasskeysService {
     // The handle the authenticator stored at registration. A mismatch means
     // the credential and the row disagree about who this is — a cheap
     // consistency check on a lookup that carries the entire sign-in.
+    //
+    // It arrives BASE64URL-ENCODED: registration passes the handle as raw
+    // bytes (isoUint8Array.fromUTF8String), the authenticator keeps those
+    // bytes, and @simplewebauthn/browser serializes them with
+    // bufferToBase64URLString on the way back. Comparing the encoded form
+    // against the stored string is never equal, so this rejected every real
+    // sign-in — platform authenticators always return a handle for a
+    // discoverable credential.
     const userHandle = response.response.userHandle;
-    if (userHandle && userHandle !== user.webauthnHandle) {
+    if (
+      userHandle &&
+      isoBase64URL.toUTF8String(userHandle) !== user.webauthnHandle
+    ) {
       throw new UnauthorizedException('Could not verify this passkey');
     }
 
