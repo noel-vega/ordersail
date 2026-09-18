@@ -26,9 +26,11 @@ import {
   CurrentUser,
   RequirePermissions,
   type AuthenticatedUser,
+  NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
 
 @Controller('categories')
+@NoMfaFactorRequired()
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 

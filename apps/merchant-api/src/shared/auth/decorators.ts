@@ -33,6 +33,29 @@ export const SKIP_MFA_ENROLLMENT_KEY = 'skipMfaEnrollment';
 export const SkipMfaEnrollment = () =>
   SetMetadata(SKIP_MFA_ENROLLMENT_KEY, true);
 
+export const REQUIRE_MFA_FACTOR_KEY = 'requireMfaFactor';
+// opt-in, like @RequirePermissions(): marks an action where holding a second
+// factor is the bar, not just being signed in (OS-492). Money and account
+// access — connecting Stripe, pairing a POS device, minting an API key.
+//
+// Deliberately NOT the same question as MfaEnrollmentGuard's. That one asks
+// "is anything blocking this user", which is trivially satisfied on an
+// account that doesn't require MFA. This asks "do they actually hold a
+// factor", which is what matters before something irreversible.
+export const RequireMfaFactor = () => SetMetadata(REQUIRE_MFA_FACTOR_KEY, true);
+
+export const NO_MFA_FACTOR_REQUIRED_KEY = 'noMfaFactorRequired';
+// The counterpart no-op marker, same job as @AuthenticatedOnly(): the guard
+// never reads it. It exists so route-guard-coverage.spec can require every
+// route to answer the question one way or the other, turning "this action
+// doesn't need a factor" into a checkable assertion rather than silence.
+//
+// Applied at CLASS level on controllers whose routes are all unremarkable —
+// a handler-level @RequireMfaFactor() still wins, because getAllAndOverride
+// looks up a different metadata key.
+export const NoMfaFactorRequired = () =>
+  SetMetadata(NO_MFA_FACTOR_REQUIRED_KEY, true);
+
 export const AUTHENTICATED_ONLY_KEY = 'authenticatedOnly';
 // a no-op marker — PermissionsGuard already lets through anything without
 // @RequirePermissions(). Its only job is turning "deliberately reachable by

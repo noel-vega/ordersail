@@ -13,15 +13,20 @@ import {
   CurrentUser,
   RequirePermissions,
   type AuthenticatedUser,
+  NoMfaFactorRequired,
+  RequireMfaFactor,
 } from 'src/shared/auth/decorators';
 
 @ApiBearerAuth('JWT-auth')
 @Controller('pos-devices')
+@NoMfaFactorRequired()
 export class PosDevicesController {
   constructor(private readonly posDevicesService: PosDevicesService) {}
 
+  // Minting a pairing code creates a till that can take money.
   @Post()
   @RequirePermissions('pos_devices:write')
+  @RequireMfaFactor()
   @ApiCreatedResponse({ type: PosDevicePairing })
   create(
     @Body() dto: CreatePosDeviceDto,
@@ -55,8 +60,10 @@ export class PosDevicesController {
     return this.posDevicesService.revoke(+id, user.accountId);
   }
 
+  // Same as minting one — this hands out a fresh pairing code.
   @Post(':id/rotate-pairing')
   @RequirePermissions('pos_devices:write')
+  @RequireMfaFactor()
   @ApiOkResponse({ type: PosDevicePairing })
   rotatePairing(
     @Param('id') id: string,

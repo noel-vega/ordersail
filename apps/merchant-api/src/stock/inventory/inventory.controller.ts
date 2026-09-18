@@ -26,11 +26,13 @@ import {
   CurrentUser,
   RequirePermissions,
   type AuthenticatedUser,
+  NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
 
 type MovementReason = (typeof inventoryMovementReasonEnum.enumValues)[number];
 
 @Controller('inventory')
+@NoMfaFactorRequired()
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 

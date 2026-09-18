@@ -11,7 +11,7 @@ import { constructWebhookEvent } from 'payments';
 import type Stripe from 'stripe';
 import { Logger } from 'logging';
 import { env } from 'src/shared/env';
-import { Public } from 'src/shared/auth/decorators';
+import { Public, NoMfaFactorRequired } from 'src/shared/auth/decorators';
 import {
   DOMAIN_EVENTS,
   DomainEventBus,
@@ -32,6 +32,7 @@ import { StripeConnectService } from './stripe-connect.service';
 // The checkout webhook was moved off storefront-api in M9 (OS-357); the two
 // merchant-api controllers were merged here in OS-360.
 @Controller('webhooks')
+@NoMfaFactorRequired()
 export class StripeWebhookController {
   private readonly logger = new Logger(StripeWebhookController.name);
 

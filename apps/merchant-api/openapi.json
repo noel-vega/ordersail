@@ -3116,6 +3116,32 @@
         ]
       }
     },
+    "/stripe-connect/onboarding-session": {
+      "post": {
+        "operationId": "StripeConnectController_createOnboardingSession",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSessionResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "StripeConnect"
+        ]
+      }
+    },
     "/stripe-connect/account-session": {
       "post": {
         "operationId": "StripeConnectController_createAccountSession",

@@ -1,12 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { type Type } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
   CONTROLLER_WATERMARK,
   METHOD_METADATA,
 } from '@nestjs/common/constants';
+import { ApiKeysController } from '../api-keys/api-keys.controller';
+import { PosDevicesController } from 'src/platform/pos-devices/pos-devices.controller';
+import { StripeConnectController } from 'src/payments/stripe-connect.controller';
 import {
   AUTHENTICATED_ONLY_KEY,
+  NO_MFA_FACTOR_REQUIRED_KEY,
+  REQUIRE_MFA_FACTOR_KEY,
   IS_PUBLIC_KEY,
   PERMISSIONS_KEY,
 } from 'src/shared/auth/decorators';
@@ -41,6 +47,8 @@ interface RouteHandler {
   controllerName: string;
   methodName: string;
   handler: (...args: unknown[]) => unknown;
+  // needed for markers applied at class level
+  controllerClass: Type<unknown>;
 }
 
 function findRouteHandlers(files: string[]): RouteHandler[] {
@@ -69,6 +77,7 @@ function findRouteHandlers(files: string[]): RouteHandler[] {
           controllerName: exportName,
           methodName,
           handler: handler as (...args: unknown[]) => unknown,
+          controllerClass: exported as Type<unknown>,
         });
       }
     }
@@ -105,4 +114,102 @@ describe('route-guard coverage (OS-468)', () => {
       expect(hasMarker).toBe(true);
     },
   );
+
+  // OS-492. The gate is opt-in, so a new route says nothing by default and
+  // silently isn't gated. This makes every route answer the question one way
+  // or the other — the answer can be "no factor needed", but it has to be
+  // written down.
+  it.each(routes)(
+    '$controllerFile $controllerName.$methodName declares whether it needs a factor',
+    ({ handler, controllerClass }) => {
+      const isPublic = reflector.get<boolean>(IS_PUBLIC_KEY, handler);
+      if (isPublic) return;
+
+      const handlerRequired = reflector.get<boolean>(
+        REQUIRE_MFA_FACTOR_KEY,
+        handler,
+      );
+      const handlerNotRequired = reflector.get<boolean>(
+        NO_MFA_FACTOR_REQUIRED_KEY,
+        handler,
+      );
+
+      // Both on the SAME handler is a contradiction. Class-level "not
+      // required" alongside handler-level "required" is not — that's the
+      // normal shape: a controller whose routes are unremarkable except one,
+      // and the handler wins because the guard reads its key first.
+      expect(handlerRequired && handlerNotRequired).toBeFalsy();
+
+      const answered =
+        handlerRequired !== undefined ||
+        handlerNotRequired !== undefined ||
+        reflector.get<boolean>(REQUIRE_MFA_FACTOR_KEY, controllerClass) !==
+          undefined ||
+        reflector.get<boolean>(NO_MFA_FACTOR_REQUIRED_KEY, controllerClass) !==
+          undefined;
+
+      expect(answered).toBe(true);
+    },
+  );
+});
+
+// Pins the POLICY, not just the coverage: the spec above is satisfied by any
+// answer, so without this someone could quietly un-gate connecting Stripe
+// and the suite would stay green.
+describe('money and access actions require a factor (OS-492)', () => {
+  const reflector = new Reflector();
+
+  const handlerOf = (prototype: object, method: string) =>
+    (prototype as Record<string, (...args: unknown[]) => unknown>)[method];
+
+  const gated: [string, object, string][] = [
+    ['ApiKeysController.create', ApiKeysController.prototype, 'create'],
+    ['PosDevicesController.create', PosDevicesController.prototype, 'create'],
+    [
+      'PosDevicesController.rotatePairing',
+      PosDevicesController.prototype,
+      'rotatePairing',
+    ],
+    [
+      'StripeConnectController.createOnboardingSession',
+      StripeConnectController.prototype,
+      'createOnboardingSession',
+    ],
+  ];
+
+  it.each(gated)('%s requires a factor', (_name, prototype, method) => {
+    expect(
+      reflector.get<boolean>(
+        REQUIRE_MFA_FACTOR_KEY,
+        handlerOf(prototype, method),
+      ),
+    ).toBe(true);
+  });
+
+  // Dual-use: merchant-web initializes Connect.js whenever the merchant is
+  // already connected, so gating this would break the Payments page for
+  // someone who never needed a factor — and it would fail inside Connect.js's
+  // opaque error handling. createOnboardingSession is the gated twin.
+  it('leaves the dual-use account-session ungated', () => {
+    expect(
+      reflector.get<boolean>(
+        REQUIRE_MFA_FACTOR_KEY,
+        handlerOf(StripeConnectController.prototype, 'createAccountSession'),
+      ),
+    ).toBeUndefined();
+  });
+
+  // De-escalations must never be gated: someone without a factor still has to
+  // be able to revoke a leaked key or a stolen till.
+  it.each([
+    ['ApiKeysController.revoke', ApiKeysController.prototype, 'revoke'],
+    ['PosDevicesController.revoke', PosDevicesController.prototype, 'revoke'],
+  ])('%s stays ungated', (_name, prototype, method) => {
+    expect(
+      reflector.get<boolean>(
+        REQUIRE_MFA_FACTOR_KEY,
+        handlerOf(prototype, method),
+      ),
+    ).toBeUndefined();
+  });
 });

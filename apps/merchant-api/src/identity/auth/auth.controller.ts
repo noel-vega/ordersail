@@ -34,6 +34,7 @@ import {
   SkipEmailVerification,
   SkipMfaEnrollment,
   type AuthenticatedUser,
+  NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
 import { env } from 'src/shared/env';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -51,6 +52,7 @@ import {
 const REFRESH_TOKEN_COOKIE = 'refresh_token';
 
 @Controller('auth')
+@NoMfaFactorRequired()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 

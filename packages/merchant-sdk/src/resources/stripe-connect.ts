@@ -13,6 +13,18 @@ export function createStripeConnectResource(client: Client<paths>, doRequest: Do
       return data;
     },
 
+    // First connect — the money action, and the one behind the factor gate
+    // (OS-492). Throws ApiError with code MFA_FACTOR_REQUIRED when the
+    // caller holds no passkey or authenticator.
+    createOnboardingSession: async () =>
+      unwrap(
+        await doRequest(() =>
+          client.POST("/stripe-connect/onboarding-session"),
+        ),
+      ),
+
+    // Ungated: the embedded management and balance components call this on
+    // every Payments load for an already-connected merchant.
     createAccountSession: async () =>
       unwrap(
         await doRequest(() =>
