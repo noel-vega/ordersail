@@ -25,7 +25,44 @@ export const queryClient = new QueryClient({
   },
   mutationCache: new MutationCache({
     onError: (error, _vars, _ctx, mutation) => {
+      // Backstop for the factor gate (OS-492), checked BEFORE
+      // skipGlobalErrorToast. That flag means "this form shows its own
+      // message", which is right for a validation error and wrong here: the
+      // gated mutations mostly set it, so honouring it first suppressed the
+      // backstop on exactly the paths it exists for. The realistic case is a
+      // stale claim — removing the last factor in another tab while this
+      // one's /auth/me is still inside its 60s staleTime — where the form
+      // would otherwise render a bare string with no way to act on it.
+      //
+      // A toast rather than a modal, deliberately: opening a dialog from a
+      // module-level cache needs a provider and an imperative handle wired
+      // through the app shell, which is a lot of machinery for a path that
+      // shouldn't fire.
+      if (error instanceof ApiError && error.code === "MFA_FACTOR_REQUIRED") {
+        toast.error(error.message, {
+          action: {
+            label: "Set one up",
+            onClick: () => {
+              // Dynamic import, not a static one: main.tsx owns the router
+              // and renders on import, and it already imports this module —
+              // a static import would be a cycle that re-enters the entry
+              // point. By the time this callback can run, main has long been
+              // evaluated, so this resolves the existing instance.
+              //
+              // Routing rather than window.location: a hard reload throws
+              // away in-flight router and query state, including whatever
+              // the user had typed into the form that just failed.
+              void import("../main").then(({ router }) =>
+                router.navigate({ to: "/app/settings/security" }),
+              );
+            },
+          },
+        });
+        return;
+      }
+
       if (mutation.meta?.skipGlobalErrorToast) return;
+
       toast.error(
         error instanceof ApiError
           ? error.message

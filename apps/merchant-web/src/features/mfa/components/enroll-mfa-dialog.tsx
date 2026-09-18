@@ -30,6 +30,10 @@ function extractSecret(otpauthUrl: string): string | null {
 export function EnrollMfaDialog(props: {
   otpauthUrl: string | null;
   onOpenChange: (open: boolean) => void;
+  // fired once enrollment is complete AND the recovery codes have been
+  // acknowledged — the factor-required flow uses it to resume whatever the
+  // user was trying to do. Optional: the Security page just closes.
+  onConfirmed?: () => void;
 }) {
   const confirm = useConfirmMfaMutation();
   const [code, setCode] = useState("");
@@ -51,6 +55,7 @@ export function EnrollMfaDialog(props: {
   }
 
   function close() {
+    if (codes) props.onConfirmed?.();
     props.onOpenChange(false);
     // let the dialog animate out before resetting
     setTimeout(() => {

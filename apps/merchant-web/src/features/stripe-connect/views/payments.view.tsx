@@ -12,6 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "ui/ca
 import { Badge } from "ui/badge";
 import { Button } from "ui/button";
 import { usePermissions } from "../../auth/permission-context";
+import { useAuthMe } from "../../auth/permissions.hooks";
+import { FactorRequiredDialog } from "../../passkeys/components/factor-required-dialog";
 import {
   useCreateAccountSessionMutation,
   useCreateOnboardingSessionMutation,
@@ -37,6 +39,11 @@ export function PaymentsView() {
   const status = useStripeConnectStatusQuery();
   const createAccountSession = useCreateAccountSessionMutation();
   const createOnboardingSession = useCreateOnboardingSessionMutation();
+  const me = useAuthMe();
+  const [factorPrompt, setFactorPrompt] = useState(false);
+  // `?? true` so a not-yet-loaded /auth/me doesn't flash the prompt; the
+  // server gate is the real enforcement either way
+  const hasFactor = me.data?.hasMfaFactor ?? true;
   const refreshStatus = useRefreshStripeConnectStatus();
   const canConnect = usePermissions().has("payments:write");
   const { onboarding } = route.useSearch();
@@ -56,7 +63,7 @@ export function PaymentsView() {
   // needed both while onboarding and afterward (to show account info), so
   // it's created as soon as there's a connected account to talk to, not
   // just while the onboarding flow is open
-  const shouldInitConnect = showOnboarding || (status.data?.connected ?? false);
+  const wantsConnect = showOnboarding || (status.data?.connected ?? false);
 
   // Which session to ask for. "Still needs onboarding" covers both a
   // first-time merchant (no Stripe account at all) and one who started and
@@ -64,6 +71,42 @@ export function PaymentsView() {
   // would hand them a management session with no onboarding component and
   // leave them unable to resume.
   const needsOnboarding = !(status.data?.detailsSubmitted ?? false);
+
+  // The gated session call happens inside fetchClientSecret, where a 403
+  // surfaces as an opaque Stripe error rather than anything the merchant can
+  // act on. So the check has to sit on whether Connect initializes AT ALL —
+  // not on the button, which two paths reach Connect without touching:
+  //
+  //   - ?onboarding=true from the dashboard checklist seeds showOnboarding
+  //     on mount, and that's exactly the brand-new merchant least likely to
+  //     have a factor yet
+  //   - a merchant who started onboarding and abandoned it has connected:
+  //     true, so Connect builds on page load before any click
+  const factorBlocksOnboarding = needsOnboarding && !hasFactor;
+
+  // `factorKnown` closes the window the fail-open default leaves open: until
+  // /auth/me resolves, hasFactor reads true, so a first render would build
+  // the Connect instance before we know the answer. Nothing mounted in that
+  // window in practice — the memo re-runs and drops it — but "initialize,
+  // then discover we shouldn't have" is the wrong shape for the one call
+  // site where a 403 is invisible. Wait until we know.
+  const factorKnown = me.data !== undefined;
+  const shouldInitConnect =
+    wantsConnect && factorKnown && !factorBlocksOnboarding;
+
+  // ...and when something did ask for onboarding, say why it didn't open
+  // rather than silently rendering nothing.
+  useEffect(() => {
+    if (showOnboarding && factorBlocksOnboarding) setFactorPrompt(true);
+  }, [showOnboarding, factorBlocksOnboarding]);
+
+  function startOnboarding() {
+    if (!hasFactor) {
+      setFactorPrompt(true);
+      return;
+    }
+    setShowOnboarding(true);
+  }
 
   // a single Connect instance is reused for every embedded component below —
   // fetchClientSecret is called again automatically by Connect.js if the
@@ -105,7 +148,7 @@ export function PaymentsView() {
         {!showOnboarding && !status.data?.chargesEnabled && (
           <CardContent>
             {canConnect ? (
-              <Button onClick={() => setShowOnboarding(true)}>
+              <Button onClick={startOnboarding}>
                 {status.data?.connected
                   ? "Continue onboarding"
                   : "Connect with Stripe"}
@@ -162,6 +205,12 @@ export function PaymentsView() {
           )}
         </ConnectComponentsProvider>
       )}
+      <FactorRequiredDialog
+        open={factorPrompt}
+        onOpenChange={setFactorPrompt}
+        action="connect Stripe"
+        onReady={() => setShowOnboarding(true)}
+      />
     </div>
   );
 }

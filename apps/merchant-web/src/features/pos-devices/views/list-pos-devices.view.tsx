@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
-import type { PosDevice, PosDevicePairing } from "merchant-sdk";
+import { ApiError, type PosDevice, type PosDevicePairing } from "merchant-sdk";
 import { format } from "date-fns";
 import {
   KeyRoundIcon,
@@ -36,6 +36,8 @@ import {
   useRotatePairingMutation,
 } from "../pos-devices.hooks";
 import { MintDeviceSheet } from "./mint-device-sheet";
+import { useAuthMe } from "../../auth/permissions.hooks";
+import { FactorRequiredDialog } from "../../passkeys/components/factor-required-dialog";
 import { EditDeviceSheet } from "./edit-device-sheet";
 import { PairingCodeReveal } from "../components/pairing-code-reveal";
 import { Can } from "../../../components/can";
@@ -136,6 +138,19 @@ export function ListPosDevicesView() {
   const canWrite = usePermissions().has("pos_devices:write");
 
   const [mintOpen, setMintOpen] = useState(false);
+  const [factorPrompt, setFactorPrompt] = useState(false);
+  const me = useAuthMe();
+
+  // Pairing a device creates a till that can take money, so the API gates it
+  // (OS-492). Asking here means the prompt arrives with its reason attached,
+  // instead of a 403 after the sheet is already open.
+  function startMinting() {
+    if (!(me.data?.hasMfaFactor ?? true)) {
+      setFactorPrompt(true);
+      return;
+    }
+    setMintOpen(true);
+  }
   const [editing, setEditing] = useState<PosDevice | null>(null);
   const [revoking, setRevoking] = useState<PosDevice | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
@@ -145,8 +160,15 @@ export function ListPosDevicesView() {
   } | null>(null);
   const [showCodeError, setShowCodeError] = useState<string | null>(null);
 
+  // rotate-pairing is gated too (OS-492) — it hands out a fresh pairing code,
+  // which is the same power as minting a device. Four gated endpoints, not
+  // three.
   async function handleShowCode(device: PosDevice) {
     setShowCodeError(null);
+    if (!(me.data?.hasMfaFactor ?? true)) {
+      setFactorPrompt(true);
+      return;
+    }
     try {
       const pairing = await rotate.mutateAsync(device.id);
       if (!pairing) {
@@ -154,8 +176,15 @@ export function ListPosDevicesView() {
         return;
       }
       setRevealing({ pairing, locationName: device.locationName });
-    } catch {
-      setShowCodeError("Couldn't generate a pairing code.");
+    } catch (err) {
+      // don't overwrite the server's reason with a generic one — a gated 403
+      // says something specific and actionable, and replacing it left the
+      // user reading a wrong message next to a correct toast
+      setShowCodeError(
+        err instanceof ApiError
+          ? err.message
+          : "Couldn't generate a pairing code.",
+      );
     }
   }
 
@@ -194,7 +223,7 @@ export function ListPosDevicesView() {
           </p>
         </div>
         <Can permission="pos_devices:write">
-          <Button onClick={() => setMintOpen(true)}>
+          <Button onClick={startMinting}>
             <PlusIcon /> New device
           </Button>
         </Can>
@@ -207,6 +236,12 @@ export function ListPosDevicesView() {
       <DataTable data={devices.data ?? []} columns={columns} />
 
       <MintDeviceSheet open={mintOpen} onOpenChange={setMintOpen} />
+      <FactorRequiredDialog
+        open={factorPrompt}
+        onOpenChange={setFactorPrompt}
+        action="pair a POS device"
+        onReady={() => setMintOpen(true)}
+      />
 
       <EditDeviceSheet
         device={editing}
