@@ -39,6 +39,14 @@ export function SignInView(props: {
   // button on the sign-in page is worse than no button.
   const supportsPasskeys = browserSupportsWebAuthn();
 
+  // Both paths end in "set the access token, clear the cache, navigate", so
+  // letting them run at once means the slower one silently decides who you
+  // are — and with two different accounts you'd end up holding an access
+  // token from one and a refresh cookie from the other. A passkey ceremony
+  // can sit open for up to a minute waiting on the device, which is plenty
+  // of time to also type a password.
+  const signInBusy = passkeyPending || signInMutation.isPending;
+
   const form = useForm({
     resolver: zodResolver(SignInRequestBodySchema),
     defaultValues: {
@@ -51,11 +59,16 @@ export function SignInView(props: {
     setErrorMessage("");
     signInMutation.mutate(formData, {
       onError: (err) => {
-        // the API's 401 body is just "Unauthorized" — say what it means
+        // Same shape as the passkey branch: only a 401 means the credentials
+        // were wrong (the API's 401 body is just "Unauthorized", so say what
+        // it means). A network failure used to land here too and claim the
+        // password was invalid.
         setErrorMessage(
-          err instanceof ApiError && err.status !== 401
-            ? err.message
-            : "Invalid email or password.",
+          err instanceof ApiError
+            ? err.status === 401
+              ? "Invalid email or password."
+              : err.message
+            : "Couldn't sign in — try again.",
         );
       },
       onSuccess: (result) => {
@@ -90,12 +103,15 @@ export function SignInView(props: {
         if (!err.silent) setErrorMessage(err.message);
         return;
       }
+      // Only a 401 means the credential itself was rejected. A dropped
+      // connection reaching this branch would otherwise tell the merchant
+      // their passkey failed, sending them to debug the wrong thing.
       setErrorMessage(
-        // the API answers a bad or unknown credential with a 401 whose body
-        // says nothing useful
-        err instanceof ApiError && err.status !== 401
-          ? err.message
-          : "That passkey didn't work. Try signing in with your password.",
+        err instanceof ApiError
+          ? err.status === 401
+            ? "That passkey didn't work. Try signing in with your password."
+            : err.message
+          : "Couldn't sign in with a passkey — try again.",
       );
     } finally {
       setPasskeyPending(false);
@@ -152,7 +168,7 @@ export function SignInView(props: {
               type="button"
               className="w-full"
               onClick={handlePasskeySignIn}
-              disabled={passkeyPending}
+              disabled={signInBusy}
             >
               <KeyRoundIcon />
               {passkeyPending
@@ -203,8 +219,9 @@ export function SignInView(props: {
             type="submit"
             variant={supportsPasskeys ? "outline" : "default"}
             className="w-full"
+            disabled={signInBusy}
           >
-            Sign in
+            {passkeyPending ? "Finish with your passkey first" : "Sign in"}
           </Button>
         </form>
 
