@@ -996,7 +996,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/stripe-connect/onboarding-session": {
+    "/stripe-connect/onboarding-link": {
         parameters: {
             query?: never;
             header?: never;
@@ -1005,7 +1005,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["StripeConnectController_createOnboardingSession"];
+        post: operations["StripeConnectController_createOnboardingLink"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1930,6 +1930,9 @@ export interface components {
             status: "canceled";
             refundIssued: boolean;
             refundAmountCents: number;
+        };
+        OnboardingLinkResponse: {
+            url: string;
         };
         AccountSessionResponse: {
             clientSecret: string;
@@ -4091,7 +4094,7 @@ export interface operations {
             };
         };
     };
-    StripeConnectController_createOnboardingSession: {
+    StripeConnectController_createOnboardingLink: {
         parameters: {
             query?: never;
             header?: never;
@@ -4105,7 +4108,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AccountSessionResponse"];
+                    "application/json": components["schemas"]["OnboardingLinkResponse"];
                 };
             };
         };
@@ -4126,6 +4129,12 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AccountSessionResponse"];
                 };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

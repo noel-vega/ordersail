@@ -171,9 +171,9 @@ describe('money and access actions require a factor (OS-492)', () => {
       'rotatePairing',
     ],
     [
-      'StripeConnectController.createOnboardingSession',
+      'StripeConnectController.createOnboardingLink',
       StripeConnectController.prototype,
-      'createOnboardingSession',
+      'createOnboardingLink',
     ],
   ];
 
@@ -186,10 +186,10 @@ describe('money and access actions require a factor (OS-492)', () => {
     ).toBe(true);
   });
 
-  // Dual-use: merchant-web initializes Connect.js whenever the merchant is
-  // already connected, so gating this would break the Payments page for
-  // someone who never needed a factor — and it would fail inside Connect.js's
-  // opaque error handling. createOnboardingSession is the gated twin.
+  // merchant-web initializes Connect.js on page load for a connected
+  // merchant, so gating this would break the Payments page for someone who
+  // never needed a factor — and it would fail inside Connect.js's opaque
+  // error handling. createOnboardingLink is the gated money action.
   it('leaves the dual-use account-session ungated', () => {
     expect(
       reflector.get<boolean>(
