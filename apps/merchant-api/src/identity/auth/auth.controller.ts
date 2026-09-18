@@ -89,7 +89,11 @@ export class AuthController {
     const result = await this.authService.signin(signinDto);
 
     if (result.mfaRequired) {
-      return { mfaRequired: true, challengeToken: result.challengeToken };
+      return {
+        mfaRequired: true,
+        challengeToken: result.challengeToken,
+        methods: result.methods,
+      };
     }
 
     const refreshToken = await this.authService.createRefreshToken(

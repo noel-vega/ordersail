@@ -6,6 +6,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Res,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
@@ -15,10 +16,14 @@ import {
   ApiOkResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import type { RegistrationResponseJSON } from '@simplewebauthn/server';
+import type {
+  AuthenticationResponseJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/server';
 import {
   AuthenticatedOnly,
   CurrentUser,
+  Public,
   SkipMfaEnrollment,
   type AuthenticatedUser,
 } from 'src/shared/auth/decorators';
@@ -28,6 +33,15 @@ import { PasskeyRegisterVerifyDto } from './dto/passkey-register-verify.dto';
 import { PasskeyRegisteredDto } from './dto/passkey-registered.dto';
 import { PasskeyRemoveDto } from './dto/passkey-remove.dto';
 import { PasskeyRenameDto } from './dto/passkey-rename.dto';
+import {
+  PasskeyChallengeOptionsDto,
+  PasskeyChallengeVerifyDto,
+} from './dto/passkey-challenge.dto';
+import { AccessTokenDto } from './dto/access-token.dto';
+import { AuthService, claimsFromSignInResult } from './auth.service';
+import { env } from 'src/shared/env';
+import type { FastifyReply } from 'fastify';
+import { randomUUID } from 'node:crypto';
 
 // A separate controller rather than more routes on the 391-line
 // auth.controller.ts — route-guard-coverage.spec.ts filesystem-scans for
@@ -40,7 +54,65 @@ import { PasskeyRenameDto } from './dto/passkey-rename.dto';
 // address anyway, and the gate is the right default for the rest.
 @Controller('auth/passkeys')
 export class PasskeysController {
-  constructor(private readonly passkeysService: PasskeysService) {}
+  constructor(
+    private readonly passkeysService: PasskeysService,
+    private readonly authService: AuthService,
+  ) {}
+
+  // Duplicated from AuthController rather than shared: the cookie's name and
+  // attributes are part of that controller's contract with the browser, and
+  // a shared helper would put them somewhere neither controller owns.
+  private setRefreshCookie(res: FastifyReply, refreshToken: string): void {
+    res.setCookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7,
+    });
+  }
+
+  // Both challenge routes are @Public() for the same reason /auth/mfa/verify
+  // is: the caller has no session yet — that's the entire point of the
+  // challenge — and the challenge token is short-lived and scoped to one
+  // user.
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('challenge/options')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  @ApiUnauthorizedResponse()
+  async challengeOptions(
+    @Body() dto: PasskeyChallengeOptionsDto,
+  ): Promise<Record<string, unknown>> {
+    const options =
+      await this.passkeysService.getChallengeAuthenticationOptions(
+        dto.challengeToken,
+      );
+    return options as unknown as Record<string, unknown>;
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('challenge/verify')
+  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiUnauthorizedResponse()
+  async challengeVerify(
+    @Body() dto: PasskeyChallengeVerifyDto,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    const result = await this.passkeysService.verifyChallengeAssertion(
+      dto.challengeToken,
+      dto.response as unknown as AuthenticationResponseJSON,
+    );
+
+    const refreshToken = await this.authService.createRefreshToken(
+      claimsFromSignInResult(result),
+      randomUUID(),
+    );
+    this.setRefreshCookie(res, refreshToken);
+
+    return { access_token: result.access_token };
+  }
 
   @AuthenticatedOnly()
   @SkipMfaEnrollment()

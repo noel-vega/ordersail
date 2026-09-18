@@ -30,6 +30,7 @@ import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
 import { PasskeysService } from './passkeys.service';
+import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 
 // The WebAuthn verifier itself is mocked. Its COSE/CBOR parsing and
@@ -43,11 +44,13 @@ import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 jest.mock('@simplewebauthn/server', () => ({
   ...jest.requireActual<Record<string, unknown>>('@simplewebauthn/server'),
   verifyRegistrationResponse: jest.fn(),
+  verifyAuthenticationResponse: jest.fn(),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const webauthn = require('@simplewebauthn/server') as {
   verifyRegistrationResponse: jest.Mock;
+  verifyAuthenticationResponse: jest.Mock;
 };
 
 const db = useTestDb();
@@ -70,8 +73,16 @@ function verifierReturns(credentialId: string) {
   });
 }
 
+function assertionVerifies(newCounter = 1) {
+  webauthn.verifyAuthenticationResponse.mockResolvedValue({
+    verified: true,
+    authenticationInfo: { newCounter },
+  });
+}
+
 beforeEach(() => {
   webauthn.verifyRegistrationResponse.mockReset();
+  webauthn.verifyAuthenticationResponse.mockReset();
 });
 
 async function buildRef() {
@@ -629,5 +640,221 @@ describe('PasskeysService — management (OS-485)', () => {
     await db.delete(usersTable).where(eq(usersTable.id, user.id));
 
     expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
+  });
+});
+
+describe('PasskeysService — challenge assertion (OS-488)', () => {
+  // the passkey branch of the password-then-second-factor step: the caller
+  // holds a signin()-issued challenge token and no session
+  // The token comes from a real signin() rather than being minted by hand,
+  // so the test exercises the actual issuance path. That needs a confirmed
+  // TOTP factor as well, because until OS-489 signin only challenges on
+  // TOTP — which is also the realistic shape here: someone who holds both
+  // and is offered the passkey first.
+  async function seedChallengedUser() {
+    const { user } = await seedUser();
+    await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+    const passkey = await insertUserPasskey(db, {
+      userId: user.id,
+      credentialId: 'challenge-cred',
+      publicKey: isoBase64URL.fromBuffer(new Uint8Array([9, 9, 9, 9])),
+      counter: 0,
+    });
+    const ref = await buildRef();
+    const service = ref.get(PasskeysService);
+    const authService = ref.get(AuthService);
+
+    const signin = await authService.signin({ email: user.email, password });
+    if (!signin.mfaRequired) throw new Error('expected an MFA challenge');
+    // signin advertises the passkey branch to the client
+    expect(signin.methods).toContain('passkey');
+
+    return {
+      user,
+      passkey,
+      service,
+      authService,
+      token: signin.challengeToken,
+    };
+  }
+
+  function assertionFor(challenge: string, credentialId = 'challenge-cred') {
+    const clientDataJSON = Buffer.from(
+      JSON.stringify({
+        type: 'webauthn.get',
+        challenge,
+        origin: 'http://localhost:5000',
+      }),
+    ).toString('base64url');
+    return {
+      id: credentialId,
+      rawId: credentialId,
+      type: 'public-key',
+      response: { clientDataJSON },
+    };
+  }
+
+  it('scopes the options to the challenged user credentials', async () => {
+    const { user, service, token } = await seedChallengedUser();
+
+    const options = await service.getChallengeAuthenticationOptions(token);
+
+    expect(options.userVerification).toBe('required');
+    expect(options.allowCredentials).toEqual([
+      expect.objectContaining({ id: 'challenge-cred' }),
+    ]);
+    const [row] = await db
+      .select()
+      .from(webauthnChallengesTable)
+      .where(eq(webauthnChallengesTable.challenge, options.challenge));
+    expect(row).toMatchObject({ type: 'authentication', userId: user.id });
+  });
+
+  it('exchanges a valid assertion for tokens and stamps the credential', async () => {
+    const { passkey, service, token } = await seedChallengedUser();
+    const options = await service.getChallengeAuthenticationOptions(token);
+    assertionVerifies(7);
+
+    const result = await service.verifyChallengeAssertion(
+      token,
+      assertionFor(options.challenge) as never,
+    );
+
+    expect(result.access_token).toBeTruthy();
+    expect(result.hasMfaFactor).toBe(true);
+    // proving possession always satisfies an account-wide requirement
+    expect(result.mfaEnrollmentSatisfied).toBe(true);
+
+    const [stored] = await db
+      .select()
+      .from(userPasskeysTable)
+      .where(eq(userPasskeysTable.id, passkey.id));
+    expect(stored?.counter).toBe(7);
+    expect(stored?.lastUsedAt).not.toBeNull();
+  });
+
+  // The credential lookup is by credentialId, which is unique globally —
+  // without the ownership check, anyone's passkey satisfies anyone's
+  // challenge, which is the entire second factor.
+  it("rejects another user's credential", async () => {
+    const { service, token } = await seedChallengedUser();
+    const { user: attacker } = await seedUser();
+    await insertUserPasskey(db, {
+      userId: attacker.id,
+      credentialId: 'attacker-cred',
+    });
+    const options = await service.getChallengeAuthenticationOptions(token);
+    assertionVerifies();
+
+    await expect(
+      service.verifyChallengeAssertion(
+        token,
+        assertionFor(options.challenge, 'attacker-cred') as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects an access token presented as a challenge token', async () => {
+    const { user, service, authService } = await seedChallengedUser();
+    const accessToken = await authService.createAccessToken({
+      sub: user.id,
+      email: user.email,
+      accountId: user.accountId,
+      firstName: 'Staff',
+      lastName: 'Member',
+      emailVerified: true,
+      mfaEnrollmentSatisfied: false,
+      hasMfaFactor: true,
+    });
+
+    await expect(
+      service.getChallengeAuthenticationOptions(accessToken),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects a replayed challenge', async () => {
+    const { service, token } = await seedChallengedUser();
+    const options = await service.getChallengeAuthenticationOptions(token);
+    assertionVerifies();
+    await service.verifyChallengeAssertion(
+      token,
+      assertionFor(options.challenge) as never,
+    );
+
+    await expect(
+      service.verifyChallengeAssertion(
+        token,
+        assertionFor(options.challenge) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // a registration challenge must not be redeemable as an assertion
+  it('rejects a challenge issued for registration', async () => {
+    const { user, service, token } = await seedChallengedUser();
+    const registration = await insertWebauthnChallenge(db, {
+      type: 'registration',
+      userId: user.id,
+    });
+    assertionVerifies();
+
+    await expect(
+      service.verifyChallengeAssertion(
+        token,
+        assertionFor(registration.challenge) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // a counter going backwards means two authenticators hold the same
+  // credential — one of them is a clone
+  it('rejects a regressed signature counter', async () => {
+    const { passkey, service, token } = await seedChallengedUser();
+    await db
+      .update(userPasskeysTable)
+      .set({ counter: 10 })
+      .where(eq(userPasskeysTable.id, passkey.id));
+    const options = await service.getChallengeAuthenticationOptions(token);
+    assertionVerifies(5);
+
+    await expect(
+      service.verifyChallengeAssertion(
+        token,
+        assertionFor(options.challenge) as never,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // most platform authenticators don't implement counters and always
+  // report 0 — that must not look like a clone
+  it('accepts a counter that stays at zero', async () => {
+    const { service, token } = await seedChallengedUser();
+    const options = await service.getChallengeAuthenticationOptions(token);
+    assertionVerifies(0);
+
+    const result = await service.verifyChallengeAssertion(
+      token,
+      assertionFor(options.challenge) as never,
+    );
+
+    expect(result.access_token).toBeTruthy();
+  });
+
+  it('refuses options for a user holding no passkey', async () => {
+    const { user } = await seedUser();
+    await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+    const ref = await buildRef();
+    const signin = await ref
+      .get(AuthService)
+      .signin({ email: user.email, password });
+    if (!signin.mfaRequired) throw new Error('expected an MFA challenge');
+    // and doesn't advertise a branch the user can't complete
+    expect(signin.methods).not.toContain('passkey');
+
+    await expect(
+      ref
+        .get(PasskeysService)
+        .getChallengeAuthenticationOptions(signin.challengeToken),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

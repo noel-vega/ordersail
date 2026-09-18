@@ -43,6 +43,32 @@ export function createPasskeysResource(
       return result;
     },
 
+    // The passkey branch of the password-then-second-factor step. Public on
+    // the server — the caller holds a signin()-issued challenge token, not a
+    // session — so these don't go through the access-token middleware's
+    // happy path. challengeVerify sets the token it gets back, same as
+    // verifyMfaChallenge does.
+    challengeOptions: async (
+      params: components["schemas"]["PasskeyChallengeOptionsDto"],
+    ) =>
+      unwrap(
+        await doRequest(() =>
+          client.POST("/auth/passkeys/challenge/options", { body: params }),
+        ),
+      ),
+
+    challengeVerify: async (
+      params: components["schemas"]["PasskeyChallengeVerifyDto"],
+    ) => {
+      const result = unwrap(
+        await doRequest(() =>
+          client.POST("/auth/passkeys/challenge/verify", { body: params }),
+        ),
+      );
+      if (result.access_token) setAccessToken(result.access_token);
+      return result;
+    },
+
     rename: async (
       id: number,
       params: components["schemas"]["PasskeyRenameDto"],
