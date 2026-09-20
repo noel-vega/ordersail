@@ -1,10 +1,16 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import {
   accountApiKeysTable,
   accountsTable,
   type db as Db,
   eq,
+  isUniqueViolation,
   usersTable,
 } from 'db/identity';
 import { locationsTable } from 'db/stock';
@@ -12,6 +18,11 @@ import * as bcrypt from 'bcryptjs';
 import { generateApiKey } from '../api-keys/api-keys.util';
 import { RolesService } from '../roles/roles.service';
 import { UpdateAccountDto } from './dto/update-account.dto';
+
+// The name Postgres gives the inline UNIQUE on users.email (the schema
+// declares `.unique()` without naming it). account.service.spec's duplicate-
+// email case runs against the real migrations, so a rename fails there.
+const USERS_EMAIL_UNIQUE_CONSTRAINT = 'users_email_key';
 
 // Deliberately not auth's SignUpDto: this module sits underneath auth, and
 // the DTO satisfies this structurally anyway.
@@ -37,13 +48,34 @@ export class AccountService {
   // to be usable, in one transaction: the Account, its first API key, the
   // Default location, the first User, and the Owner Role assigned to them.
   // Starting a session for that User is the caller's business (see
-  // AuthService.signup), as is translating the unique violation a duplicate
-  // email raises.
+  // AuthService.signup).
+  //
+  // An email already in use is refused as a 409, and the translation lives
+  // here because this is where the constraint is known: several unique
+  // columns are written below (the API key, the User's WebAuthn handle, the
+  // Role name) and only a violation of users.email means "that email is
+  // taken". Anything else is a fault and propagates as one. A caller that
+  // caught unique violations around this call and its own later writes would
+  // report every one of them as a duplicate email — signup used to.
   async provision(input: ProvisionAccountInput) {
     // hashed before the transaction opens, so a pooled connection isn't held
     // idle for the length of a bcrypt round
     const hashedPassword = await bcrypt.hash(input.password, 10);
 
+    try {
+      return await this.provisionTenant(input, hashedPassword);
+    } catch (err) {
+      if (isUniqueViolation(err, USERS_EMAIL_UNIQUE_CONSTRAINT)) {
+        throw new ConflictException('Email already in use');
+      }
+      throw err;
+    }
+  }
+
+  private provisionTenant(
+    input: ProvisionAccountInput,
+    hashedPassword: string,
+  ) {
     return this.db.transaction(async (tx) => {
       const [account] = await tx
         .insert(accountsTable)

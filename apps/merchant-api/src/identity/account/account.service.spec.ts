@@ -12,6 +12,7 @@ import {
 } from 'db/identity';
 import { locationsTable } from 'db/stock';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { ConflictException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { RolesService } from '../roles/roles.service';
 import { AccountService } from './account.service';
@@ -100,13 +101,16 @@ describe('AccountService.provision — first-run seed (OS-173)', () => {
     expect(rolePerms).toHaveLength(PERMISSIONS_CATALOG.length);
   });
 
-  it('rolls the whole tenant back when the email is already taken', async () => {
+  it('refuses an email that is already taken as a conflict, and rolls the whole tenant back', async () => {
     const service = await build();
     await service.provision(provisionInput);
 
-    await expect(
-      service.provision({ ...provisionInput, businessName: 'Second Shop' }),
-    ).rejects.toThrow();
+    const refusal = await service
+      .provision({ ...provisionInput, businessName: 'Second Shop' })
+      .catch((err: unknown) => err);
+
+    expect(refusal).toBeInstanceOf(ConflictException);
+    expect(refusal).toMatchObject({ message: 'Email already in use' });
 
     const accounts = await db.select().from(accountsTable);
     expect(accounts).toHaveLength(1);

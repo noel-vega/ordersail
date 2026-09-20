@@ -32,7 +32,6 @@ import {
   type db as Db,
   eq,
   isNull,
-  isUniqueViolation,
   userEmailVerificationsTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
@@ -570,26 +569,21 @@ export class AuthService {
   }
 
   async signup(signupDto: SignUpDto): Promise<TokenPair> {
-    try {
-      const { owner: user } = await this.accountService.provision(signupDto);
+    // an email already in use is provision()'s 409 — nothing here translates
+    // a unique violation, so one raised further down stays the fault it is
+    const { owner: user } = await this.accountService.provision(signupDto);
 
-      // best-effort, outside provision()'s transaction — an email that fails
-      // to send (see EmailService's own try/catch) shouldn't roll back a
-      // successful signup; the account can always resend
-      await this.issueVerificationEmail(user);
+    // best-effort, outside provision()'s transaction — an email that fails
+    // to send (see EmailService's own try/catch) shouldn't roll back a
+    // successful signup; the account can always resend
+    await this.issueVerificationEmail(user);
 
-      // Signup leaves the new Owner signed in. The Session's claims come out
-      // of the rows provision() just wrote: unverified (the email above is
-      // still unread) and ungated — requireMfaAt is never set at creation,
-      // and signup doesn't stamp factorRequiredAt (Owners are gated at the
-      // money actions instead, OS-492).
-      return await this.sessionsService.start(user.id);
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        throw new ConflictException('Email already in use');
-      }
-      throw err;
-    }
+    // Signup leaves the new Owner signed in. The Session's claims come out
+    // of the rows provision() just wrote: unverified (the email above is
+    // still unread) and ungated — requireMfaAt is never set at creation,
+    // and signup doesn't stamp factorRequiredAt (Owners are gated at the
+    // money actions instead, OS-492).
+    return this.sessionsService.start(user.id);
   }
 
   async acceptInvite(dto: AcceptInviteDto): Promise<TokenPair> {

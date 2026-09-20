@@ -211,12 +211,33 @@ describe('AuthService.signup (OS-173)', () => {
     );
   });
 
+  // the translation itself is AccountService.provision's (account.service.spec)
   it('rejects a duplicate email with a ConflictException', async () => {
     const service = await build();
     await service.signup(signupDto);
     await expect(service.signup(signupDto)).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+
+  // signup used to catch a unique violation from anywhere in its body —
+  // provisioning, the verification email, starting the Session — and call
+  // it a duplicate email. Only one constraint means that. The error injected
+  // here is shaped as drizzle really raises it: a query error whose `cause`
+  // is the node-postgres error carrying the SQLSTATE and constraint name.
+  it('does not report a unique violation from anywhere else as a duplicate email', async () => {
+    const { service, sessions } = await buildBoth();
+    const jtiCollision = Object.assign(new Error('Failed query: insert …'), {
+      cause: Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "user_refresh_tokens_jti_key"',
+        ),
+        { code: '23505', constraint: 'user_refresh_tokens_jti_key' },
+      ),
+    });
+    jest.spyOn(sessions, 'start').mockRejectedValueOnce(jtiCollision);
+
+    await expect(service.signup(signupDto)).rejects.toBe(jtiCollision);
   });
 });
 
