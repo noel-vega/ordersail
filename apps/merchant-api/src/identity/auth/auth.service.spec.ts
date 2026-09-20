@@ -148,7 +148,7 @@ const signupDto = {
   password: 'supersecret',
 };
 
-describe('AuthService.signup (OS-173)', () => {
+describe('AuthService.signup — a new Account, its Owner signed in', () => {
   // what gets seeded is AccountService.provision's suite (account.service.spec)
   it('provisions the account and leaves its first Owner signed in', async () => {
     await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
@@ -224,7 +224,7 @@ describe('AuthService.signup (OS-173)', () => {
   });
 });
 
-describe('AuthService.me (OS-180)', () => {
+describe('AuthService.me — who the caller is now', () => {
   // The caller is whatever the real AuthGuard makes of the access token
   // signup handed out — the same thing @CurrentUser() gives the handler.
   async function signedUp(service: AuthService) {
@@ -327,7 +327,7 @@ describe('AuthService.me (OS-180)', () => {
   });
 });
 
-describe('AuthService.requestPasswordReset (OS-469)', () => {
+describe('AuthService.requestPasswordReset — an emailed link, and no account enumeration', () => {
   it('creates a reset row and emails the user for an active account', async () => {
     const account = await insertAccountFor();
     const user = await insertUser(db, {
@@ -414,7 +414,7 @@ describe('AuthService.requestPasswordReset (OS-469)', () => {
   }
 });
 
-describe('AuthService.resetPassword (OS-469)', () => {
+describe('AuthService.resetPassword — a new password ends every Session', () => {
   async function seedActiveUser(overrides: { password?: string } = {}) {
     const [account] = await db
       .insert(accountsTable)
@@ -532,7 +532,7 @@ describe('AuthService.resetPassword (OS-469)', () => {
   });
 });
 
-describe('AuthService.changePassword (OS-385)', () => {
+describe("AuthService.changePassword — ends every other Session, rotates the caller's", () => {
   const CURRENT_PASSWORD = 'correct-horse-battery-staple';
   const NEW_PASSWORD = 'another-horse-another-staple';
 

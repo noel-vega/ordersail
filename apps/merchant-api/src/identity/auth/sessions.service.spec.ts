@@ -79,6 +79,20 @@ async function backdateSessionStart(userId: number, days: number) {
   return startedAt;
 }
 
+// How many refresh tokens the User has live, and how many retired. This
+// suite asks whether tokens WORK and leaves how a Session is stored alone;
+// this is for the few invariants no caller can observe — "exactly one live
+// successor" after a race, "nothing was rotated", "no successor was minted"
+// — where a wrong answer still hands every caller a token that works today.
+async function tokenRowCounts(userId: number) {
+  const rows = await db
+    .select({ revokedAt: userRefreshTokensTable.revokedAt })
+    .from(userRefreshTokensTable)
+    .where(eq(userRefreshTokensTable.userId, userId));
+  const live = rows.filter((row) => row.revokedAt === null).length;
+  return { live, retired: rows.length - live };
+}
+
 async function build() {
   const ref = await Test.createTestingModule({
     providers: [
@@ -304,9 +318,10 @@ describe('SessionsService token payloads', () => {
       const user = await seedUser();
       const legacy = await testJwt().signAsync(
         { ...legacyClaims(user), typ: 'access' },
-        // the lifetime such a token was minted with, before OS-555 — a
-        // shorter ACCESS_TOKEN_TTL_SECONDS doesn't cut short one already out
-        { expiresIn: '8h' },
+        // the lifetime such a token was minted with before OS-555, eight
+        // hours in seconds — a shorter ACCESS_TOKEN_TTL_SECONDS doesn't cut
+        // short one already out
+        { expiresIn: 8 * 60 * 60 },
       );
 
       expect(await presentAccessToken(legacy)).toMatchObject({
@@ -387,7 +402,7 @@ describe('SessionsService.refreshTokens', () => {
   });
 
   it('replays the same pair for a just-rotated-out token within the grace window (concurrent legitimate retry)', async () => {
-    const { service, refresh_token } = await seedSession();
+    const { service, userId, refresh_token } = await seedSession();
 
     const first = await service.refreshTokens(refresh_token);
     // presenting the now-superseded token again immediately (e.g. a second
@@ -403,9 +418,8 @@ describe('SessionsService.refreshTokens', () => {
       testJwt().decode<{ jti: string }>(token).jti;
     expect(jtiOf(second.refresh_token)).toBe(jtiOf(first.refresh_token));
 
-    // and no extra row was minted by the replay
-    const rows = await db.select().from(userRefreshTokensTable);
-    expect(rows).toHaveLength(2);
+    // and no extra successor was minted by the replay
+    expect(await tokenRowCounts(userId)).toEqual({ live: 1, retired: 1 });
   });
 
   // The grace window above only covers a second request that arrives after
@@ -423,24 +437,15 @@ describe('SessionsService.refreshTokens', () => {
       ]),
     );
 
-    const rows = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.userId, userId));
-    const live = rows.filter((r) => r.revokedAt === null);
-    const retired = rows.filter((r) => r.revokedAt !== null);
-    // the presented token and its one successor — not two successors
-    expect(rows).toHaveLength(2);
-    expect(live).toHaveLength(1);
-    expect(retired).toHaveLength(1);
-    expect(retired[0]?.replacedByJti).toBe(live[0]?.jti);
-    expect(new Set(rows.map((r) => r.familyId)).size).toBe(1);
+    // exactly one live successor: the presented token retired, one token
+    // live — not two. The one thing here a caller can't see: a forked
+    // Session looks fine to both tabs until reuse detection meets it.
+    expect(await tokenRowCounts(userId)).toEqual({ live: 1, retired: 1 });
 
     // the loser was handed the winner's successor, not one of its own
     const jtiOf = (token: string) =>
       testJwt().decode<{ jti: string }>(token).jti;
-    expect(jtiOf(first.refresh_token)).toBe(live[0]?.jti);
-    expect(jtiOf(second.refresh_token)).toBe(live[0]?.jti);
+    expect(jtiOf(second.refresh_token)).toBe(jtiOf(first.refresh_token));
 
     // "usable" means it works, not merely that it was returned: both access
     // tokens get through the real guards, and either refresh token can be
@@ -454,7 +459,7 @@ describe('SessionsService.refreshTokens', () => {
       });
     }
     const next = await service.refreshTokens(second.refresh_token);
-    expect(jtiOf(next.refresh_token)).not.toBe(live[0]?.jti);
+    expect(jtiOf(next.refresh_token)).not.toBe(jtiOf(second.refresh_token));
     // ...and the other tab, a moment later, replays that rotation as usual
     const replayed = await service.refreshTokens(first.refresh_token);
     expect(jtiOf(replayed.refresh_token)).toBe(jtiOf(next.refresh_token));
@@ -479,11 +484,9 @@ describe('SessionsService.refreshTokens', () => {
         new UnauthorizedException(REFUSED),
       );
 
-      // ended, not merely refused this once: nothing of it is left live
-      const rows = await sessionRows(userId);
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.revokedAt).not.toBeNull();
-      expect(rows[0]?.replacedByJti).toBeNull();
+      // ended, not merely refused this once: nothing of it is left live, and
+      // no successor was minted on the way out
+      expect(await tokenRowCounts(userId)).toEqual({ live: 0, retired: 1 });
     });
 
     it('continues a Session that started 29 days ago, and the successor carries the same start', async () => {
@@ -896,7 +899,7 @@ describe('SessionsService.revokeAll', () => {
   });
 });
 
-describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
+describe("SessionsService.revokeOthersAndRotate — a credential changed: every other Session ends, the caller's is rotated", () => {
   it('kills the token the caller presented along with every other session', async () => {
     const user = await seedUser();
     const service = await build();
@@ -1122,9 +1125,8 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
       const service = await build();
       const { refresh_token: callerToken } = await service.start(user.id);
       await backdateSessionStart(user.id, 29);
-      const [original] = await db.select().from(userRefreshTokensTable);
 
-      const [, result] = await raceForRefreshRow(
+      const [refreshed, result] = await raceForRefreshRow(
         db,
         callerToken,
         2,
@@ -1143,9 +1145,13 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
       expect(live.jti).toBe(
         testJwt().decode<{ jti: string }>(result.refresh_token).jti,
       );
-      // it really was the losing branch: the caller left the family behind
-      expect(live.familyId).not.toBe(original?.familyId);
+      // it really was the losing branch: the caller left the old Session
+      // behind — a new start, where a rotation would have kept the 29-day-old
+      // one — and what the refresh won was ended with it
       expectStartedJustNow(live.sessionStartedAt);
+      await expect(
+        service.refreshTokens(refreshed.refresh_token),
+      ).rejects.toThrow(REFUSED);
     });
 
     // Rotating a Session already past its lifetime would hand back a refresh
@@ -1216,7 +1222,7 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
   });
 });
 
-describe('SessionsService.revokeOtherSessions (OS-502)', () => {
+describe('SessionsService.revokeOtherSessions — sign out everywhere else', () => {
   it('leaves the calling session running — unrotated, and still redeemable', async () => {
     const user = await seedUser();
     const service = await build();
@@ -1226,17 +1232,11 @@ describe('SessionsService.revokeOtherSessions (OS-502)', () => {
 
     // Nothing was written back to this family, so the token the browser
     // already holds is still the live one — the whole point of not rotating
-    // here is that there's no replacement cookie to deliver. Asserted on the
-    // row rather than only on "it still refreshes", because a revoked row
-    // with a successor would refresh too (that's the grace window), and
-    // that's precisely what this endpoint must NOT have produced.
-    const rows = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.userId, user.id));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.revokedAt).toBeNull();
-    expect(rows[0]?.replacedByJti).toBeNull();
+    // here is that there's no replacement cookie to deliver. Counted rather
+    // than only checked by "it still refreshes", because a rotated-out token
+    // refreshes too (that's the grace window), and a rotation is precisely
+    // what this endpoint must NOT have performed.
+    expect(await tokenRowCounts(user.id)).toEqual({ live: 1, retired: 0 });
 
     await expectWorkingSession(service, caller, user.id);
   });
