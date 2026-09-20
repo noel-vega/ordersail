@@ -64,8 +64,8 @@ flowchart TB
     worker --> db
     db --> postgres
 
-    adminapi -->|produces: email| queue
-    storeapi -->|produces: orders, email| queue
+    adminapi -->|produces: orders, email| queue
+    storeapi -->|produces: email| queue
     worker -->|consumes + produces| queue
     queue --> redis
 
@@ -102,20 +102,32 @@ flowchart TB
 ## Order + email job flow
 
 The multi-step async path from a paid Stripe checkout to a sent confirmation email, across the
-`orders` and `email` BullMQ queues:
+`orders` and `email` BullMQ queues.
+
+`merchant-api` owns the whole webhook-to-enqueue leg (moved off `storefront-api` in M9, OS-357).
+Inside it the work crosses a context boundary: `payments` owns the Stripe surface and verifies the
+event, `sales` owns the order and resolves the cart, and they meet at the in-process
+`checkout.session.paid` domain event rather than a direct service call. `storefront-api` still
+*creates* the Checkout Session, but no longer hears about its outcome.
 
 ```mermaid
 sequenceDiagram
     participant Stripe
-    participant storeapi as storefront-api
+    box merchant-api
+        participant pay as payments
+        participant sales as sales
+    end
     participant redis as Redis (BullMQ)
     participant worker
     participant pg as Postgres
     participant mail as SMTP
 
-    Stripe->>storeapi: checkout.session.completed webhook
-    storeapi->>storeapi: validate session, resolve cart
-    storeapi->>redis: enqueue "checkout-completed"<br/>(orders queue)
+    Stripe->>pay: checkout.session.completed webhook<br/>POST /webhooks/stripe
+    pay->>pay: verify signature, narrow to<br/>CheckoutSessionPaidPayload
+    pay->>sales: emitAsync "checkout.session.paid"<br/>(in-process domain event)
+    sales->>pg: resolve cart → order payload
+    sales->>redis: enqueue "checkout-completed"<br/>(orders queue)
+    sales-->>pay: awaited — a failure here<br/>returns non-2xx, Stripe redelivers
     redis->>worker: deliver job
     worker->>pg: insert order + items +<br/>inventory movements (tx)
     worker->>redis: enqueue "order-confirmation"<br/>(email queue)
@@ -125,10 +137,15 @@ sequenceDiagram
     worker->>mail: send via nodemailer
 ```
 
+The event is emitted with `emitAsync` and awaited, deliberately: the bus is in-process and not
+durable, so if `sales` can't enqueue (Redis down, cart unresolvable) the webhook must return
+non-2xx and let Stripe redeliver. A paid order is never silently lost. The enqueue's own
+idempotency pre-check on `stripeCheckoutSessionId` makes that redelivery safe.
+
 If `worker` dies between the order commit and the email enqueue, BullMQ's stalled-job
-redelivery re-runs the job; the idempotency check on `stripeCheckoutSessionId` skips
-re-creating the order but still retries the email (via the `confirmationEmailQueuedAt` flag)
-rather than losing it silently.
+redelivery re-runs the job; the same idempotency check skips re-creating the order but still
+retries the email (via the `confirmationEmailQueuedAt` flag) rather than losing it silently. An
+order the worker ultimately can't write lands in `failed_orders`, retryable from the dashboard.
 
 The same `email` queue also takes two simpler, single-step jobs enqueued directly by the APIs
 (no `orders` queue involved): `staff-invite` from `merchant-api` and `customer-thank-you`
