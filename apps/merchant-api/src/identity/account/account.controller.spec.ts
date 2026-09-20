@@ -11,7 +11,6 @@ const user: AuthenticatedUser = {
   lastName: 'Y',
   emailVerified: true,
   mfaEnrollmentSatisfied: true,
-  hasMfaFactor: false,
   typ: 'access',
 };
 

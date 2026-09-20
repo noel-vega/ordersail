@@ -132,10 +132,10 @@ const signupDto = {
   password: 'supersecret',
 };
 
-// Pins the wire format itself, not just the mappers that feed it. The
-// claim set is still growing (hasMfaFactor lands next), so these key-set
-// assertions are meant to fail loudly when it does — adding a claim should
-// be a deliberate edit here, not something that slips through.
+// Pins the wire format itself, not just the mappers that feed it. These
+// key-set assertions are meant to fail loudly when the claim set changes —
+// adding a claim (or, as with hasMfaFactor in OS-505, removing a dead one)
+// should be a deliberate edit here, not something that slips through.
 describe('AuthService token payloads (OS-482)', () => {
   const decode = (token: string) =>
     new JwtService({ secret: 'test-secret' }).decode<Record<string, unknown>>(
@@ -150,7 +150,6 @@ describe('AuthService token payloads (OS-482)', () => {
     lastName: signupDto.lastName,
     emailVerified: false,
     mfaEnrollmentSatisfied: true,
-    hasMfaFactor: false,
   };
 
   it('signs an access token with exactly the claim set plus typ', async () => {
@@ -163,7 +162,6 @@ describe('AuthService token payloads (OS-482)', () => {
       'emailVerified',
       'exp',
       'firstName',
-      'hasMfaFactor',
       'iat',
       'lastName',
       'mfaEnrollmentSatisfied',
@@ -190,7 +188,6 @@ describe('AuthService token payloads (OS-482)', () => {
       'emailVerified',
       'exp',
       'firstName',
-      'hasMfaFactor',
       'iat',
       'jti',
       'lastName',
@@ -270,7 +267,6 @@ describe('AuthService.me (OS-180)', () => {
       lastName: signupDto.lastName,
       emailVerified: false,
       mfaEnrollmentSatisfied: true,
-      hasMfaFactor: false,
       typ: 'access',
     });
 
@@ -303,7 +299,6 @@ describe('AuthService.me (OS-180)', () => {
       lastName: signupDto.lastName,
       emailVerified: false,
       mfaEnrollmentSatisfied: true,
-      hasMfaFactor: false,
       typ: 'access',
     });
 
@@ -327,7 +322,6 @@ describe('AuthService.me (OS-180)', () => {
       lastName: signupDto.lastName,
       emailVerified: false,
       mfaEnrollmentSatisfied: true,
-      hasMfaFactor: false,
       typ: 'access',
     });
 
@@ -351,7 +345,6 @@ describe('AuthService.refreshTokens (OS-467)', () => {
         lastName: signupDto.lastName,
         emailVerified: false,
         mfaEnrollmentSatisfied: true,
-        hasMfaFactor: false,
       },
       randomUUID(),
     );
@@ -464,7 +457,6 @@ describe('AuthService.refreshTokens (OS-467)', () => {
       lastName: signupDto.lastName,
       emailVerified: false,
       mfaEnrollmentSatisfied: true,
-      hasMfaFactor: false,
     });
 
     await expect(service.refreshTokens(accessToken)).rejects.toThrow(
@@ -487,7 +479,6 @@ describe('AuthService.logout (OS-467)', () => {
         lastName: signupDto.lastName,
         emailVerified: false,
         mfaEnrollmentSatisfied: true,
-        hasMfaFactor: false,
       },
       randomUUID(),
     );
@@ -700,7 +691,6 @@ describe('AuthService.changePassword (OS-385)', () => {
       lastName: 'Member',
       emailVerified: true,
       mfaEnrollmentSatisfied: true,
-      hasMfaFactor: false,
     };
   }
 
@@ -925,7 +915,6 @@ describe('AuthService.revokeOtherSessions (OS-502)', () => {
       lastName: 'Member',
       emailVerified: true,
       mfaEnrollmentSatisfied: true,
-      hasMfaFactor: false,
     };
   }
 
@@ -1580,7 +1569,6 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         lastName: user.lastname,
         emailVerified: true,
         mfaEnrollmentSatisfied: true,
-        hasMfaFactor: false,
       });
 
       await expect(
@@ -1949,7 +1937,6 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       });
 
       expect(result.mfaEnrollmentSatisfied).toBe(false);
-      expect(result.hasMfaFactor).toBe(false);
       const payload = new JwtService({
         secret: 'test-secret',
       }).decode<{ mfaEnrollmentSatisfied: boolean }>(result.access_token);
@@ -2222,7 +2209,6 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
       );
 
       expect(result.access_token).toBeTruthy();
-      expect(result.hasMfaFactor).toBe(true);
     });
 
     it('does not offer the passkey branch to a TOTP-only user', async () => {
@@ -2234,19 +2220,6 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
 
       if (!result.mfaRequired) throw new Error('expected a challenge');
       expect(result.methods).toEqual(['totp', 'recovery']);
-    });
-
-    // The whole point of the claim split: this user is blocked by nothing,
-    // but also holds nothing, so a gated action must still stop them.
-    it('leaves hasMfaFactor false for a user with no factor at all', async () => {
-      const { user } = await seedAccountAndUser({});
-      const service = await build();
-
-      const result = await service.signin({ email: user.email, password });
-
-      if (result.mfaRequired) throw new Error('expected a normal sign-in');
-      expect(result.mfaEnrollmentSatisfied).toBe(true);
-      expect(result.hasMfaFactor).toBe(false);
     });
 
     // The other half of the OS-489 flip. A passkey now satisfies an
@@ -2296,7 +2269,6 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
       });
       if (signInResult.mfaRequired)
         throw new Error('expected a normal sign-in');
-      expect(signInResult.hasMfaFactor).toBe(false);
       expect(signInResult.mfaEnrollmentSatisfied).toBe(false);
 
       const refreshToken = await service.createRefreshToken(
@@ -2308,18 +2280,16 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
 
       const refreshed = await service.refreshTokens(refreshToken);
       const payload = new JwtService({ secret: 'test-secret' }).decode<{
-        hasMfaFactor: boolean;
         mfaEnrollmentSatisfied: boolean;
       }>(refreshed.access_token);
 
-      expect(payload.hasMfaFactor).toBe(true);
-      // and since OS-489 that also clears the account-wide requirement,
-      // without waiting for a re-login
+      // since OS-489 a passkey clears the account-wide requirement, without
+      // waiting for a re-login
       expect(payload.mfaEnrollmentSatisfied).toBe(true);
     });
 
-    it('drops hasMfaFactor when the last passkey is removed mid-session', async () => {
-      const { user } = await seedAccountAndUser({});
+    it('stops being satisfied when the last passkey is removed mid-session', async () => {
+      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
       const service = await build();
       // sign in BEFORE the passkey exists — a user holding one is now
       // challenged, and this test is about the claim, not the challenge
@@ -2341,8 +2311,9 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
       // the claim first has to become true, or "drops" proves nothing
       const withPasskey = await service.refreshTokens(refreshToken);
       expect(
-        jwt.decode<{ hasMfaFactor: boolean }>(withPasskey.access_token)
-          .hasMfaFactor,
+        jwt.decode<{ mfaEnrollmentSatisfied: boolean }>(
+          withPasskey.access_token,
+        ).mfaEnrollmentSatisfied,
       ).toBe(true);
 
       await db
@@ -2353,8 +2324,9 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
         withPasskey.refresh_token,
       );
       expect(
-        jwt.decode<{ hasMfaFactor: boolean }>(afterRemoval.access_token)
-          .hasMfaFactor,
+        jwt.decode<{ mfaEnrollmentSatisfied: boolean }>(
+          afterRemoval.access_token,
+        ).mfaEnrollmentSatisfied,
       ).toBe(false);
     });
   });

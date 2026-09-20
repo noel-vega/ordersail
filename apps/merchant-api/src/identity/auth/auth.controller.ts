@@ -186,10 +186,6 @@ export class AuthController {
     const access_token = await this.authService.createAccessToken({
       ...claimsFromUser(user),
       mfaEnrollmentSatisfied: true,
-      // they hold one now — passkey registration sets this too, and without
-      // it a caller who just enrolled TOTP keeps failing every gated action
-      // until their next refresh
-      hasMfaFactor: true,
     });
 
     return { recoveryCodes: result.recoveryCodes, access_token };

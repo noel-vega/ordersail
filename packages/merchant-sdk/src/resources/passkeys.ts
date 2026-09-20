@@ -27,10 +27,11 @@ export function createPasskeysResource(
       ),
 
     // The response carries a fresh access token for the same reason
-    // mfa.confirm does: the caller's current one still says hasMfaFactor
-    // false, and a gated action would keep 403ing on that stale claim for
-    // the rest of its 8h life. It also carries recoveryCodes, but only when
-    // this was the user's first factor of any kind — shown once, never again.
+    // mfa.confirm does: the caller's current one may still say
+    // mfaEnrollmentSatisfied false, and they would stay gated into forced
+    // enrollment on that stale claim until the next refresh. It also carries
+    // recoveryCodes, but only when this was the user's first factor of any
+    // kind — shown once, never again.
     registerVerify: async (
       params: components["schemas"]["PasskeyRegisterVerifyDto"],
     ) => {

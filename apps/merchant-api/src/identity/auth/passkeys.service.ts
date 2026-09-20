@@ -196,7 +196,7 @@ export class PasskeysService {
 
     // Re-mint so a caller who was being gated isn't stuck behind a stale
     // claim for the rest of their token's 8h life — same reason confirmMfa
-    // re-mints, and with the same two claims. mfaEnrollmentSatisfied used to
+    // re-mints, and for the same one claim. mfaEnrollmentSatisfied used to
     // be carried over unchanged here, because between OS-484 and OS-489
     // sign-in couldn't challenge on a passkey and counting one would have
     // been a bypass. It can now, toFactorClaims() counts passkeys, and an
@@ -204,7 +204,6 @@ export class PasskeysService {
     // to come unstuck without waiting for a refresh.
     const access_token = await this.authService.createAccessToken({
       ...claimsFromUser(user),
-      hasMfaFactor: true,
       mfaEnrollmentSatisfied: true,
     });
 
@@ -304,7 +303,6 @@ export class PasskeysService {
     // possession of always satisfies an account-wide requirement.
     return this.authService.buildSignInSuccess(user, {
       mfaEnrollmentSatisfied: true,
-      hasMfaFactor: true,
     });
   }
 
@@ -406,7 +404,6 @@ export class PasskeysService {
     // there is no password step here to add to it.
     return this.authService.buildSignInSuccess(user, {
       mfaEnrollmentSatisfied: true,
-      hasMfaFactor: true,
     });
   }
 

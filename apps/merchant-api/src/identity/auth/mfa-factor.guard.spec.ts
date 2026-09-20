@@ -41,10 +41,9 @@ function ctx(opts: {
   } as unknown as ExecutionContext;
 }
 
-// The guard reads factor state live rather than trusting the token, so this
-// stub is "what the database currently says" — deliberately separate from
-// the claim on the fake users below, because the whole point is that the two
-// can disagree.
+// The guard reads factor state live — the token carries no factor claim at
+// all (OS-505) — so this stub is "what the database currently says", and it
+// is the only thing that decides the outcome.
 function guard(holdsFactor = true) {
   const authService = {
     getFactorState: jest.fn().mockResolvedValue({
@@ -56,7 +55,7 @@ function guard(holdsFactor = true) {
   return new MfaFactorGuard(new Reflector(), authService);
 }
 
-const withFactor = {
+const caller = {
   sub: 1,
   email: 'staff@store.test',
   accountId: 1,
@@ -64,55 +63,38 @@ const withFactor = {
   lastName: 'Member',
   emailVerified: true,
   mfaEnrollmentSatisfied: true,
-  hasMfaFactor: true,
   typ: 'access',
 } as const satisfies AuthenticatedRequest['user'];
-
-const withoutFactor = { ...withFactor, hasMfaFactor: false };
 
 describe('MfaFactorGuard (OS-492)', () => {
   // allow-by-default, unlike MfaEnrollmentGuard — most routes are ordinary
   it('allows a route with no marker', async () => {
-    await expect(
-      guard(false).canActivate(ctx({ user: withoutFactor })),
-    ).resolves.toBe(true);
+    await expect(guard(false).canActivate(ctx({ user: caller }))).resolves.toBe(
+      true,
+    );
   });
 
+  // The same token on both sides of these two: nothing minted into it can
+  // vouch for a factor, so enrolling mid-session works straight away, and
+  // someone who removes their last factor mid-session is blocked on the very
+  // next gated action rather than staying authorized for the token's 8h.
   it('allows a marked route when the caller holds a factor', async () => {
     await expect(
-      guard(true).canActivate(ctx({ required: true, user: withFactor })),
+      guard(true).canActivate(ctx({ required: true, user: caller })),
     ).resolves.toBe(true);
   });
 
   it('blocks a marked route when the caller holds none', async () => {
     await expect(
-      guard(false).canActivate(ctx({ required: true, user: withoutFactor })),
+      guard(false).canActivate(ctx({ required: true, user: caller })),
     ).rejects.toThrow(ForbiddenException);
-  });
-
-  // The claim is baked in at mint time and keeps asserting itself for 8h.
-  // Someone who removes their last factor mid-session still carries `true`,
-  // so trusting the token would leave them authorized for a gated action
-  // while holding no factor at all.
-  it('blocks when the token claims a factor the user no longer holds', async () => {
-    await expect(
-      guard(false).canActivate(ctx({ required: true, user: withFactor })),
-    ).rejects.toThrow(ForbiddenException);
-  });
-
-  // The mirror image: enrolling mid-session works straight away, instead of
-  // failing every gated action until the next token refresh.
-  it('allows when the user enrolled after the token was minted', async () => {
-    await expect(
-      guard(true).canActivate(ctx({ required: true, user: withoutFactor })),
-    ).resolves.toBe(true);
   });
 
   // merchant-web branches on this to offer setting a factor up; a message
   // alone could only be matched by string comparison
   it('carries a machine-readable code', async () => {
     const err = await guard(false)
-      .canActivate(ctx({ required: true, user: withoutFactor }))
+      .canActivate(ctx({ required: true, user: caller }))
       .catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(ForbiddenException);
@@ -135,16 +117,14 @@ describe('MfaFactorGuard (OS-492)', () => {
   it('lets a handler-level requirement beat the class-level opt-out', async () => {
     await expect(
       guard(false).canActivate(
-        ctx({ required: true, classNotRequired: true, user: withoutFactor }),
+        ctx({ required: true, classNotRequired: true, user: caller }),
       ),
     ).rejects.toThrow(ForbiddenException);
   });
 
   it('honours a class-level requirement', async () => {
     await expect(
-      guard(false).canActivate(
-        ctx({ classRequired: true, user: withoutFactor }),
-      ),
+      guard(false).canActivate(ctx({ classRequired: true, user: caller })),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -162,7 +142,7 @@ describe('MfaFactorGuard (OS-492)', () => {
     const authService = { getFactorState } as unknown as AuthService;
 
     await new MfaFactorGuard(new Reflector(), authService).canActivate(
-      ctx({ user: withoutFactor }),
+      ctx({ user: caller }),
     );
 
     expect(getFactorState).not.toHaveBeenCalled();

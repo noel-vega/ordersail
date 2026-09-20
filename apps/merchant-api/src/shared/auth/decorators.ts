@@ -84,13 +84,13 @@ export interface AuthenticatedUser {
   // emailVerified. A caller who enrolls mid-session gets this flipped true
   // immediately via a token re-mint in AuthService.confirmMfa, rather than
   // waiting for their next refresh.
+  //
+  // Not the same question as "does the caller hold a factor": a user on an
+  // account that doesn't require MFA is satisfied with none at all. That
+  // one is deliberately NOT a claim — MfaFactorGuard reads it live
+  // (AuthService.getFactorState) so a factor change takes effect on the
+  // very next request (OS-492).
   mfaEnrollmentSatisfied: boolean;
-  // true when the caller holds ANY second factor — a confirmed TOTP row or
-  // at least one passkey (OS-484). Distinct from mfaEnrollmentSatisfied,
-  // which asks whether anything is *blocking* them: a user on an account
-  // that doesn't require MFA is satisfied with no factor at all. Read by
-  // MfaFactorGuard to gate money/access-sensitive actions (OS-492).
-  hasMfaFactor: boolean;
   // only present on refresh tokens — identifies the user_refresh_tokens row
   // this specific token corresponds to (rotation/reuse-detection, OS-467)
   jti?: string;

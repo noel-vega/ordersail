@@ -41,14 +41,12 @@ const unsatisfiedUser: AuthenticatedRequest['user'] = {
   lastName: 'Y',
   emailVerified: true,
   mfaEnrollmentSatisfied: false,
-  hasMfaFactor: false,
   typ: 'access',
 };
 
 const satisfiedUser: AuthenticatedRequest['user'] = {
   ...unsatisfiedUser,
   mfaEnrollmentSatisfied: true,
-  hasMfaFactor: false,
 };
 
 describe('MfaEnrollmentGuard (OS-473)', () => {

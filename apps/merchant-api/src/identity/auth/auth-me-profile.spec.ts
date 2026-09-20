@@ -24,7 +24,6 @@ const user: AuthenticatedUser = {
   lastName: 'Scully',
   emailVerified: true,
   mfaEnrollmentSatisfied: true,
-  hasMfaFactor: false,
   typ: 'access',
 };
 

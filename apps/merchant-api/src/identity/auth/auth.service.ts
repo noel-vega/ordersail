@@ -74,7 +74,6 @@ export interface SignInSuccessResult {
   lastName: string;
   emailVerified: boolean;
   mfaEnrollmentSatisfied: boolean;
-  hasMfaFactor: boolean;
   access_token: string;
 }
 
@@ -85,9 +84,8 @@ interface FactorState {
   hasMfaFactor: boolean;
 }
 
-// the two factor-derived token claims — see getFactorClaims()
+// the factor-derived token claim — see getFactorClaims()
 interface FactorClaims {
-  hasMfaFactor: boolean;
   mfaEnrollmentSatisfied: boolean;
 }
 
@@ -120,7 +118,6 @@ export function claimsFromSignInResult(
     lastName: result.lastName,
     emailVerified: result.emailVerified,
     mfaEnrollmentSatisfied: result.mfaEnrollmentSatisfied,
-    hasMfaFactor: result.hasMfaFactor,
   };
 }
 
@@ -292,18 +289,20 @@ export class AuthService {
     return null;
   }
 
-  // The two token claims that depend on factor state.
-  //
-  // hasMfaFactor: does the user hold any factor at all — read by the
-  // per-route gate (OS-492) for money/access-sensitive actions.
+  // The token claim that depends on factor state.
   //
   // mfaEnrollmentSatisfied: is anything *blocking* this user — a factor is
   // required of them (account-wide policy, or the stamp an invited staff
   // member carries — see getFactorRequirement) and they haven't enrolled.
   // Nothing requires it -> trivially satisfied, even with no factor.
   //
-  // These two are now the same question, and were deliberately not always
-  // so: a factor satisfies an account-wide MFA requirement exactly when
+  // "Does the user hold any factor at all" is NOT a claim: the per-route
+  // gate for money/access-sensitive actions (OS-492) reads it live from
+  // getFactorState(), as does /auth/me.
+  //
+  // Holding a factor and satisfying a requirement are now the same
+  // question, and were deliberately not always so: a factor satisfies an
+  // account-wide MFA requirement exactly when
   // sign-in can make the user prove it. Between OS-484 and OS-489 enrollment
   // counted only a confirmed TOTP factor, because nothing could verify a
   // passkey yet — counting one would have left a require-MFA account
@@ -317,7 +316,6 @@ export class AuthService {
     const requirement = await this.getFactorRequirement(userId);
 
     return {
-      hasMfaFactor: factors.hasMfaFactor,
       mfaEnrollmentSatisfied: !requirement || factors.hasMfaFactor,
     };
   }
@@ -337,7 +335,7 @@ export class AuthService {
     flags: FactorClaims,
   ): Promise<SignInSuccessResult> {
     const emailVerified = user.emailVerifiedAt !== null;
-    const { mfaEnrollmentSatisfied, hasMfaFactor } = flags;
+    const { mfaEnrollmentSatisfied } = flags;
     const access_token = await this.createAccessToken({
       sub: user.id,
       email: user.email,
@@ -346,7 +344,6 @@ export class AuthService {
       lastName: user.lastname,
       emailVerified,
       mfaEnrollmentSatisfied,
-      hasMfaFactor,
     });
 
     return {
@@ -358,7 +355,6 @@ export class AuthService {
       lastName: user.lastname,
       emailVerified,
       mfaEnrollmentSatisfied,
-      hasMfaFactor,
       access_token,
     };
   }
@@ -444,7 +440,6 @@ export class AuthService {
     // satisfies any account-wide MFA requirement
     return this.buildSignInSuccess(user, {
       mfaEnrollmentSatisfied: true,
-      hasMfaFactor: true,
     });
   }
 
@@ -699,7 +694,6 @@ export class AuthService {
         lastName: user.lastname,
         emailVerified: false,
         mfaEnrollmentSatisfied: true,
-        hasMfaFactor: false,
       });
 
       return {
@@ -710,7 +704,6 @@ export class AuthService {
         lastName: user.lastname,
         emailVerified: false,
         mfaEnrollmentSatisfied: true,
-        hasMfaFactor: false,
         access_token,
       };
     } catch (err) {

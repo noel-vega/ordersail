@@ -50,11 +50,12 @@ export class MfaFactorGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const user = request.user;
 
-    // Read the factor state LIVE rather than trusting the token's claim.
+    // Read the factor state LIVE rather than from a token claim — there is
+    // deliberately no hasMfaFactor claim (the dead one was removed in OS-505).
     //
-    // hasMfaFactor is baked in at mint time and only recomputed on refresh,
-    // so an access token asserts it for up to 8h. On an account that doesn't
-    // require MFA a user can remove their last factor and keep using that
+    // A claim is baked in at mint time and only recomputed on refresh, so an
+    // access token would assert it for up to 8h. On an account that doesn't
+    // require MFA a user could remove their last factor and keep using that
     // stale `true` to connect Stripe or mint an API key — with no factor at
     // all, which is exactly what this gate exists to prevent.
     //

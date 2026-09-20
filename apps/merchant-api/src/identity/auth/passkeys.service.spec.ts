@@ -153,7 +153,6 @@ function principal(user: {
     lastName: 'Member',
     emailVerified: true,
     mfaEnrollmentSatisfied: true,
-    hasMfaFactor: false,
     typ: 'access',
   };
 }
@@ -229,7 +228,7 @@ describe('PasskeysService — registration (OS-485)', () => {
     ]);
   });
 
-  it('stores the credential and re-mints with both factor claims set', async () => {
+  it('stores the credential and re-mints as enrollment-satisfied', async () => {
     const { user } = await seedUser({ factorRequiredAt: new Date() });
     const service = await build();
     const challenge = await optionsChallengeFor(service, user.id);
@@ -248,10 +247,8 @@ describe('PasskeysService — registration (OS-485)', () => {
       backedUp: true,
     });
     const payload = new JwtService({ secret: 'test-secret' }).decode<{
-      hasMfaFactor: boolean;
       mfaEnrollmentSatisfied: boolean;
     }>(result.access_token);
-    expect(payload.hasMfaFactor).toBe(true);
     // forced true, the same as confirmMfa — carrying the stale claim over
     // would leave them gated until the next refresh. Safe since OS-489:
     // sign-in challenges on a passkey, so holding one really is enrollment.
@@ -742,7 +739,6 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
     );
 
     expect(result.access_token).toBeTruthy();
-    expect(result.hasMfaFactor).toBe(true);
     // proving possession always satisfies an account-wide requirement
     expect(result.mfaEnrollmentSatisfied).toBe(true);
 
@@ -785,7 +781,6 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
       lastName: 'Member',
       emailVerified: true,
       mfaEnrollmentSatisfied: false,
-      hasMfaFactor: true,
     });
 
     await expect(
@@ -1019,7 +1014,6 @@ describe('PasskeysService — usernameless sign-in (OS-490)', () => {
     );
 
     expect(result.userId).toBe(user.id);
-    expect(result.hasMfaFactor).toBe(true);
     // a user-verified assertion is possession + biometric in one gesture
     expect(result.mfaEnrollmentSatisfied).toBe(true);
 
