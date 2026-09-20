@@ -24,6 +24,7 @@ import {
   eq,
   permissionsTable,
   userEmailVerificationsTable,
+  userInvitesTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
   userPasswordResetsTable,
@@ -660,12 +661,14 @@ describe('AuthService.acceptInvite — email verification (OS-470)', () => {
   });
 });
 
-// Nothing in acceptInvite looks at deactivatedAt — it doesn't have to. An
-// invited User switched off before they join is refused where every sign-in
-// path is: at SessionsService.start. Before OS-527 this path handed them a
-// Session.
+// SessionsService.start would refuse an invited User switched off before
+// they join, as it refuses every sign-in path — but by then accepting the
+// invite has already written: a password, a verified email, the Factor
+// requirement, and the invite consumed. So this path is refused up front,
+// before any of that, and answered exactly like an invite that doesn't
+// exist: the link tells nobody that the User behind it was deactivated.
 describe('AuthService.acceptInvite — a deactivated User', () => {
-  it('is refused a Session', async () => {
+  it('is refused like an invalid invite, with nothing written: no Session, no password, and the invite left in place', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, {
       accountId: account.id,
@@ -676,13 +679,28 @@ describe('AuthService.acceptInvite — a deactivated User', () => {
     await deactivate(user.id);
     const service = await build();
 
-    await expect(
-      service.acceptInvite({
-        token: invite.token,
-        password: 'brand-new-password',
-      }),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    const refusal = await service
+      .acceptInvite({ token: invite.token, password: 'brand-new-password' })
+      .catch((err: unknown) => err);
+    const unknownInvite = await service
+      .acceptInvite({ token: 'no-such-invite', password: 'brand-new-password' })
+      .catch((err: unknown) => err);
+
     expect(await db.select().from(userRefreshTokensTable)).toHaveLength(0);
+    expect(await userByEmail('switched-off@store.test')).toMatchObject({
+      password: null,
+      emailVerifiedAt: null,
+      factorRequiredAt: null,
+    });
+    expect(
+      await db
+        .select()
+        .from(userInvitesTable)
+        .where(eq(userInvitesTable.userId, user.id)),
+    ).toHaveLength(1);
+
+    expect(refusal).toBeInstanceOf(UnauthorizedException);
+    expect(refusal).toEqual(unknownInvite);
   });
 });
 

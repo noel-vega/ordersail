@@ -595,7 +595,14 @@ export class AuthService {
   async acceptInvite(dto: AcceptInviteDto): Promise<TokenPair> {
     const invite = await this.usersService.getByInviteToken(dto.token);
 
-    if (!invite || invite.expiresAt < new Date()) {
+    // A deactivated User is refused here, before anything is written, and
+    // with the answer an unknown link gets — so the link is no oracle for
+    // "this User was switched off". SessionsService.start would refuse them
+    // too, but only after activate() below had set their password, verified
+    // their email, stamped the Factor requirement and consumed the invite:
+    // a refusal that leaves a joined User behind. The invite survives, so
+    // the same link works if they're reactivated before it expires.
+    if (!invite || invite.expiresAt < new Date() || invite.user.deactivatedAt) {
       throw new UnauthorizedException('Invalid or expired invite');
     }
 
