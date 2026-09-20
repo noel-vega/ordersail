@@ -34,4 +34,11 @@ describe('auth throttle buckets (OS-314)', () => {
   it('gates accept-invite at 5/min', () => {
     expect(throttle('acceptInvite')).toEqual({ limit: 5, ttl: 60_000 });
   });
+
+  // OS-385 — change-password guesses at the caller's current password, so it
+  // takes the same tight bucket as the other re-authenticating endpoints
+  // rather than the looser one credential entry points get.
+  it('gates change-password at 3/min', () => {
+    expect(throttle('changePassword')).toEqual({ limit: 3, ttl: 60_000 });
+  });
 });
