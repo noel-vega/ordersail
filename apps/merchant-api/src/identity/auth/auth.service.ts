@@ -397,7 +397,12 @@ export class AuthService {
       .select()
       .from(usersTable)
       .where(eq(usersTable.id, payload.sub));
-    if (!user) {
+    // The token outlives signin()'s own deactivation check by up to
+    // MFA_CHALLENGE_TTL, and both challenge completions mint a Session off
+    // the row returned here — so a User deactivated inside that window is
+    // refused at this point, with the same message as every other failure
+    // (no oracle for "this account was just switched off").
+    if (!user || user.deactivatedAt) {
       throw new UnauthorizedException('Invalid or expired challenge');
     }
     return user;

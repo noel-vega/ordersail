@@ -1587,6 +1587,69 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         service.verifyMfaChallenge(accessToken, '123456'),
       ).rejects.toThrow('Invalid or expired challenge');
     });
+
+    // The challenge token outlives the password check by up to five minutes,
+    // so deactivation has to be re-read when it's exchanged — the password
+    // step passing earlier says nothing about the User now (OS-504). Same
+    // message as every other challenge failure: no oracle.
+    it('refuses a Session to a User deactivated mid-challenge', async () => {
+      const user = await seedUserWithPassword();
+      const service = await build();
+      const { otpauthUrl } = await service.enrollMfa(user.id);
+      const secret = extractSecret(otpauthUrl);
+      await service.confirmMfa(user.id, await freshTotpCode(secret), password);
+
+      const signInResult = await service.signin({
+        email: user.email,
+        password,
+      });
+      if (!signInResult.mfaRequired) throw new Error('expected a challenge');
+
+      await db
+        .update(usersTable)
+        .set({ deactivatedAt: new Date() })
+        .where(eq(usersTable.id, user.id));
+
+      const attempt = service.verifyMfaChallenge(
+        signInResult.challengeToken,
+        await freshTotpCode(secret),
+      );
+      await expect(attempt).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(attempt).rejects.toThrow('Invalid or expired challenge');
+    });
+
+    it('does not burn the recovery code of a User deactivated mid-challenge', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, {
+        userId: user.id,
+        confirmedAt: new Date(),
+        secret: encryptMfaSecret(authenticator.generateSecret()),
+      });
+      const recoveryCode = 'ABCDE-FGHJK';
+      await insertUserMfaRecoveryCode(db, {
+        userId: user.id,
+        codeHash: await bcrypt.hash(recoveryCode, 10),
+      });
+      const service = await build();
+
+      const challenge = await service.signin({ email: user.email, password });
+      if (!challenge.mfaRequired) throw new Error('expected a challenge');
+
+      await db
+        .update(usersTable)
+        .set({ deactivatedAt: new Date() })
+        .where(eq(usersTable.id, user.id));
+
+      await expect(
+        service.verifyMfaChallenge(challenge.challengeToken, recoveryCode),
+      ).rejects.toThrow('Invalid or expired challenge');
+
+      const codeRows = await db
+        .select()
+        .from(userMfaRecoveryCodesTable)
+        .where(eq(userMfaRecoveryCodesTable.userId, user.id));
+      expect(codeRows.every((r) => r.usedAt === null)).toBe(true);
+    });
   });
 
   describe('disableMfa', () => {

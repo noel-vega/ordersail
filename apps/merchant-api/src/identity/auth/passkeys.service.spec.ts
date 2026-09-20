@@ -810,6 +810,34 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  // The usernameless door checks deactivation itself; this one inherits it
+  // from the shared challenge-token resolution. Deactivated AFTER the options
+  // were issued, so it's the completion being refused — the step that would
+  // otherwise hand over a Session (OS-504).
+  it('refuses a Session to a User deactivated mid-challenge', async () => {
+    const { user, passkey, service, token } = await seedChallengedUser();
+    const options = await service.getChallengeAuthenticationOptions(token);
+    assertionVerifies(7);
+
+    await db
+      .update(usersTable)
+      .set({ deactivatedAt: new Date() })
+      .where(eq(usersTable.id, user.id));
+
+    const attempt = service.verifyChallengeAssertion(
+      token,
+      assertionFor(options.challenge) as never,
+    );
+    await expect(attempt).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(attempt).rejects.toThrow('Invalid or expired challenge');
+
+    const [stored] = await db
+      .select()
+      .from(userPasskeysTable)
+      .where(eq(userPasskeysTable.id, passkey.id));
+    expect(stored?.lastUsedAt).toBeNull();
+  });
+
   // a registration challenge must not be redeemable as an assertion
   it('rejects a challenge issued for registration', async () => {
     const { user, service, token } = await seedChallengedUser();
