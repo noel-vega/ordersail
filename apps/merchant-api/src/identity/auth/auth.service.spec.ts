@@ -1195,7 +1195,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const service = await build();
 
       await expect(
-        service.disableMfa(user.id, user.accountId, 'wrong-password'),
+        service.disableMfa(user.id, 'wrong-password'),
       ).rejects.toThrow();
     });
 
@@ -1205,7 +1205,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       await insertUserMfaRecoveryCode(db, { userId: user.id });
       const service = await build();
 
-      await service.disableMfa(user.id, user.accountId, password);
+      await service.disableMfa(user.id, password);
 
       const mfaRows = await db
         .select()
@@ -1229,9 +1229,33 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .where(eq(accountsTable.id, user.accountId));
       const service = await build();
 
-      await expect(
-        service.disableMfa(user.id, user.accountId, password),
-      ).rejects.toThrow('Your account requires MFA');
+      await expect(service.disableMfa(user.id, password)).rejects.toThrow(
+        'Your account requires MFA',
+      );
+
+      const mfaRows = await db
+        .select()
+        .from(userMfaTable)
+        .where(eq(userMfaTable.userId, user.id));
+      expect(mfaRows).toHaveLength(1);
+    });
+
+    // The invited-staff stamp is the other source of the same rule: with no
+    // account-wide policy at all, the per-user requirement still holds the
+    // last factor in place — otherwise a staff member enrolls at the join
+    // gate, removes it a minute later, and the gate was theatre.
+    it('refuses to disable the last factor while factor_required_at is set (OS-494)', async () => {
+      const user = await seedUserWithPassword();
+      await db
+        .update(usersTable)
+        .set({ factorRequiredAt: new Date() })
+        .where(eq(usersTable.id, user.id));
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const service = await build();
+
+      await expect(service.disableMfa(user.id, password)).rejects.toThrow(
+        ConflictException,
+      );
 
       const mfaRows = await db
         .select()
@@ -1253,7 +1277,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .where(eq(accountsTable.id, user.accountId));
       const service = await build();
 
-      await service.disableMfa(user.id, user.accountId, password);
+      await service.disableMfa(user.id, password);
 
       const mfaRows = await db
         .select()
@@ -1444,7 +1468,9 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       expect(result.mfaEnrollmentSatisfied).toBe(false);
     });
 
-    it('is satisfied when the account does not require MFA', async () => {
+    // Was "is satisfied when the account does not require MFA" until OS-494:
+    // joining staff are now gated on their own, whatever the account policy.
+    it('stamps factor_required_at and is unsatisfied even when the account does not require MFA (OS-494)', async () => {
       const account = await insertAccount(db);
       const user = await insertUser(db, {
         accountId: account.id,
@@ -1458,7 +1484,128 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
         password: 'brand-new-password',
       });
 
+      expect(result.mfaEnrollmentSatisfied).toBe(false);
+      expect(result.hasMfaFactor).toBe(false);
+      const payload = new JwtService({
+        secret: 'test-secret',
+      }).decode<{ mfaEnrollmentSatisfied: boolean }>(result.access_token);
+      expect(payload.mfaEnrollmentSatisfied).toBe(false);
+
+      const [row] = await db
+        .select({ factorRequiredAt: usersTable.factorRequiredAt })
+        .from(usersTable)
+        .where(eq(usersTable.id, user.id));
+      expect(row.factorRequiredAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('invited-staff factor requirement (OS-494)', () => {
+    async function seedJoinedStaff() {
+      const account = await insertAccount(db);
+      const user = await insertUser(db, {
+        accountId: account.id,
+        email: `joined-staff-${randomUUID()}@store.test`,
+        password: await bcrypt.hash(password, 10),
+        emailVerifiedAt: new Date(),
+        factorRequiredAt: new Date(),
+      });
+      return { account, user };
+    }
+
+    async function refreshedClaims(
+      service: AuthService,
+      user: { email: string },
+    ) {
+      const signInResult = await service.signin({
+        email: user.email,
+        password,
+      });
+      if (signInResult.mfaRequired)
+        throw new Error('expected a normal sign-in');
+      const refreshToken = await service.createRefreshToken(
+        claimsFromSignInResult(signInResult),
+        randomUUID(),
+      );
+      return { signInResult, refreshToken };
+    }
+
+    it('signin is unsatisfied for a joined staff member with no factor', async () => {
+      const { user } = await seedJoinedStaff();
+      const service = await build();
+
+      const result = await service.signin({ email: user.email, password });
+
+      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      expect(result.mfaEnrollmentSatisfied).toBe(false);
+    });
+
+    // The whole reason the column exists: merchant-web refreshes on every
+    // navigation, and refreshTokens recomputes this claim from the database.
+    // An unsatisfied claim that wasn't backed by stored state flipped to
+    // true here, one click after joining.
+    it('stays unsatisfied across a token refresh', async () => {
+      const { user } = await seedJoinedStaff();
+      const service = await build();
+      const { refreshToken } = await refreshedClaims(service, user);
+
+      const refreshed = await service.refreshTokens(refreshToken);
+      const payload = new JwtService({
+        secret: 'test-secret',
+      }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
+
+      expect(payload.mfaEnrollmentSatisfied).toBe(false);
+    });
+
+    it.each([
+      [
+        'an authenticator',
+        (userId: number) =>
+          insertUserMfa(db, { userId, confirmedAt: new Date() }),
+      ],
+      ['a passkey', (userId: number) => insertUserPasskey(db, { userId })],
+    ])(
+      'is satisfied on refresh once %s is enrolled',
+      async (_label, enroll) => {
+        const { user } = await seedJoinedStaff();
+        const service = await build();
+        const { refreshToken } = await refreshedClaims(service, user);
+
+        await enroll(user.id);
+
+        const refreshed = await service.refreshTokens(refreshToken);
+        const payload = new JwtService({
+          secret: 'test-secret',
+        }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
+
+        expect(payload.mfaEnrollmentSatisfied).toBe(true);
+      },
+    );
+
+    // Owners explore freely and are gated at the money actions instead
+    // (OS-492) — signup must never stamp the column, and a refresh must not
+    // start gating them either.
+    it('leaves an owner who signs up ungated, across a refresh too', async () => {
+      await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+      const service = await build();
+
+      const result = await service.signup(signupDto);
+
       expect(result.mfaEnrollmentSatisfied).toBe(true);
+      const [row] = await db
+        .select({ factorRequiredAt: usersTable.factorRequiredAt })
+        .from(usersTable)
+        .where(eq(usersTable.id, result.userId));
+      expect(row.factorRequiredAt).toBeNull();
+
+      const refreshToken = await service.createRefreshToken(
+        claimsFromSignInResult(result),
+        randomUUID(),
+      );
+      const refreshed = await service.refreshTokens(refreshToken);
+      const payload = new JwtService({
+        secret: 'test-secret',
+      }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
+      expect(payload.mfaEnrollmentSatisfied).toBe(true);
     });
   });
 

@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "factor_required_at" timestamp;

@@ -93,6 +93,9 @@ export async function insertUser(
     deactivatedAt?: Date | null;
     // omitted → null (unverified); pass a Date for an already-verified user
     emailVerifiedAt?: Date | null;
+    // omitted → null (no per-user factor requirement, i.e. an owner); pass a
+    // Date for a staff member who joined via an invite (OS-494)
+    factorRequiredAt?: Date | null;
     // omitted → the column's random default, which is what real code always
     // relies on; pass one only to exercise the uniqueness constraint
     webauthnHandle?: string;
@@ -109,6 +112,7 @@ export async function insertUser(
         password: opts.password ?? null,
         deactivatedAt: opts.deactivatedAt ?? null,
         emailVerifiedAt: opts.emailVerifiedAt ?? null,
+        factorRequiredAt: opts.factorRequiredAt ?? null,
         ...(opts.webauthnHandle !== undefined && {
           webauthnHandle: opts.webauthnHandle,
         }),

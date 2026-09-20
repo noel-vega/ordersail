@@ -226,11 +226,6 @@ export class PasskeysController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: PasskeyRemoveDto,
   ): Promise<void> {
-    await this.passkeysService.remove(
-      user.sub,
-      user.accountId,
-      id,
-      dto.password,
-    );
+    await this.passkeysService.remove(user.sub, id, dto.password);
   }
 }

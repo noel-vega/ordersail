@@ -34,6 +34,11 @@ export function EnrollMfaDialog(props: {
   // acknowledged — the factor-required flow uses it to resume whatever the
   // user was trying to do. Optional: the Security page just closes.
   onConfirmed?: () => void;
+  // the caller already holds the password the user typed on this same screen
+  // (joining via an invite, OS-494) — submit it rather than asking again for
+  // something they set ten seconds ago. Everywhere else it stays unset and
+  // the re-entry prompt does its job.
+  knownPassword?: string;
 }) {
   const confirm = useConfirmMfaMutation();
   const [code, setCode] = useState("");
@@ -41,6 +46,7 @@ export function EnrollMfaDialog(props: {
   const [error, setError] = useState<string | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
 
+  const effectivePassword = props.knownPassword ?? password;
   const open = props.otpauthUrl !== null;
 
   // Once the one-time recovery codes are showing, Escape/backdrop/the X
@@ -70,7 +76,10 @@ export function EnrollMfaDialog(props: {
     event.preventDefault();
     setError(null);
     try {
-      const result = await confirm.mutateAsync({ code, password });
+      const result = await confirm.mutateAsync({
+        code,
+        password: effectivePassword,
+      });
       if (result) setCodes(result.recoveryCodes);
     } catch (err) {
       setError(
@@ -92,8 +101,8 @@ export function EnrollMfaDialog(props: {
               <DialogTitle>Set up two-factor authentication</DialogTitle>
               <DialogDescription>
                 Scan this QR code with an authenticator app (Google
-                Authenticator, 1Password, Authy), then enter the 6-digit code
-                it shows along with your password.
+                Authenticator, 1Password, Authy), then enter the 6-digit code it
+                shows{props.knownPassword ? "" : " along with your password"}.
               </DialogDescription>
             </DialogHeader>
 
@@ -122,14 +131,16 @@ export function EnrollMfaDialog(props: {
               />
             </Field>
 
-            <Field className="mb-4">
-              <FieldLabel>Current password</FieldLabel>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.currentTarget.value)}
-              />
-            </Field>
+            {props.knownPassword === undefined && (
+              <Field className="mb-4">
+                <FieldLabel>Current password</FieldLabel>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.currentTarget.value)}
+                />
+              </Field>
+            )}
 
             {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -139,7 +150,9 @@ export function EnrollMfaDialog(props: {
               </DialogClose>
               <Button
                 type="submit"
-                disabled={confirm.isPending || code.length !== 6 || !password}
+                disabled={
+                  confirm.isPending || code.length !== 6 || !effectivePassword
+                }
               >
                 {confirm.isPending ? "Verifying..." : "Verify and enable"}
               </Button>
