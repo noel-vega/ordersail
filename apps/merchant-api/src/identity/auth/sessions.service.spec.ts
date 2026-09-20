@@ -7,6 +7,8 @@ import {
   and,
   eq,
   isNotNull,
+  isNull,
+  sql,
   userRefreshTokensTable,
   usersTable,
 } from 'db/identity';
@@ -37,6 +39,65 @@ async function elapseGraceWindow(userId: number) {
         isNotNull(userRefreshTokensTable.revokedAt),
       ),
     );
+}
+
+// Makes "two redemptions at the same moment" a fact rather than a hope. Two
+// calls fired from one Promise.all usually interleave, but nothing promises
+// it, and a concurrency spec that passes because the scheduler happened to
+// run the calls back to back proves nothing.
+//
+// So the presented token's row is locked FOR UPDATE from a transaction of
+// our own before the contenders start. Their reads go straight through (a
+// plain SELECT takes no row lock), and each then parks on the write that
+// retires the row. Only once Postgres reports every contender waiting on a
+// lock — i.e. every one of them is already past its "is this still live?"
+// read — is the lock released. What happens next is decided by the writes
+// alone, which is exactly the part under test.
+async function raceForRefreshRow<T>(
+  refreshToken: string,
+  contenders: number,
+  start: () => Promise<T>,
+): Promise<T> {
+  const { jti } = new JwtService({ secret: 'test-secret' }).decode<{
+    jti: string;
+  }>(refreshToken);
+
+  let racing: Promise<T> | undefined;
+  await db.transaction(async (tx) => {
+    await tx
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.jti, jti))
+      .for('update');
+
+    racing = start();
+    // a contender that fails while we're still polling is reported by the
+    // `await racing` below, not as an unhandled rejection in the meantime
+    racing.catch(() => undefined);
+
+    const deadline = Date.now() + 4_000;
+    for (;;) {
+      // pg_locks, not pg_stat_activity: the stats views are snapshotted on
+      // first read for the rest of the transaction, so from in here they
+      // would go on reporting nobody waiting forever. pg_locks reads the
+      // lock manager live. Nothing else shares this database (each jest
+      // run boots its own container, maxWorkers: 1), so any ungranted lock
+      // is a contender's.
+      const { rows } = await tx.execute<{ waiting: number }>(
+        sql`select count(*)::int as waiting from pg_locks where not granted`,
+      );
+      const waiting = rows[0]?.waiting ?? 0;
+      if (waiting >= contenders) return;
+      if (Date.now() > deadline) {
+        throw new Error(
+          `raceForRefreshRow: only ${waiting} of ${contenders} contenders ever blocked on the row — the race was not staged`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  });
+  if (!racing) throw new Error('raceForRefreshRow: contenders never started');
+  return await racing;
 }
 
 async function build() {
@@ -257,6 +318,56 @@ describe('SessionsService.refreshTokens (OS-467)', () => {
     expect(rows).toHaveLength(2);
   });
 
+  // The grace window above only covers a second request that arrives after
+  // the first has committed. Two that arrive together both read the row
+  // while it is still live, and if the write that retires it isn't itself
+  // conditional, both rotate: the family forks into two live successors and
+  // the second write overwrites replacedByJti (OS-528).
+  it('mints exactly one successor when the same live token is redeemed twice at once, and both callers get a usable pair (OS-528)', async () => {
+    const { service, userId, refreshToken } = await seedSession();
+
+    const [first, second] = await raceForRefreshRow(refreshToken, 2, () =>
+      Promise.all([
+        service.refreshTokens(refreshToken),
+        service.refreshTokens(refreshToken),
+      ]),
+    );
+
+    const rows = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.userId, userId));
+    const live = rows.filter((r) => r.revokedAt === null);
+    const retired = rows.filter((r) => r.revokedAt !== null);
+    // the presented token and its one successor — not two successors
+    expect(rows).toHaveLength(2);
+    expect(live).toHaveLength(1);
+    expect(retired).toHaveLength(1);
+    expect(retired[0]?.replacedByJti).toBe(live[0]?.jti);
+    expect(new Set(rows.map((r) => r.familyId)).size).toBe(1);
+
+    // the loser was handed the winner's successor, not one of its own
+    const jwt = new JwtService({ secret: 'test-secret' });
+    const jtiOf = (token: string) => jwt.decode<{ jti: string }>(token).jti;
+    expect(jtiOf(first.refresh_token)).toBe(live[0]?.jti);
+    expect(jtiOf(second.refresh_token)).toBe(live[0]?.jti);
+
+    // "usable" means it works, not merely that it was returned: both access
+    // tokens verify, and either refresh token can be redeemed from here — a
+    // loser left holding a token that names no live row would pass every
+    // assertion above and still be signed out at its next refresh
+    for (const pair of [first, second]) {
+      await expect(
+        jwt.verifyAsync<{ typ: string }>(pair.access_token),
+      ).resolves.toMatchObject({ typ: 'access', sub: userId });
+    }
+    const next = await service.refreshTokens(second.refresh_token);
+    expect(jtiOf(next.refresh_token)).not.toBe(live[0]?.jti);
+    // ...and the other tab, a moment later, replays that rotation as usual
+    const replayed = await service.refreshTokens(first.refresh_token);
+    expect(jtiOf(replayed.refresh_token)).toBe(jtiOf(next.refresh_token));
+  });
+
   it('rejects an access token presented to the refresh flow (typ mismatch)', async () => {
     const { service, user } = await seedSession();
     const accessToken = await service.createAccessToken(claimsFor(user));
@@ -346,6 +457,47 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
     // back-pointer is what reuse detection reads if the old token resurfaces
     expect(live[0]?.familyId).toBe(retired[0]?.familyId);
     expect(retired[0]?.replacedByJti).toBe(live[0]?.jti);
+  });
+
+  // changePassword shares the rotation with an ordinary refresh, and
+  // merchant-web refreshes on every navigation, so the two can meet on the
+  // same token. Whichever retires it first, the User must come out with one
+  // live token, and it must be the one this call returned: a second live
+  // successor in the caller's family is precisely the surviving copy that
+  // changing the password exists to kill (OS-528).
+  it('leaves exactly one live token, the one it returned, when it races a refresh of the same token (OS-528)', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+    await service.createRefreshToken(claimsFor(user), randomUUID());
+
+    const [result] = await raceForRefreshRow(callerToken, 2, () =>
+      Promise.all([
+        service.revokeOthersAndRotate(callerOf(user), callerToken),
+        // resolves either way: it wins the rotation, or replays the winner's
+        service.refreshTokens(callerToken),
+      ]),
+    );
+
+    const live = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(
+        and(
+          eq(userRefreshTokensTable.userId, user.id),
+          isNull(userRefreshTokensTable.revokedAt),
+        ),
+      );
+    const jwt = new JwtService({ secret: 'test-secret' });
+    expect(live.map((r) => r.jti)).toEqual([
+      jwt.decode<{ jti: string }>(result.refresh_token).jti,
+    ]);
+
+    const rotated = await service.refreshTokens(result.refresh_token);
+    expect(typeof rotated.access_token).toBe('string');
   });
 
   it('revokes every session and starts a fresh one when there is no refresh cookie', async () => {

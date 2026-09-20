@@ -70,12 +70,27 @@ export class SessionsService {
     // family to continue, so the caller starts a fresh one. They asked for
     // this while holding a valid access token and just proved they know the
     // password, so signing them out instead would be a gratuitous refusal.
-    return callersOwn
-      ? this.rotateRefreshRecord(callersOwn, claims)
-      : {
-          access_token: await this.createAccessToken(claims),
-          refresh_token: await this.createRefreshToken(claims, randomUUID()),
-        };
+    const rotated = callersOwn
+      ? await this.rotateRefreshRecord(callersOwn, claims)
+      : null;
+    if (rotated) {
+      return rotated;
+    }
+
+    // A cookie that was live a moment ago and lost the rotation to a
+    // concurrent refresh of the same token lands here too. The spared family
+    // now holds a live successor this call didn't mint, and whoever redeemed
+    // it may be the very copy this sweep exists to kill — so unlike
+    // refreshTokens it must not replay that successor. The family dies with
+    // the rest and the caller continues in a fresh one.
+    if (callersOwn) {
+      await this.revokeFamily(callersOwn.familyId);
+    }
+
+    return {
+      access_token: await this.createAccessToken(claims),
+      refresh_token: await this.createRefreshToken(claims, randomUUID()),
+    };
   }
 
   // "Sign out everywhere else" — the same sweep changePassword performs,
@@ -251,9 +266,29 @@ export class SessionsService {
   }
 
   // Exchanges one live refresh-token row for its successor in the same
-  // family: mint the replacement, then revoke the old row and point it at
-  // what replaced it. That back-pointer is what the grace window and reuse
+  // family: revoke the old row, point it at what replaces it, and insert
+  // that replacement. That back-pointer is what the grace window and reuse
   // detection in refreshTokens() read, so nothing else may retire a row.
+  //
+  // Returns null when the row was no longer live by the time the write
+  // landed — somebody else retired it first — and in that case writes
+  // nothing. Every caller got here by reading the row as live, and that read
+  // decides nothing: two concurrent redemptions both pass it. The UPDATE is
+  // what decides, by being conditioned on isNull(revokedAt) — the same
+  // conditional UPDATE ... RETURNING idiom as recovery codes and WebAuthn
+  // challenges. Postgres serializes the two UPDATEs on the row; the second
+  // re-evaluates its WHERE against the just-committed row, matches nothing,
+  // and returning() comes back empty. Without the condition both would
+  // rotate: the family forks into two live successors and the second write
+  // overwrites replacedByJti, orphaning the first from reuse detection.
+  //
+  // Retire-then-insert, in one transaction, and both halves of that matter.
+  // Retiring first means the loser never inserts a successor it would then
+  // have to take back. One transaction means the loser — blocked on the row
+  // until the winner commits — can't wake up to a replacedByJti that names a
+  // row which doesn't exist yet: refreshTokens sends it straight into the
+  // grace-window replay, which treats a missing replacement as reuse and
+  // would kill the family the winner just rotated.
   //
   // Shared by the ordinary rotation (refreshTokens) and the forced one
   // (changePassword) so the two can't drift into different notions of what
@@ -261,19 +296,33 @@ export class SessionsService {
   private async rotateRefreshRecord(
     record: { id: number; familyId: string },
     claims: TokenClaims,
-  ): Promise<{ access_token: string; refresh_token: string }> {
-    const { token: refresh_token, jti: nextJti } = await this.mintRefreshToken(
-      claims,
-      record.familyId,
-    );
-    await this.db
-      .update(userRefreshTokensTable)
-      .set({ revokedAt: new Date(), replacedByJti: nextJti })
-      .where(eq(userRefreshTokensTable.id, record.id));
+  ): Promise<{ access_token: string; refresh_token: string } | null> {
+    const nextJti = randomUUID();
+    const won = await this.db.transaction(async (tx) => {
+      const [retired] = await tx
+        .update(userRefreshTokensTable)
+        .set({ revokedAt: new Date(), replacedByJti: nextJti })
+        .where(
+          and(
+            eq(userRefreshTokensTable.id, record.id),
+            isNull(userRefreshTokensTable.revokedAt),
+          ),
+        )
+        .returning();
+      if (!retired) return false;
+
+      await tx.insert(userRefreshTokensTable).values({
+        userId: claims.sub,
+        jti: nextJti,
+        familyId: record.familyId,
+      });
+      return true;
+    });
+    if (!won) return null;
 
     return {
       access_token: await this.createAccessToken(claims),
-      refresh_token,
+      refresh_token: await this.signRefreshToken(claims, nextJti),
     };
   }
 
@@ -321,7 +370,7 @@ export class SessionsService {
     // token's stale answers forward through every future rotation
     const claims = await this.freshClaims(payload);
 
-    const [record] = await this.db
+    let [record] = await this.db
       .select()
       .from(userRefreshTokensTable)
       .where(eq(userRefreshTokensTable.jti, payload.jti));
@@ -330,7 +379,25 @@ export class SessionsService {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    if (record.revokedAt) {
+    if (!record.revokedAt) {
+      const rotated = await this.rotateRefreshRecord(record, claims);
+      if (rotated) {
+        return rotated;
+      }
+
+      // Live when we read it, retired by the time we wrote: a concurrent
+      // redemption of this same token won the rotation. That is the very
+      // case the grace window exists for, so read the row again — it now
+      // carries the winner's revokedAt and replacedByJti, committed together
+      // with the successor they name — and fall through to the replay below
+      // instead of minting a second successor.
+      [record] = await this.db
+        .select()
+        .from(userRefreshTokensTable)
+        .where(eq(userRefreshTokensTable.id, record.id));
+    }
+
+    if (record?.revokedAt) {
       const withinGrace =
         Date.now() - record.revokedAt.getTime() < REFRESH_GRACE_WINDOW_MS;
 
@@ -358,7 +425,9 @@ export class SessionsService {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    return this.rotateRefreshRecord(record, claims);
+    // only reachable if the row vanished between the two reads above (rows
+    // cascade with their User) — there is no session left to continue
+    throw new UnauthorizedException('Invalid or expired token');
   }
 
   // The row a presented refresh token names, or null if it names none.
