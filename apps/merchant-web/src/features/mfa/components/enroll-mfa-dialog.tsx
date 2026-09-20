@@ -102,7 +102,7 @@ export function EnrollMfaDialog(props: {
               <DialogDescription>
                 Scan this QR code with an authenticator app (Google
                 Authenticator, 1Password, Authy), then enter the 6-digit code it
-                shows{props.knownPassword ? "" : " along with your password"}.
+                shows{props.knownPassword === undefined ? " along with your password" : ""}.
               </DialogDescription>
             </DialogHeader>
 

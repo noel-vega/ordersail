@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "ui/alert";
 import { Button } from "ui/button";
 import { useAcceptInviteMutation } from "../auth.hooks";
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { InfoIcon } from "lucide-react";
 import { appConfig } from "../../../config";
 import {
@@ -67,7 +67,16 @@ export function JoinView(props: { token: string }) {
       <Alert variant="destructive">
         <InfoIcon />
         <AlertTitle>Couldn't join</AlertTitle>
-        <AlertDescription>{errorMessage}</AlertDescription>
+        <AlertDescription>
+          <p>{errorMessage}</p>
+          {/* an invite is spent the moment it's accepted, so reloading this
+              page mid-way through the factor step (OS-494) lands here too —
+              that person has an account and just needs the way back in */}
+          <p>
+            Already set your password?{" "}
+            <Link to="/signin">Sign in</Link>
+          </p>
+        </AlertDescription>
       </Alert>
     );
   }
