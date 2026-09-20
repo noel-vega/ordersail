@@ -89,6 +89,8 @@ export type AuthMe = components["schemas"]["AuthMe"];
 export type UserProfile = components["schemas"]["UserProfile"];
 export type UpdateUserProfileDto =
   components["schemas"]["UpdateUserProfileDto"];
+export type ChangePasswordDto = components["schemas"]["ChangePasswordDto"];
+export type AccessTokenDto = components["schemas"]["AccessTokenDto"];
 export type DashboardSummary = components["schemas"]["DashboardSummary"];
 export type OnboardingStatus = components["schemas"]["OnboardingStatus"];
 export type Permission = components["schemas"]["Permission"];
@@ -321,6 +323,22 @@ export class AdminClient {
         this.client.PATCH("/auth/me/profile", { body: params }),
       ),
     );
+  }
+
+  // the signed-in counterpart to resetPassword(): re-authenticates with the
+  // current password rather than an emailed link. The API revokes every other
+  // live session and rotates this browser's refresh cookie in place, so the
+  // caller stays signed in here; the re-minted access token it hands back is
+  // adopted because it carries claims recomputed from the database.
+  // 401 = current password wrong, 400 = new password rejected by policy.
+  async changePassword(params: components["schemas"]["ChangePasswordDto"]) {
+    const result = unwrap(
+      await this.do(() =>
+        this.client.POST("/auth/me/change-password", { body: params }),
+      ),
+    );
+    this.accessToken = result.access_token;
+    return result;
   }
 
   // clears the httpOnly refresh_token cookie server-side — the client can't
