@@ -53,6 +53,13 @@ export function PaymentsView() {
   const [redirecting, setRedirecting] = useState(false);
 
   const chargesEnabled = status.data?.chargesEnabled ?? false;
+  const connected = status.data?.connected ?? false;
+  // Finished Stripe's form at least once. Separate from chargesEnabled
+  // because Stripe can switch charges back off on a finished merchant (a new
+  // requirement comes due, a verification fails) — and that's exactly when
+  // they need the embedded banner and account management to see why.
+  const detailsSubmitted = status.data?.detailsSubmitted ?? false;
+  const showEmbedded = chargesEnabled || detailsSubmitted;
 
   // Onboarding is Stripe-hosted (OS-498): ask the API for a link, then leave.
   // Links are single-use and expire within minutes, so one is only ever
@@ -82,7 +89,11 @@ export function PaymentsView() {
       window.location.assign(link.url);
     } catch (err) {
       setRedirecting(false);
-      // keep the server's reason — a gated 403 says something specific
+      // the factor-gate refusal already arrives as the global backstop toast,
+      // with a "Set one up" action this line couldn't offer — don't say it
+      // twice
+      if (err instanceof ApiError && err.code === "MFA_FACTOR_REQUIRED") return;
+      // otherwise keep the server's reason
       setLinkError(
         err instanceof ApiError
           ? err.message
@@ -109,7 +120,13 @@ export function PaymentsView() {
       // webhook delivery can lag the redirect; if this lookup fails the
       // cached status still renders and account.updated catches it up
       refreshStatus().catch(() => {});
-    } else if (canConnect) {
+    } else if (canConnect && connected && !chargesEnabled) {
+      // Stripe only sends anyone to refresh_url from a link we minted, so an
+      // account already exists and isn't finished. Holding to that keeps a
+      // bare /app/payments?onboarding=refresh URL (pasted, bookmarked, sent
+      // by someone else) from creating a Stripe account or bouncing a fully
+      // onboarded merchant off to Stripe without a click. Status is already
+      // in the cache here — the route's beforeLoad awaits it.
       void startOnboarding();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,12 +142,13 @@ export function PaymentsView() {
     return () => window.removeEventListener("pageshow", onPageShow);
   }, []);
 
-  // Connect.js now only serves a finished merchant — banner, balances,
-  // account management — so it initializes on exactly the condition those
-  // render under. fetchClientSecret is called again automatically if the
-  // session expires; the session call is idempotent and ungated.
+  // Connect.js now only serves a merchant who has been through onboarding —
+  // banner, balances, account management — so it initializes on exactly the
+  // condition those render under. fetchClientSecret is called again
+  // automatically if the session expires; the session call is idempotent and
+  // ungated.
   const connectInstance = useMemo(() => {
-    if (!chargesEnabled) return null;
+    if (!showEmbedded) return null;
     return loadConnectAndInitialize({
       publishableKey: import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY,
       fetchClientSecret: async () => {
@@ -140,7 +158,7 @@ export function PaymentsView() {
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chargesEnabled]);
+  }, [showEmbedded]);
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -168,7 +186,7 @@ export function PaymentsView() {
                 <Button onClick={startOnboarding} disabled={redirecting}>
                   {redirecting
                     ? "Taking you to Stripe..."
-                    : status.data?.connected
+                    : connected
                       ? "Continue onboarding"
                       : "Connect with Stripe"}
                 </Button>
