@@ -18,7 +18,7 @@ import { PermissionProvider } from "../../features/auth/permission-context";
 // where each gate sends the caller — completing it is how the gate is
 // satisfied (EmailVerifiedGuard / MfaEnrollmentGuard server-side). The email
 // lobby lives outside /app: every app route would 403 anyway
-const MFA_ENROLLMENT_ROUTE = "/app/settings/security";
+const MFA_ENROLLMENT_ROUTE = "/app/me/security";
 
 export const Route = createFileRoute("/app")({
   // load the current user's effective permissions once on entering /app and
