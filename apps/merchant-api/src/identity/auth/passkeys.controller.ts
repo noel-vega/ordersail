@@ -40,11 +40,8 @@ import {
 } from './dto/passkey-challenge.dto';
 import { PasskeySignInVerifyDto } from './dto/passkey-signin.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
-import { claimsFromSignInResult } from './auth.service';
-import { SessionsService } from './sessions.service';
-import { env } from 'src/shared/env';
+import { respondWithSession } from './session-cookie';
 import type { FastifyReply } from 'fastify';
-import { randomUUID } from 'node:crypto';
 
 // A separate controller rather than more routes on the 391-line
 // auth.controller.ts — route-guard-coverage.spec.ts filesystem-scans for
@@ -58,23 +55,7 @@ import { randomUUID } from 'node:crypto';
 @Controller('auth/passkeys')
 @NoMfaFactorRequired()
 export class PasskeysController {
-  constructor(
-    private readonly passkeysService: PasskeysService,
-    private readonly sessionsService: SessionsService,
-  ) {}
-
-  // Duplicated from AuthController rather than shared: the cookie's name and
-  // attributes are part of that controller's contract with the browser, and
-  // a shared helper would put them somewhere neither controller owns.
-  private setRefreshCookie(res: FastifyReply, refreshToken: string): void {
-    res.setCookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7,
-    });
-  }
+  constructor(private readonly passkeysService: PasskeysService) {}
 
   // No body: there is no user to name yet. The options come back with an
   // empty allowCredentials, which is what makes the credential discoverable
@@ -97,19 +78,14 @@ export class PasskeysController {
     @Body() dto: PasskeySignInVerifyDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.passkeysService.verifySignIn(
-      dto.response as unknown as AuthenticationResponseJSON,
+    // the same ending as every other sign-in: the service started the
+    // Session, the refresh token goes in the cookie (session-cookie.ts)
+    return respondWithSession(
+      res,
+      await this.passkeysService.verifySignIn(
+        dto.response as unknown as AuthenticationResponseJSON,
+      ),
     );
-
-    // randomUUID() here is the new session's refresh-token familyId, the
-    // same as every other entry point that starts a session
-    const refreshToken = await this.sessionsService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
   }
 
   // Both challenge routes are @Public() for the same reason /auth/mfa/verify
@@ -140,18 +116,13 @@ export class PasskeysController {
     @Body() dto: PasskeyChallengeVerifyDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.passkeysService.verifyChallengeAssertion(
-      dto.challengeToken,
-      dto.response as unknown as AuthenticationResponseJSON,
+    return respondWithSession(
+      res,
+      await this.passkeysService.verifyChallengeAssertion(
+        dto.challengeToken,
+        dto.response as unknown as AuthenticationResponseJSON,
+      ),
     );
-
-    const refreshToken = await this.sessionsService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
   }
 
   @AuthenticatedOnly()
@@ -192,7 +163,7 @@ export class PasskeysController {
     @Body() dto: PasskeyRegisterVerifyDto,
   ): Promise<PasskeyRegisteredDto> {
     return this.passkeysService.verifyRegistration(
-      user,
+      user.sub,
       dto.response as unknown as RegistrationResponseJSON,
       dto.nickname,
     );

@@ -19,10 +19,7 @@ import { UsersService } from '../users/users.service';
 
 const user: AuthenticatedUser = {
   sub: 7,
-  email: 'dana@fbi.test',
   accountId: 3,
-  firstName: 'Dana',
-  lastName: 'Scully',
   emailVerified: true,
   mfaEnrollmentSatisfied: true,
   typ: 'access',

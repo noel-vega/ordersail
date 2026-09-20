@@ -25,21 +25,26 @@ import {
   userEmailVerificationsTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
-  userPasskeysTable,
   userPasswordResetsTable,
   userRefreshTokensTable,
   usersTable,
 } from 'db/identity';
-import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
 import { AccountService } from '../account/account.service';
 import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
-import { AuthService, claimsFromSignInResult } from './auth.service';
+import { AuthService } from './auth.service';
 import { FactorStateService } from './factor-state.service';
 import { SessionsService } from './sessions.service';
+import {
+  TEST_JWT_SECRET,
+  UNGATED,
+  callerOf,
+  expectWorkingSession,
+  presentAccessToken,
+} from './sessions.spec-support';
 
 const db = useTestDb();
 
@@ -72,9 +77,14 @@ beforeEach(() => {
   emailMock.sendVerificationEmail.mockClear();
 });
 
-// Both halves of a sign-in: AuthService proves who the caller is, and
-// SessionsService mints and rotates what they're handed afterwards. Specs
-// that only exercise the first half use build().
+// The sign-in seam. AuthService proves who the caller is and ends by having
+// SessionsService start their Session, so what comes back from a sign-in
+// operation is a token pair — and the question these specs ask of one is
+// whether it WORKS (the real guards take the access token, refresh takes the
+// refresh token; see sessions.spec-support), never what it decodes to.
+// `sessions` is handed back for that, and `users` for the specs where
+// something about the User changes mid-Session. Specs that need neither use
+// build().
 async function buildBoth() {
   const ref = await Test.createTestingModule({
     providers: [
@@ -84,7 +94,7 @@ async function buildBoth() {
       { provide: DRIZZLE, useValue: db },
       {
         provide: JwtService,
-        useValue: new JwtService({ secret: 'test-secret' }),
+        useValue: new JwtService({ secret: TEST_JWT_SECRET }),
       },
       // real UsersService (needed for requestPasswordReset's getByEmail) —
       // its EmailService/PermissionsService deps are unused on that path
@@ -106,7 +116,24 @@ async function buildBoth() {
   return {
     service: ref.get(AuthService),
     sessions: ref.get(SessionsService),
+    users: ref.get(UsersService),
   };
+}
+
+async function userByEmail(email: string) {
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.email, email));
+  if (!user) throw new Error(`no user with email ${email}`);
+  return user;
+}
+
+async function deactivate(userId: number) {
+  await db
+    .update(usersTable)
+    .set({ deactivatedAt: new Date() })
+    .where(eq(usersTable.id, userId));
 }
 
 async function build() {
@@ -124,42 +151,43 @@ const signupDto = {
 
 describe('AuthService.signup (OS-173)', () => {
   // what gets seeded is AccountService.provision's suite (account.service.spec)
-  it('provisions the account and returns a token for its first Owner', async () => {
+  it('provisions the account and leaves its first Owner signed in', async () => {
     await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
-    const service = await build();
+    const { service, sessions } = await buildBoth();
 
-    const result = await service.signup(signupDto);
-    expect(result.email).toBe(signupDto.email);
-    expect(typeof result.accountId).toBe('number');
-    expect(typeof result.access_token).toBe('string');
+    const session = await service.signup(signupDto);
 
-    const [user] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, result.userId));
-    expect(user).toMatchObject({
-      email: signupDto.email,
-      accountId: result.accountId,
+    const owner = await userByEmail(signupDto.email);
+    expect(await callerOf(session.access_token)).toMatchObject({
+      sub: owner.id,
+      accountId: owner.accountId,
     });
+    await expectWorkingSession(sessions, session, owner.id);
   });
 
   it('leaves the account unverified and sends a verification email (OS-470)', async () => {
     await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
     const service = await build();
 
-    const result = await service.signup(signupDto);
-    expect(result.emailVerified).toBe(false);
+    const session = await service.signup(signupDto);
 
-    const [user] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, result.userId));
-    expect(user?.emailVerifiedAt).toBeNull();
+    // signed in, but held at the email gate until the link is clicked...
+    expect(await presentAccessToken(session.access_token)).toEqual({
+      admitted: false,
+      refusal: 'Email verification required',
+    });
+    // ...with the routes that get them verified still open to them
+    expect(
+      await presentAccessToken(session.access_token, UNGATED),
+    ).toMatchObject({ admitted: true });
+
+    const user = await userByEmail(signupDto.email);
+    expect(user.emailVerifiedAt).toBeNull();
 
     const [verification] = await db
       .select()
       .from(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.userId, result.userId));
+      .where(eq(userEmailVerificationsTable.userId, user.id));
     expect(verification).toBeDefined();
     expect(emailMock.sendVerificationEmail).toHaveBeenCalledWith(
       signupDto.email,
@@ -177,25 +205,23 @@ describe('AuthService.signup (OS-173)', () => {
 });
 
 describe('AuthService.me (OS-180)', () => {
-  it('returns identity + the caller effective permission keys', async () => {
+  // The caller is whatever the real AuthGuard makes of the access token
+  // signup handed out — the same thing @CurrentUser() gives the handler.
+  async function signedUp(service: AuthService) {
     await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
-    const service = await build();
-    const { userId, accountId } = await service.signup(signupDto);
+    const { access_token } = await service.signup(signupDto);
+    return { access_token, caller: await callerOf(access_token) };
+  }
 
-    const me = await service.me({
-      sub: userId,
-      email: signupDto.email,
-      accountId,
-      firstName: signupDto.firstName,
-      lastName: signupDto.lastName,
-      emailVerified: false,
-      mfaEnrollmentSatisfied: true,
-      typ: 'access',
-    });
+  it('returns identity + the caller effective permission keys', async () => {
+    const service = await build();
+    const { caller } = await signedUp(service);
+
+    const me = await service.me(caller);
 
     expect(me).toMatchObject({
-      userId,
-      accountId,
+      userId: caller.sub,
+      accountId: caller.accountId,
       email: signupDto.email,
       firstName: signupDto.firstName,
       lastName: signupDto.lastName,
@@ -208,22 +234,59 @@ describe('AuthService.me (OS-180)', () => {
     );
   });
 
-  it('reports totpEnabled: true once a factor is confirmed', async () => {
-    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
-    const service = await build();
-    const { userId, accountId } = await service.signup(signupDto);
-    await insertUserMfa(db, { userId, confirmedAt: new Date() });
+  // The defect this fixes (OS-527): the name used to ride in the token, the
+  // Profile edit never re-minted it, and every refresh copied the old value
+  // forward — so the sidebar showed the old name until sign-out. Same access
+  // token before and after: nothing about the token has to change for the
+  // answer to.
+  it('describes the User as they are now: a Profile edit shows up with the same access token', async () => {
+    const { service, users } = await buildBoth();
+    const { caller } = await signedUp(service);
 
-    const me = await service.me({
-      sub: userId,
-      email: signupDto.email,
-      accountId,
-      firstName: signupDto.firstName,
-      lastName: signupDto.lastName,
-      emailVerified: false,
-      mfaEnrollmentSatisfied: true,
-      typ: 'access',
+    await users.updateProfile(caller.sub, caller.accountId, {
+      firstName: 'Katherine',
+      lastName: 'Scully-Mulder',
     });
+
+    expect(await service.me(caller)).toMatchObject({
+      userId: caller.sub,
+      email: signupDto.email,
+      firstName: 'Katherine',
+      lastName: 'Scully-Mulder',
+    });
+  });
+
+  // The two gate facts are the exception — they're reported as the token
+  // has them, because that is what the guards will act on. Telling
+  // merchant-web "verified" while the token still says otherwise would send
+  // the caller into pages that 403 them.
+  it('reports the gate claims as the presented token has them', async () => {
+    const service = await build();
+    const { caller } = await signedUp(service);
+    await db
+      .update(usersTable)
+      .set({ emailVerifiedAt: new Date() })
+      .where(eq(usersTable.id, caller.sub));
+
+    expect((await service.me(caller)).emailVerified).toBe(false);
+  });
+
+  it('refuses a caller whose User row is gone', async () => {
+    const service = await build();
+    const { caller } = await signedUp(service);
+    await db.delete(usersTable).where(eq(usersTable.id, caller.sub));
+
+    await expect(service.me(caller)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
+  it('reports totpEnabled: true once a factor is confirmed', async () => {
+    const service = await build();
+    const { caller } = await signedUp(service);
+    await insertUserMfa(db, { userId: caller.sub, confirmedAt: new Date() });
+
+    const me = await service.me(caller);
 
     expect(me.totpEnabled).toBe(true);
     expect(me.hasMfaFactor).toBe(true);
@@ -231,22 +294,12 @@ describe('AuthService.me (OS-180)', () => {
   });
 
   it('reports a passkey-only user as hasMfaFactor with totpEnabled false', async () => {
-    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
     const service = await build();
-    const { userId, accountId } = await service.signup(signupDto);
-    await insertUserPasskey(db, { userId });
-    await insertUserPasskey(db, { userId });
+    const { caller } = await signedUp(service);
+    await insertUserPasskey(db, { userId: caller.sub });
+    await insertUserPasskey(db, { userId: caller.sub });
 
-    const me = await service.me({
-      sub: userId,
-      email: signupDto.email,
-      accountId,
-      firstName: signupDto.firstName,
-      lastName: signupDto.lastName,
-      emailVerified: false,
-      mfaEnrollmentSatisfied: true,
-      typ: 'access',
-    });
+    const me = await service.me(caller);
 
     expect(me.totpEnabled).toBe(false);
     expect(me.passkeyCount).toBe(2);
@@ -367,11 +420,9 @@ describe('AuthService.resetPassword (OS-469)', () => {
     expect(typeof reset.id).toBe('number');
     expect(reset.userId).toBe(user.id);
     expect(reset.expiresAt).toBeInstanceOf(Date);
-    await db.insert(userRefreshTokensTable).values([
-      { userId: user.id, jti: 'jti-1', familyId: 'family-1' },
-      { userId: user.id, jti: 'jti-2', familyId: 'family-2' },
-    ]);
-    const service = await build();
+    const { service, sessions } = await buildBoth();
+    const laptop = await sessions.start(user.id);
+    const phone = await sessions.start(user.id);
 
     await service.resetPassword(reset.token, 'brand-new-password');
 
@@ -387,11 +438,13 @@ describe('AuthService.resetPassword (OS-469)', () => {
       .where(eq(userPasswordResetsTable.userId, user.id));
     expect(remaining).toHaveLength(0);
 
-    const tokens = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.userId, user.id));
-    expect(tokens.every((t) => t.revokedAt !== null)).toBe(true);
+    // whoever prompted the reset is signed out, on every browser
+    await expect(sessions.refreshTokens(laptop.refresh_token)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+    await expect(sessions.refreshTokens(phone.refresh_token)).rejects.toThrow(
+      'Invalid or expired token',
+    );
   });
 
   it('rejects an expired token', async () => {
@@ -440,34 +493,12 @@ describe('AuthService.changePassword (OS-385)', () => {
     });
   }
 
-  function claimsFor(user: { id: number; email: string; accountId: number }) {
-    return {
-      sub: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: 'Staff',
-      lastName: 'Member',
-      emailVerified: true,
-      mfaEnrollmentSatisfied: true,
-    };
-  }
-
-  // what @CurrentUser() hands the controller — the caller's decoded access
-  // token, which is what changePassword takes
-  function callerOf(user: {
-    id: number;
-    email: string;
-    accountId: number;
-  }): AuthenticatedUser {
-    return { ...claimsFor(user), typ: 'access' };
-  }
-
   it('replaces the password: the old one stops verifying and the new one starts', async () => {
     const user = await seedUser();
     const service = await build();
 
     await service.changePassword(
-      callerOf(user),
+      user.id,
       CURRENT_PASSWORD,
       NEW_PASSWORD,
       undefined,
@@ -484,44 +515,42 @@ describe('AuthService.changePassword (OS-385)', () => {
   it('hands the caller a replacement that keeps them signed in', async () => {
     const user = await seedUser();
     const { service, sessions } = await buildBoth();
-    const callerToken = await sessions.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
+    const caller = await sessions.start(user.id);
+    const otherBrowser = await sessions.start(user.id);
 
-    const result = await service.changePassword(
-      callerOf(user),
+    const replacement = await service.changePassword(
+      user.id,
       CURRENT_PASSWORD,
       NEW_PASSWORD,
-      callerToken,
+      caller.refresh_token,
     );
 
-    const rotated = await sessions.refreshTokens(result.refresh_token);
-    expect(typeof rotated.access_token).toBe('string');
+    await expectWorkingSession(sessions, replacement, user.id);
+    // ...and nobody else: the rest is SessionsService.revokeOthersAndRotate's
+    // suite (sessions.service.spec)
+    await expect(
+      sessions.refreshTokens(otherBrowser.refresh_token),
+    ).rejects.toThrow('Invalid or expired token');
   });
 
   it('rejects a wrong current password without touching the row or the sessions', async () => {
     const user = await seedUser();
     const { service, sessions } = await buildBoth();
-    const callerToken = await sessions.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
+    const caller = await sessions.start(user.id);
 
     await expect(
       service.changePassword(
-        callerOf(user),
+        user.id,
         'not-the-current-password',
         NEW_PASSWORD,
-        callerToken,
+        caller.refresh_token,
       ),
     ).rejects.toThrow('Current password is incorrect');
 
     await expect(
       service.verifyPassword(user.id, CURRENT_PASSWORD),
     ).resolves.toBeUndefined();
-    const rotated = await sessions.refreshTokens(callerToken);
-    expect(typeof rotated.access_token).toBe('string');
+    await expectWorkingSession(sessions, caller, user.id);
   });
 });
 
@@ -534,20 +563,53 @@ describe('AuthService.acceptInvite — email verification (OS-470)', () => {
       password: null,
     });
     const invite = await insertUserInvite(db, { userId: user.id });
-    const service = await build();
+    const { service, sessions } = await buildBoth();
 
-    const result = await service.acceptInvite({
+    const session = await service.acceptInvite({
       token: invite.token,
       password: 'brand-new-password',
     });
 
-    expect(result.emailVerified).toBe(true);
+    // signed in, and straight past the email gate — what still holds them is
+    // the Factor they owe (OS-494, covered below), hence skipMfaEnrollment
+    expect(
+      await presentAccessToken(session.access_token, {
+        skipMfaEnrollment: true,
+      }),
+    ).toMatchObject({ admitted: true, user: { sub: user.id } });
+    await expectWorkingSession(sessions, session, user.id);
 
     const [updated] = await db
       .select()
       .from(usersTable)
       .where(eq(usersTable.id, user.id));
     expect(updated?.emailVerifiedAt).not.toBeNull();
+  });
+});
+
+// Nothing in acceptInvite looks at deactivatedAt — it doesn't have to. An
+// invited User switched off before they join is refused where every sign-in
+// path is: at SessionsService.start. Before OS-527 this path handed them a
+// Session.
+describe('AuthService.acceptInvite — a deactivated User', () => {
+  it('is refused a Session', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'switched-off@store.test',
+      password: null,
+    });
+    const invite = await insertUserInvite(db, { userId: user.id });
+    await deactivate(user.id);
+    const service = await build();
+
+    await expect(
+      service.acceptInvite({
+        token: invite.token,
+        password: 'brand-new-password',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(await db.select().from(userRefreshTokensTable)).toHaveLength(0);
   });
 });
 
@@ -561,7 +623,7 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     });
   }
 
-  it('verifies the caller and re-mints their access token with the updated claim', async () => {
+  it('verifies the caller and hands back an access token the email gate now accepts', async () => {
     const user = await seedUnverifiedUser();
     const verification = await insertUserEmailVerification(db, {
       userId: user.id,
@@ -569,14 +631,24 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     expect(typeof verification.id).toBe('number');
     expect(verification.userId).toBe(user.id);
     expect(verification.expiresAt).toBeInstanceOf(Date);
-    const service = await build();
+    const { service, sessions } = await buildBoth();
+    const session = await sessions.start(user.id);
+    expect(await presentAccessToken(session.access_token)).toMatchObject({
+      admitted: false,
+    });
 
     const result = await service.verifyEmail(user.id, verification.token);
-    expect(
-      new JwtService({ secret: 'test-secret' }).decode<{
-        emailVerified: boolean;
-      }>(result.access_token)?.emailVerified,
-    ).toBe(true);
+
+    expect(await presentAccessToken(result.access_token)).toMatchObject({
+      admitted: true,
+      user: { sub: user.id },
+    });
+    // a re-mint, not a new Session: the link proves inbox control, never
+    // identity, so the body carries no refresh token and the Session the
+    // caller already had simply carries on
+    expect(result).toEqual({ access_token: expect.any(String) as string });
+    expect(await db.select().from(userRefreshTokensTable)).toHaveLength(1);
+    await expectWorkingSession(sessions, session, user.id);
 
     const [updated] = await db
       .select()
@@ -747,13 +819,42 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
   }
 
   describe('signin', () => {
-    it('signs in normally when no MFA is enrolled', async () => {
+    it('starts a Session on the password alone when no MFA is enrolled', async () => {
       const user = await seedUserWithPassword();
+      const { service, sessions } = await buildBoth();
+
+      const result = await service.signin({ email: user.email, password });
+
+      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      expect(await presentAccessToken(result.access_token)).toMatchObject({
+        admitted: true,
+        user: { sub: user.id, accountId: user.accountId },
+      });
+      await expectWorkingSession(sessions, result, user.id);
+    });
+
+    it('signs an unverified User in, held at the email gate', async () => {
+      const user = await seedUserWithPassword({ emailVerifiedAt: null });
       const service = await build();
 
       const result = await service.signin({ email: user.email, password });
 
-      expect(result.mfaRequired).toBe(false);
+      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      expect(await presentAccessToken(result.access_token)).toEqual({
+        admitted: false,
+        refusal: 'Email verification required',
+      });
+    });
+
+    it('refuses a deactivated User, and starts no Session', async () => {
+      const user = await seedUserWithPassword();
+      await deactivate(user.id);
+      const service = await build();
+
+      await expect(
+        service.signin({ email: user.email, password }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(await db.select().from(userRefreshTokensTable)).toHaveLength(0);
     });
 
     it('signs in normally when MFA is enrolled but never confirmed', async () => {
@@ -776,6 +877,27 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       expect(result.mfaRequired).toBe(true);
       if (!result.mfaRequired) throw new Error('expected a challenge');
       expect(result.challengeToken).toBeTruthy();
+      // a password accepted with a Factor still owed is not a Session
+      expect(result).not.toHaveProperty('access_token');
+      expect(result).not.toHaveProperty('refresh_token');
+      expect(await db.select().from(userRefreshTokensTable)).toHaveLength(0);
+    });
+
+    // The challenge token is a signed JWT too — it must open nothing.
+    it('issues a challenge token that works neither as an access token nor as a refresh token', async () => {
+      const user = await seedUserWithPassword();
+      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+      const { service, sessions } = await buildBoth();
+
+      const result = await service.signin({ email: user.email, password });
+      if (!result.mfaRequired) throw new Error('expected a challenge');
+
+      expect(
+        await presentAccessToken(result.challengeToken, UNGATED),
+      ).toMatchObject({ admitted: false });
+      await expect(
+        sessions.refreshTokens(result.challengeToken),
+      ).rejects.toThrow('Invalid or expired token');
     });
 
     it('still rejects a wrong password before ever checking MFA', async () => {
@@ -805,6 +927,9 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
 
       const result = await service.enrollMfa(user.id);
       expect(result.otpauthUrl).toContain('otpauth://totp/');
+      // the label the authenticator app shows is the User's email as it is
+      // in the row now — enrollMfa takes an id, not a token's copy of it
+      expect(decodeURIComponent(result.otpauthUrl)).toContain(user.email);
 
       const [mfa] = await db
         .select()
@@ -881,12 +1006,40 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .where(eq(userMfaTable.userId, user.id));
       expect(mfa?.confirmedAt).not.toBeNull();
     });
+
+    // A caller gated into forced enrollment holds an access token that says
+    // so. Enrolling must unstick them at once, not at their next refresh.
+    it('re-mints an access token the enrollment gate now accepts', async () => {
+      const user = await seedUserWithPassword();
+      await db
+        .update(usersTable)
+        .set({ factorRequiredAt: new Date() })
+        .where(eq(usersTable.id, user.id));
+      const { service, sessions } = await buildBoth();
+      const session = await sessions.start(user.id);
+      expect(await presentAccessToken(session.access_token)).toEqual({
+        admitted: false,
+        refusal: 'MFA enrollment required',
+      });
+      const { otpauthUrl } = await service.enrollMfa(user.id);
+
+      const { access_token } = await service.confirmMfa(
+        user.id,
+        await freshTotpCode(extractSecret(otpauthUrl)),
+        password,
+      );
+
+      expect(await presentAccessToken(access_token)).toMatchObject({
+        admitted: true,
+        user: { sub: user.id },
+      });
+    });
   });
 
   describe('verifyMfaChallenge', () => {
     it('completes a full enroll → challenge → verify round trip with a TOTP code', async () => {
       const user = await seedUserWithPassword();
-      const service = await build();
+      const { service, sessions } = await buildBoth();
       const { otpauthUrl } = await service.enrollMfa(user.id);
       const secret = extractSecret(otpauthUrl);
       await service.confirmMfa(user.id, await freshTotpCode(secret), password);
@@ -902,8 +1055,12 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         await freshTotpCode(secret),
       );
 
-      expect(result.access_token).toBeTruthy();
-      expect(result.userId).toBe(user.id);
+      // proving the Factor is what starts the Session
+      expect(await presentAccessToken(result.access_token)).toMatchObject({
+        admitted: true,
+        user: { sub: user.id },
+      });
+      await expectWorkingSession(sessions, result, user.id);
     });
 
     it('accepts an unused recovery code exactly once', async () => {
@@ -1000,21 +1157,16 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       ).rejects.toThrow('Invalid or expired challenge');
     });
 
-    it('rejects a real access token presented as a challenge token', async () => {
+    it("rejects a Session's own tokens presented as a challenge token", async () => {
       const user = await seedUserWithPassword();
       const { service, sessions } = await buildBoth();
-      const accessToken = await sessions.createAccessToken({
-        sub: user.id,
-        email: user.email,
-        accountId: user.accountId,
-        firstName: user.firstname,
-        lastName: user.lastname,
-        emailVerified: true,
-        mfaEnrollmentSatisfied: true,
-      });
+      const session = await sessions.start(user.id);
 
       await expect(
-        service.verifyMfaChallenge(accessToken, '123456'),
+        service.verifyMfaChallenge(session.access_token, '123456'),
+      ).rejects.toThrow('Invalid or expired challenge');
+      await expect(
+        service.verifyMfaChallenge(session.refresh_token, '123456'),
       ).rejects.toThrow('Invalid or expired challenge');
     });
 
@@ -1260,10 +1412,22 @@ describe('AuthService.regenerateRecoveryCodes — any factor (OS-485)', () => {
   });
 });
 
-describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
+// Whether a brand-new Session is held at the enrollment gate. A Factor can be
+// required of a User from two places — the account-wide policy an Owner
+// switches on (OS-473) and the stamp an invited staff User gets on joining
+// (OS-494) — and every sign-in path has to come out agreeing with the rule,
+// which they now do by construction: none of them computes the claim, they
+// all start the Session and SessionsService does. What happens to the claim
+// LATER in the Session (a refresh noticing the policy turned on, a Factor
+// enrolled or removed) is sessions.service.spec's.
+describe('AuthService — the Factor requirement on a new Session (OS-473/OS-494)', () => {
   const password = 'correct-horse-battery-staple';
+  const HELD = { admitted: false, refusal: 'MFA enrollment required' };
 
-  async function seedAccountAndUser(opts: { requireMfaAt?: Date | null }) {
+  async function seedAccountAndUser(opts: {
+    requireMfaAt?: Date | null;
+    factorRequiredAt?: Date;
+  }) {
     const account = await insertAccount(db);
     if (opts.requireMfaAt !== undefined) {
       await db
@@ -1276,31 +1440,56 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       email: `mfa-enforce-${randomUUID()}@store.test`,
       password: await bcrypt.hash(password, 10),
       emailVerifiedAt: new Date(),
+      ...(opts.factorRequiredAt
+        ? { factorRequiredAt: opts.factorRequiredAt }
+        : {}),
     });
     return { account, user };
   }
 
-  describe('signin', () => {
-    it('is satisfied when the account does not require MFA', async () => {
+  describe('password sign-in', () => {
+    it('is past the gate when nothing requires a Factor', async () => {
       const { user } = await seedAccountAndUser({});
       const service = await build();
 
       const result = await service.signin({ email: user.email, password });
 
       if (result.mfaRequired) throw new Error('expected a normal sign-in');
-      expect(result.mfaEnrollmentSatisfied).toBe(true);
+      expect(await presentAccessToken(result.access_token)).toMatchObject({
+        admitted: true,
+      });
     });
 
-    it('is unsatisfied when the account requires MFA and the user has not enrolled', async () => {
+    it('is held at the gate when the account requires MFA and the user has not enrolled', async () => {
       const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
+      const { service, sessions } = await buildBoth();
+
+      const result = await service.signin({ email: user.email, password });
+
+      if (result.mfaRequired) throw new Error('expected a normal sign-in');
+      expect(await presentAccessToken(result.access_token)).toEqual(HELD);
+      // still signs in — this is a post-login gate, not a hard block, and
+      // the routes that let them enroll skip it
+      expect(
+        await presentAccessToken(result.access_token, {
+          skipMfaEnrollment: true,
+        }),
+      ).toMatchObject({ admitted: true });
+      await expectWorkingSession(sessions, result, user.id);
+    });
+
+    // The invited-staff stamp is the other source of the same rule: no
+    // account-wide policy at all, and the gate still stands.
+    it('is held at the gate for a joined staff member with no factor (OS-494)', async () => {
+      const { user } = await seedAccountAndUser({
+        factorRequiredAt: new Date(),
+      });
       const service = await build();
 
       const result = await service.signin({ email: user.email, password });
 
       if (result.mfaRequired) throw new Error('expected a normal sign-in');
-      expect(result.mfaEnrollmentSatisfied).toBe(false);
-      // still signs in — this is a post-login gate, not a hard block
-      expect(result.access_token).toBeTruthy();
+      expect(await presentAccessToken(result.access_token)).toEqual(HELD);
     });
 
     it('still issues a challenge (unaffected by the account toggle) once the user has a confirmed factor', async () => {
@@ -1314,8 +1503,8 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
     });
   });
 
-  describe('verifyMfaChallenge', () => {
-    it('is satisfied after completing the challenge, even when the account requires MFA', async () => {
+  describe('challenge completion', () => {
+    it('is past the gate after completing the challenge, even when the account requires MFA', async () => {
       const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
       const secret = authenticator.generateSecret();
       await insertUserMfa(db, {
@@ -1331,17 +1520,20 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       });
       if (!signInResult.mfaRequired) throw new Error('expected a challenge');
 
-      const result = await service.verifyMfaChallenge(
+      const session = await service.verifyMfaChallenge(
         signInResult.challengeToken,
         await freshTotpCode(secret),
       );
 
-      expect(result.mfaEnrollmentSatisfied).toBe(true);
+      expect(await presentAccessToken(session.access_token)).toMatchObject({
+        admitted: true,
+        user: { sub: user.id },
+      });
     });
   });
 
   describe('acceptInvite', () => {
-    it('is unsatisfied when the account already requires MFA at invite-accept time', async () => {
+    it('is held at the gate when the account already requires MFA at invite-accept time', async () => {
       const account = await insertAccount(db);
       await db
         .update(accountsTable)
@@ -1354,158 +1546,73 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       const invite = await insertUserInvite(db, { userId: user.id });
       const service = await build();
 
-      const result = await service.acceptInvite({
+      const session = await service.acceptInvite({
         token: invite.token,
         password: 'brand-new-password',
       });
 
-      expect(result.mfaEnrollmentSatisfied).toBe(false);
+      expect(await presentAccessToken(session.access_token)).toEqual(HELD);
     });
 
     // Was "is satisfied when the account does not require MFA" until OS-494:
     // joining staff are now gated on their own, whatever the account policy.
-    it('stamps factor_required_at and is unsatisfied even when the account does not require MFA (OS-494)', async () => {
+    it('stamps factor_required_at and is held at the gate even when the account does not require MFA (OS-494)', async () => {
       const account = await insertAccount(db);
       const user = await insertUser(db, {
         accountId: account.id,
         password: null,
       });
       const invite = await insertUserInvite(db, { userId: user.id });
-      const service = await build();
+      const { service, sessions } = await buildBoth();
 
-      const result = await service.acceptInvite({
+      const session = await service.acceptInvite({
         token: invite.token,
         password: 'brand-new-password',
       });
 
-      expect(result.mfaEnrollmentSatisfied).toBe(false);
-      const payload = new JwtService({
-        secret: 'test-secret',
-      }).decode<{ mfaEnrollmentSatisfied: boolean }>(result.access_token);
-      expect(payload.mfaEnrollmentSatisfied).toBe(false);
+      expect(await presentAccessToken(session.access_token)).toEqual(HELD);
 
       const [row] = await db
         .select({ factorRequiredAt: usersTable.factorRequiredAt })
         .from(usersTable)
         .where(eq(usersTable.id, user.id));
       expect(row.factorRequiredAt).toBeInstanceOf(Date);
+
+      // The whole reason the column exists: merchant-web refreshes on every
+      // navigation, and a claim that wasn't backed by stored state flipped
+      // to satisfied here, one click after joining.
+      const next = await sessions.refreshTokens(session.refresh_token);
+      expect(await presentAccessToken(next.access_token)).toEqual(HELD);
     });
   });
 
-  describe('invited-staff factor requirement (OS-494)', () => {
-    async function seedJoinedStaff() {
-      const account = await insertAccount(db);
-      const user = await insertUser(db, {
-        accountId: account.id,
-        email: `joined-staff-${randomUUID()}@store.test`,
-        password: await bcrypt.hash(password, 10),
-        emailVerifiedAt: new Date(),
-        factorRequiredAt: new Date(),
-      });
-      return { account, user };
-    }
-
-    async function refreshedClaims(
-      { service, sessions }: Awaited<ReturnType<typeof buildBoth>>,
-      user: { email: string },
-    ) {
-      const signInResult = await service.signin({
-        email: user.email,
-        password,
-      });
-      if (signInResult.mfaRequired)
-        throw new Error('expected a normal sign-in');
-      const refreshToken = await sessions.createRefreshToken(
-        claimsFromSignInResult(signInResult),
-        randomUUID(),
-      );
-      return { signInResult, refreshToken };
-    }
-
-    it('signin is unsatisfied for a joined staff member with no factor', async () => {
-      const { user } = await seedJoinedStaff();
-      const service = await build();
-
-      const result = await service.signin({ email: user.email, password });
-
-      if (result.mfaRequired) throw new Error('expected a normal sign-in');
-      expect(result.mfaEnrollmentSatisfied).toBe(false);
-    });
-
-    // The whole reason the column exists: merchant-web refreshes on every
-    // navigation, and refreshTokens recomputes this claim from the database.
-    // An unsatisfied claim that wasn't backed by stored state flipped to
-    // true here, one click after joining.
-    it('stays unsatisfied across a token refresh', async () => {
-      const { user } = await seedJoinedStaff();
-      const built = await buildBoth();
-      const { sessions } = built;
-      const { refreshToken } = await refreshedClaims(built, user);
-
-      const refreshed = await sessions.refreshTokens(refreshToken);
-      const payload = new JwtService({
-        secret: 'test-secret',
-      }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
-
-      expect(payload.mfaEnrollmentSatisfied).toBe(false);
-    });
-
-    it.each([
-      [
-        'an authenticator',
-        (userId: number) =>
-          insertUserMfa(db, { userId, confirmedAt: new Date() }),
-      ],
-      ['a passkey', (userId: number) => insertUserPasskey(db, { userId })],
-    ])(
-      'is satisfied on refresh once %s is enrolled',
-      async (_label, enroll) => {
-        const { user } = await seedJoinedStaff();
-        const built = await buildBoth();
-        const { sessions } = built;
-        const { refreshToken } = await refreshedClaims(built, user);
-
-        await enroll(user.id);
-
-        const refreshed = await sessions.refreshTokens(refreshToken);
-        const payload = new JwtService({
-          secret: 'test-secret',
-        }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
-
-        expect(payload.mfaEnrollmentSatisfied).toBe(true);
-      },
-    );
-
+  describe('signup', () => {
     // Owners explore freely and are gated at the money actions instead
     // (OS-492) — signup must never stamp the column, and a refresh must not
-    // start gating them either.
+    // start gating them either. (Past the email gate, that is: a fresh Owner
+    // is still unverified, which is a different gate.)
     it('leaves an owner who signs up ungated, across a refresh too', async () => {
       await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
       const { service, sessions } = await buildBoth();
+      const enrolledOnly = { skipEmailVerification: true };
 
-      const result = await service.signup(signupDto);
+      const session = await service.signup(signupDto);
 
-      expect(result.mfaEnrollmentSatisfied).toBe(true);
-      const [row] = await db
-        .select({ factorRequiredAt: usersTable.factorRequiredAt })
-        .from(usersTable)
-        .where(eq(usersTable.id, result.userId));
-      expect(row.factorRequiredAt).toBeNull();
+      expect(
+        await presentAccessToken(session.access_token, enrolledOnly),
+      ).toMatchObject({ admitted: true });
+      const owner = await userByEmail(signupDto.email);
+      expect(owner.factorRequiredAt).toBeNull();
 
-      const refreshToken = await sessions.createRefreshToken(
-        claimsFromSignInResult(result),
-        randomUUID(),
-      );
-      const refreshed = await sessions.refreshTokens(refreshToken);
-      const payload = new JwtService({
-        secret: 'test-secret',
-      }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
-      expect(payload.mfaEnrollmentSatisfied).toBe(true);
+      const next = await sessions.refreshTokens(session.refresh_token);
+      expect(
+        await presentAccessToken(next.access_token, enrolledOnly),
+      ).toMatchObject({ admitted: true });
     });
   });
 
   describe('verifyEmail', () => {
-    it('reflects the account MFA requirement for a newly-verified user', async () => {
+    it('re-mints past the email gate and no further: the account MFA requirement still holds a newly-verified user', async () => {
       const account = await insertAccount(db);
       await db
         .update(accountsTable)
@@ -1523,76 +1630,19 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
 
       const result = await service.verifyEmail(user.id, verification.token);
 
+      expect(await presentAccessToken(result.access_token)).toEqual(HELD);
       expect(
-        new JwtService({ secret: 'test-secret' }).decode<{
-          mfaEnrollmentSatisfied: boolean;
-        }>(result.access_token)?.mfaEnrollmentSatisfied,
-      ).toBe(false);
-    });
-  });
-
-  describe('refreshTokens', () => {
-    it('picks up the account toggle turning on mid-session', async () => {
-      const { account, user } = await seedAccountAndUser({});
-      const { service, sessions } = await buildBoth();
-      const signInResult = await service.signin({
-        email: user.email,
-        password,
-      });
-      if (signInResult.mfaRequired)
-        throw new Error('expected a normal sign-in');
-      const refreshToken = await sessions.createRefreshToken(
-        claimsFromSignInResult(signInResult),
-        randomUUID(),
-      );
-
-      // owner turns the requirement on after this session already started
-      await db
-        .update(accountsTable)
-        .set({ requireMfaAt: new Date() })
-        .where(eq(accountsTable.id, account.id));
-
-      const refreshed = await sessions.refreshTokens(refreshToken);
-      const payload = new JwtService({
-        secret: 'test-secret',
-      }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
-
-      expect(payload.mfaEnrollmentSatisfied).toBe(false);
-    });
-
-    it('picks up enrollment completing mid-session', async () => {
-      const { user } = await seedAccountAndUser({
-        requireMfaAt: new Date(),
-      });
-      const { service, sessions } = await buildBoth();
-      const signInResult = await service.signin({
-        email: user.email,
-        password,
-      });
-      if (signInResult.mfaRequired)
-        throw new Error('expected a normal sign-in');
-      expect(signInResult.mfaEnrollmentSatisfied).toBe(false);
-      const refreshToken = await sessions.createRefreshToken(
-        claimsFromSignInResult(signInResult),
-        randomUUID(),
-      );
-
-      // user finishes forced enrollment mid-session
-      await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
-
-      const refreshed = await sessions.refreshTokens(refreshToken);
-      const payload = new JwtService({
-        secret: 'test-secret',
-      }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
-
-      expect(payload.mfaEnrollmentSatisfied).toBe(true);
+        await presentAccessToken(result.access_token, {
+          skipMfaEnrollment: true,
+        }),
+      ).toMatchObject({ admitted: true });
     });
   });
 });
 
 // A "factor" is now either a confirmed TOTP row or a passkey, and they live
-// in different tables. These cover the passkey half — the TOTP half is the
-// OS-473 block above, which must keep passing unchanged.
+// in different tables. These cover the passkey half of password sign-in —
+// the TOTP half is the block above, which must keep passing unchanged.
 describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () => {
   const password = 'correct-horse-battery-staple';
 
@@ -1635,24 +1685,31 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
     // confirmed TOTP row before even looking at the code, which rejected
     // them with "Invalid or expired challenge".
     it('accepts a recovery code from a passkey-only user', async () => {
-      const { user } = await seedAccountAndUser({});
+      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
       await insertUserPasskey(db, { userId: user.id });
       const recoveryCode = 'ABCDE-FGHJK';
       await insertUserMfaRecoveryCode(db, {
         userId: user.id,
         codeHash: await bcrypt.hash(recoveryCode, 10),
       });
-      const service = await build();
+      const { service, sessions } = await buildBoth();
 
       const challenge = await service.signin({ email: user.email, password });
       if (!challenge.mfaRequired) throw new Error('expected a challenge');
 
-      const result = await service.verifyMfaChallenge(
+      const session = await service.verifyMfaChallenge(
         challenge.challengeToken,
         recoveryCode,
       );
 
-      expect(result.access_token).toBeTruthy();
+      // a full Session, past the enrollment gate: the passkey they hold is
+      // what satisfies the account's requirement, even though it isn't what
+      // they presented
+      expect(await presentAccessToken(session.access_token)).toMatchObject({
+        admitted: true,
+        user: { sub: user.id },
+      });
+      await expectWorkingSession(sessions, session, user.id);
     });
 
     it('does not offer the passkey branch to a TOTP-only user', async () => {
@@ -1700,78 +1757,6 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
       const result = await service.signin({ email: user.email, password });
 
       expect(result.mfaRequired).toBe(true);
-    });
-  });
-
-  describe('refreshTokens', () => {
-    it('picks up a passkey registered mid-session', async () => {
-      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
-      const { service, sessions } = await buildBoth();
-      const signInResult = await service.signin({
-        email: user.email,
-        password,
-      });
-      if (signInResult.mfaRequired)
-        throw new Error('expected a normal sign-in');
-      expect(signInResult.mfaEnrollmentSatisfied).toBe(false);
-
-      const refreshToken = await sessions.createRefreshToken(
-        claimsFromSignInResult(signInResult),
-        randomUUID(),
-      );
-
-      await insertUserPasskey(db, { userId: user.id });
-
-      const refreshed = await sessions.refreshTokens(refreshToken);
-      const payload = new JwtService({ secret: 'test-secret' }).decode<{
-        mfaEnrollmentSatisfied: boolean;
-      }>(refreshed.access_token);
-
-      // since OS-489 a passkey clears the account-wide requirement, without
-      // waiting for a re-login
-      expect(payload.mfaEnrollmentSatisfied).toBe(true);
-    });
-
-    it('stops being satisfied when the last passkey is removed mid-session', async () => {
-      const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
-      const { service, sessions } = await buildBoth();
-      // sign in BEFORE the passkey exists — a user holding one is now
-      // challenged, and this test is about the claim, not the challenge
-      const signInResult = await service.signin({
-        email: user.email,
-        password,
-      });
-      if (signInResult.mfaRequired)
-        throw new Error('expected a normal sign-in');
-      const passkey = await insertUserPasskey(db, { userId: user.id });
-
-      const refreshToken = await sessions.createRefreshToken(
-        claimsFromSignInResult(signInResult),
-        randomUUID(),
-      );
-
-      const jwt = new JwtService({ secret: 'test-secret' });
-
-      // the claim first has to become true, or "drops" proves nothing
-      const withPasskey = await sessions.refreshTokens(refreshToken);
-      expect(
-        jwt.decode<{ mfaEnrollmentSatisfied: boolean }>(
-          withPasskey.access_token,
-        ).mfaEnrollmentSatisfied,
-      ).toBe(true);
-
-      await db
-        .delete(userPasskeysTable)
-        .where(eq(userPasskeysTable.id, passkey.id));
-
-      const afterRemoval = await sessions.refreshTokens(
-        withPasskey.refresh_token,
-      );
-      expect(
-        jwt.decode<{ mfaEnrollmentSatisfied: boolean }>(
-          afterRemoval.access_token,
-        ).mfaEnrollmentSatisfied,
-      ).toBe(false);
     });
   });
 });

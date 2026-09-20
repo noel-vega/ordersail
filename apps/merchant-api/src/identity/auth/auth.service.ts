@@ -15,13 +15,8 @@ import { AccountService } from '../account/account.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
-import { type TokenClaims } from './token-claims';
-import {
-  type FactorClaims,
-  type FactorState,
-  FactorStateService,
-} from './factor-state.service';
-import { SessionsService } from './sessions.service';
+import { type FactorState, FactorStateService } from './factor-state.service';
+import { SessionsService, type TokenPair } from './sessions.service';
 import { AuthMe } from './entities/auth-me.entity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
@@ -60,18 +55,6 @@ const MFA_CHALLENGE_TTL = '5m';
 
 const MFA_ISSUER = 'OrderSail';
 
-export interface SignInSuccessResult {
-  mfaRequired: false;
-  userId: number;
-  email: string;
-  accountId: number;
-  firstName: string;
-  lastName: string;
-  emailVerified: boolean;
-  mfaEnrollmentSatisfied: boolean;
-  access_token: string;
-}
-
 export type MfaChallengeMethod = 'passkey' | 'totp' | 'recovery';
 
 interface MfaChallengeResult {
@@ -80,29 +63,16 @@ interface MfaChallengeResult {
   methods: MfaChallengeMethod[];
 }
 
-type SignInResult = SignInSuccessResult | MfaChallengeResult;
-
-// A successful sign-in already carries every claim the caller's refresh
-// token needs — AuthController mints one right after signin/signup/
-// accept-invite/verify-mfa, and this keeps that mapping in one place
-// instead of four identical argument lists.
+// What a password sign-in comes to: a Session, or — when the User holds a
+// Factor — a challenge that has to be completed before there is one. A
+// password accepted with a Factor still owed is NOT a Session.
 //
-// Typed structurally rather than as SignInSuccessResult because signup()
-// and acceptInvite() return the same claim-bearing fields without the
-// `mfaRequired` discriminant.
-export function claimsFromSignInResult(
-  result: Omit<SignInSuccessResult, 'mfaRequired' | 'access_token'>,
-): TokenClaims {
-  return {
-    sub: result.userId,
-    email: result.email,
-    accountId: result.accountId,
-    firstName: result.firstName,
-    lastName: result.lastName,
-    emailVerified: result.emailVerified,
-    mfaEnrollmentSatisfied: result.mfaEnrollmentSatisfied,
-  };
-}
+// Every sign-in operation in this class (and PasskeysService's two) ends by
+// asking SessionsService to start the Session and returns the pair it gets
+// back. None of them assembles a claim or knows what a refresh-token family
+// is; the controller's only remaining job is to put the refresh token in the
+// cookie (respondWithSession).
+type SignInResult = ({ mfaRequired: false } & TokenPair) | MfaChallengeResult;
 
 // the callback param drizzle hands a `db.transaction()` caller — same
 // query-builder surface as `db` itself, scoped to one transaction
@@ -121,15 +91,43 @@ export class AuthService {
     private factorState: FactorStateService,
   ) {}
 
+  // Who the caller is *now*. Email and name are read from the User row, not
+  // from the token: they're editable (PATCH /auth/me/profile), the token
+  // doesn't carry them, and when it did every refresh copied the old value
+  // forward — the sidebar kept showing a name the User had already changed
+  // until they signed out (OS-527).
+  //
+  // emailVerified and mfaEnrollmentSatisfied are the deliberate exception,
+  // reported off the token rather than the row. merchant-web reads them to
+  // learn whether it is gated, and what gates a request is the claim the
+  // guards read — so this must say what the token says, or the dashboard
+  // would route a caller into pages that 403 them. They can't stay stale for
+  // long: the moments they change re-mint the token (verifyEmail,
+  // confirmMfa, passkey registration).
   async me(user: AuthenticatedUser): Promise<AuthMe> {
+    const [row] = await this.db
+      .select({
+        email: usersTable.email,
+        firstName: usersTable.firstname,
+        lastName: usersTable.lastname,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, user.sub));
+    // an access token outlives the row it was minted from — a deleted User
+    // (a revoked invite, say) is a 401, which sends the client to refresh,
+    // where the Session is refused for good
+    if (!row) {
+      throw new UnauthorizedException();
+    }
+
     const permissions =
       await this.permissionsService.getEffectivePermissionKeys(user.sub);
     const factors = await this.getFactorState(user.sub);
     return {
       userId: user.sub,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      email: row.email,
+      firstName: row.firstName,
+      lastName: row.lastName,
       accountId: user.accountId,
       emailVerified: user.emailVerified,
       totpEnabled: factors.totpConfirmed,
@@ -180,10 +178,10 @@ export class AuthService {
       };
     }
 
-    return this.buildSignInSuccess(
-      user,
-      await this.factorState.toFactorClaims(user.id, factors),
-    );
+    return {
+      mfaRequired: false,
+      ...(await this.sessionsService.start(user.id)),
+    };
   }
 
   // Factor reads live in FactorStateService — SessionsService needs them
@@ -216,45 +214,6 @@ export class AuthService {
     tx?: DbTransaction,
   ): Promise<'account' | 'user' | null> {
     return this.factorState.getFactorRequirement(userId, tx);
-  }
-
-  // Public because the passkey branch of the challenge (OS-488) finishes
-  // the same way: a factor the caller just proved possession of always
-  // satisfies an account-wide requirement.
-  async buildSignInSuccess(
-    user: {
-      id: number;
-      email: string;
-      accountId: number;
-      firstname: string;
-      lastname: string;
-      emailVerifiedAt: Date | null;
-    },
-    flags: FactorClaims,
-  ): Promise<SignInSuccessResult> {
-    const emailVerified = user.emailVerifiedAt !== null;
-    const { mfaEnrollmentSatisfied } = flags;
-    const access_token = await this.sessionsService.createAccessToken({
-      sub: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: user.firstname,
-      lastName: user.lastname,
-      emailVerified,
-      mfaEnrollmentSatisfied,
-    });
-
-    return {
-      mfaRequired: false,
-      userId: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: user.firstname,
-      lastName: user.lastname,
-      emailVerified,
-      mfaEnrollmentSatisfied,
-      access_token,
-    };
   }
 
   private async createMfaChallengeToken(userId: number): Promise<string> {
@@ -292,10 +251,15 @@ export class AuthService {
       .from(usersTable)
       .where(eq(usersTable.id, payload.sub));
     // The token outlives signin()'s own deactivation check by up to
-    // MFA_CHALLENGE_TTL, and both challenge completions mint a Session off
-    // the row returned here — so a User deactivated inside that window is
-    // refused at this point, with the same message as every other failure
-    // (no oracle for "this account was just switched off").
+    // MFA_CHALLENGE_TTL, so a User deactivated inside that window is refused
+    // at this point, with the same message as every other failure (no oracle
+    // for "this account was just switched off").
+    //
+    // No longer the only thing in the way — SessionsService.start refuses a
+    // deactivated User on every path (OS-527) — but it stays, and not only
+    // as a regression guard: refusing HERE is what stops a deactivated
+    // User's recovery code or passkey challenge being spent on a sign-in
+    // that was never going to succeed.
     if (!user || user.deactivatedAt) {
       throw new UnauthorizedException('Invalid or expired challenge');
     }
@@ -305,7 +269,7 @@ export class AuthService {
   async verifyMfaChallenge(
     challengeToken: string,
     code: string,
-  ): Promise<SignInSuccessResult> {
+  ): Promise<TokenPair> {
     const user = await this.resolveMfaChallengeToken(challengeToken);
 
     const [mfa] = await this.db
@@ -334,11 +298,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid code');
     }
 
-    // a confirmed factor the caller just proved possession of always
-    // satisfies any account-wide MFA requirement
-    return this.buildSignInSuccess(user, {
-      mfaEnrollmentSatisfied: true,
-    });
+    // The Factor is proven, so now — and only now — there is a Session. Its
+    // enrollment claim needs no help from here: a User is only ever
+    // challenged because they hold a Factor, and holding one is what
+    // satisfies any requirement (FactorStateService.toFactorClaims).
+    return this.sessionsService.start(user.id);
   }
 
   // The update is conditioned on isNull(usedAt) too, not just the row id —
@@ -446,14 +410,20 @@ export class AuthService {
   // code replacement run in one transaction, with the user_mfa row locked
   // for its duration, so a concurrent confirm/regenerate for the same user
   // can't interleave with this one.
+  //
+  // Also returns a re-minted access token: this caller may have been gated
+  // into forced enrollment (mfaEnrollmentSatisfied: false baked into the
+  // token they hold), and shouldn't stay stuck behind a gate they've just
+  // cleared until their next refresh. Minted after the transaction commits,
+  // so the claim is computed from the Factor that now exists.
   async confirmMfa(
     userId: number,
     code: string,
     password: string,
-  ): Promise<{ recoveryCodes: string[] }> {
+  ): Promise<{ recoveryCodes: string[]; access_token: string }> {
     await this.verifyPassword(userId, password);
 
-    return this.db.transaction(async (tx) => {
+    const recoveryCodes = await this.db.transaction(async (tx) => {
       const [mfa] = await tx
         .select()
         .from(userMfaTable)
@@ -477,8 +447,13 @@ export class AuthService {
         .set({ confirmedAt: new Date(), updatedAt: new Date() })
         .where(eq(userMfaTable.id, mfa.id));
 
-      return { recoveryCodes: await this.issueRecoveryCodes(tx, userId) };
+      return this.issueRecoveryCodes(tx, userId);
     });
+
+    return {
+      recoveryCodes,
+      access_token: await this.sessionsService.remintAccessToken(userId),
+    };
   }
 
   // Requires current-password re-entry — standard practice for removing a
@@ -573,7 +548,7 @@ export class AuthService {
     return codes;
   }
 
-  async signup(signupDto: SignUpDto) {
+  async signup(signupDto: SignUpDto): Promise<TokenPair> {
     try {
       const { owner: user } = await this.accountService.provision(signupDto);
 
@@ -582,28 +557,12 @@ export class AuthService {
       // successful signup; the account can always resend
       await this.issueVerificationEmail(user);
 
-      // brand-new account, created moments ago — requireMfaAt is never set
-      // at creation, so there's nothing to satisfy yet
-      const access_token = await this.sessionsService.createAccessToken({
-        sub: user.id,
-        email: user.email,
-        accountId: user.accountId,
-        firstName: user.firstname,
-        lastName: user.lastname,
-        emailVerified: false,
-        mfaEnrollmentSatisfied: true,
-      });
-
-      return {
-        userId: user.id,
-        email: user.email,
-        accountId: user.accountId,
-        firstName: user.firstname,
-        lastName: user.lastname,
-        emailVerified: false,
-        mfaEnrollmentSatisfied: true,
-        access_token,
-      };
+      // Signup leaves the new Owner signed in. The Session's claims come out
+      // of the rows provision() just wrote: unverified (the email above is
+      // still unread) and ungated — requireMfaAt is never set at creation,
+      // and signup doesn't stamp factorRequiredAt (Owners are gated at the
+      // money actions instead, OS-492).
+      return await this.sessionsService.start(user.id);
     } catch (err) {
       if (isUniqueViolation(err)) {
         throw new ConflictException('Email already in use');
@@ -612,7 +571,7 @@ export class AuthService {
     }
   }
 
-  async acceptInvite(dto: AcceptInviteDto) {
+  async acceptInvite(dto: AcceptInviteDto): Promise<TokenPair> {
     const invite = await this.usersService.getByInviteToken(dto.token);
 
     if (!invite || invite.expiresAt < new Date()) {
@@ -629,36 +588,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired invite');
     }
 
-    // clicking the emailed invite link already proves ownership of this
-    // address — UsersService.activate() sets emailVerifiedAt alongside the
-    // password, so this is always true here, not read back from `user`
-    //
-    // activate() also stamped factorRequiredAt (OS-494), so a joining staff
-    // member is never satisfied here — they can't hold a factor before they
-    // have a password. Computed rather than hardcoded false so this stays
-    // one rule with refreshTokens(), which is what keeps the gate standing
-    // after the first navigation.
-    const factorClaims = await this.factorState.getFactorClaims(user.id);
-    const access_token = await this.sessionsService.createAccessToken({
-      sub: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      emailVerified: true,
-      ...factorClaims,
-    });
-
-    return {
-      userId: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      emailVerified: true,
-      ...factorClaims,
-      access_token,
-    };
+    // Accepting the invite leaves the new staff User signed in, and both of
+    // the Session's gate claims follow from what activate() just wrote.
+    // Clicking the emailed link already proves ownership of the address, so
+    // it set emailVerifiedAt alongside the password — verified from the
+    // first token. It also stamped factorRequiredAt (OS-494), and nobody can
+    // hold a Factor before they have a password, so a joining staff User is
+    // never enrollment-satisfied here and goes straight to setting one up.
+    // It's the same computation refreshTokens() runs, which is what keeps
+    // that gate standing after the first navigation.
+    return this.sessionsService.start(user.id);
   }
 
   // Verifies the emailed token for the *signed-in* caller and re-mints only
@@ -688,7 +627,7 @@ export class AuthService {
       .update(usersTable)
       .set({ emailVerifiedAt: new Date(), updatedAt: new Date() })
       .where(eq(usersTable.id, verification.userId))
-      .returning();
+      .returning({ id: usersTable.id });
 
     if (!user) {
       throw new BadRequestException('Invalid or expired token');
@@ -698,21 +637,12 @@ export class AuthService {
       .delete(userEmailVerificationsTable)
       .where(eq(userEmailVerificationsTable.id, verification.id));
 
-    // this user could never have a confirmed MFA factor yet (enrollMfa()
-    // requires emailVerifiedAt already set), so this only ever depends on
-    // whether the account requires MFA at all
-    const factorClaims = await this.factorState.getFactorClaims(user.id);
-    const access_token = await this.sessionsService.createAccessToken({
-      sub: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: user.firstname,
-      lastName: user.lastname,
-      emailVerified: true,
-      ...factorClaims,
-    });
-
-    return { access_token };
+    // A re-mint, not a Session (see above): the access token the caller
+    // holds says emailVerified: false, and leaving it until their next
+    // refresh would bounce them straight back to the verify-email lobby.
+    return {
+      access_token: await this.sessionsService.remintAccessToken(user.id),
+    };
   }
 
   // Silent no-op if the account is gone or already verified — reachable by
@@ -818,7 +748,7 @@ export class AuthService {
       .delete(userPasswordResetsTable)
       .where(eq(userPasswordResetsTable.id, reset.id));
 
-    await this.sessionsService.revokeAllFamiliesForUser(reset.userId);
+    await this.sessionsService.revokeAll(reset.userId);
   }
 
   // Changes the password of a caller who is already signed in — the
@@ -836,13 +766,13 @@ export class AuthService {
   // (see AuthController.changePassword), which is the same contract
   // token/refresh already has.
   async changePassword(
-    caller: AuthenticatedUser,
+    userId: number,
     currentPassword: string,
     newPassword: string,
     callerRefreshToken: string | undefined,
-  ): Promise<{ access_token: string; refresh_token: string }> {
+  ): Promise<TokenPair> {
     try {
-      await this.verifyPassword(caller.sub, currentPassword);
+      await this.verifyPassword(userId, currentPassword);
     } catch (err) {
       // Rethrown with the field named rather than left as a bare 401. The
       // caller is already authenticated, so saying which input was wrong
@@ -860,10 +790,10 @@ export class AuthService {
     await this.db
       .update(usersTable)
       .set({ password: hashedPassword, updatedAt: new Date() })
-      .where(eq(usersTable.id, caller.sub));
+      .where(eq(usersTable.id, userId));
 
     return this.sessionsService.revokeOthersAndRotate(
-      caller,
+      userId,
       callerRefreshToken,
     );
   }

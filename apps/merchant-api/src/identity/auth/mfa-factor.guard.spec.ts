@@ -57,10 +57,7 @@ function guard(holdsFactor = true) {
 
 const caller = {
   sub: 1,
-  email: 'staff@store.test',
   accountId: 1,
-  firstName: 'Staff',
-  lastName: 'Member',
   emailVerified: true,
   mfaEnrollmentSatisfied: true,
   typ: 'access',

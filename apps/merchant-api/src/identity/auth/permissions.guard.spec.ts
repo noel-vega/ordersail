@@ -55,10 +55,7 @@ async function userWith(permissionKeys: string[]): Promise<number> {
 
 const asUser = (sub: number): AuthenticatedRequest['user'] => ({
   sub,
-  email: 'x@store.test',
   accountId: 1,
-  firstName: 'X',
-  lastName: 'Y',
   emailVerified: true,
   mfaEnrollmentSatisfied: true,
   typ: 'access',

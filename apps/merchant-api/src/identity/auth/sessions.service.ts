@@ -6,7 +6,6 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
-import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import {
   and,
@@ -18,13 +17,66 @@ import {
   usersTable,
 } from 'db/identity';
 import { FactorStateService } from './factor-state.service';
-import { type TokenClaims } from './token-claims';
 
 // a just-rotated-out refresh token, re-presented within this window, replays
 // the same replacement pair instead of revoking the family — see
 // packages/db/src/schema/user-refresh-tokens.ts for why this exists
 const REFRESH_GRACE_WINDOW_MS = 10_000;
 
+// How long a Session survives without being used: the refresh token's
+// lifetime, and — because the cookie helper imports this rather than keeping
+// a literal of its own — the refresh cookie's maxAge too. In seconds, the
+// unit both jsonwebtoken's numeric `expiresIn` and a cookie's `maxAge` take.
+// See session-cookie.ts.
+export const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
+
+// every refusal that concerns a token reads the same, so a caller can't tell
+// a forged token from a revoked one from a deactivated User
+const INVALID_TOKEN = 'Invalid or expired token';
+
+// What a Session is handed out as. The refresh token belongs in the httpOnly
+// cookie and nowhere else — see respondWithSession() in session-cookie.ts.
+export interface TokenPair {
+  access_token: string;
+  refresh_token: string;
+}
+
+// The access token's claims — only what has to be read without a database
+// hit. `accountId` scopes every query; the two booleans gate every
+// authenticated request (EmailVerifiedGuard, MfaEnrollmentGuard), so a claim
+// beats a query per request, and remintAccessToken() keeps them fresh when
+// they change mid-Session. Anything a person can edit — email, name — is
+// deliberately NOT here: it is read from the User row where it's shown
+// (AuthService.me), so an edit shows up at once instead of riding the token
+// forward through every refresh. `typ` is an envelope field the signer adds.
+//
+// One object rather than positional parameters because it is mostly adjacent
+// booleans: a transposed argument would type-check cleanly and silently mint
+// a wrong auth claim.
+interface AccessTokenClaims {
+  sub: number;
+  accountId: number;
+  emailVerified: boolean;
+  mfaEnrollmentSatisfied: boolean;
+}
+
+// The refresh token's whole payload: who, which user_refresh_tokens row, and
+// the type marker. No claims and no personal data — it sits in a cookie for
+// 7 days, and every claim is recomputed from the database when it's redeemed
+// anyway, so anything copied in here could only ever be stale. Tokens minted
+// before OS-527 carry more; the extra fields are simply never read.
+interface RefreshTokenPayload {
+  sub: number;
+  jti: string;
+  typ: 'refresh';
+}
+
+// The one place that knows what a Session is: how it begins (start), how it
+// continues (refreshTokens, remintAccessToken) and how it ends (logout and
+// the revoke* operations). The only code that reads or writes
+// user_refresh_tokens, and the only signer of access and refresh tokens.
+// Every input is a User id and/or the raw refresh cookie value — callers
+// never decode a token, assemble a claim or see a family id.
 @Injectable()
 export class SessionsService {
   constructor(
@@ -32,6 +84,46 @@ export class SessionsService {
     private jwtService: JwtService,
     private factorState: FactorStateService,
   ) {}
+
+  // Starts a Session for a User who has just proved who they are. Every
+  // sign-in path ends here — password sign-in with no Factor held, the
+  // Factor challenge completions, passkey-only sign-in, signup,
+  // accept-invite — and hands over the User id and nothing else. The row is
+  // loaded, a missing or deactivated User is refused, and every claim is
+  // computed from the database by claimsFor(), so a sign-in path cannot
+  // forget a check: it doesn't perform any. That is what makes "a User
+  // deactivated between the password and the Factor challenge gets no
+  // Session" structural rather than something each path has to remember
+  // (OS-504 found two that hadn't).
+  //
+  // The refusal is a bare 401 rather than INVALID_TOKEN: no token is
+  // involved yet, and it reads the same as a wrong password — no oracle for
+  // "this User was just switched off".
+  async start(userId: number): Promise<TokenPair> {
+    const claims = await this.claimsFor(userId);
+    // A fresh family id is what makes this a new Session rather than the
+    // continuation of one — see mintRefreshToken.
+    const { token: refresh_token } = await this.mintRefreshToken(
+      userId,
+      randomUUID(),
+    );
+    return {
+      access_token: await this.signAccessToken(claims),
+      refresh_token,
+    };
+  }
+
+  // A fresh access token for a caller whose claims just changed mid-Session
+  // — email verified, first required Factor enrolled — so they aren't held
+  // at a gate they have already cleared until their next refresh. Computed
+  // from the database like every other mint, never by patching the token
+  // they presented: that would carry its other claims forward unexamined
+  // (a re-mint after enrolling a Factor used to copy a possibly stale
+  // emailVerified this way). The refresh token is untouched; it carries no
+  // claims to go stale.
+  async remintAccessToken(userId: number): Promise<string> {
+    return this.signAccessToken(await this.claimsFor(userId, INVALID_TOKEN));
+  }
 
   // The session half of AuthService.changePassword, which calls this once
   // the new password is saved.
@@ -50,28 +142,28 @@ export class SessionsService {
   // preserves reuse detection — if the stolen copy is ever presented it hits
   // the replacedByJti path and takes the family down with it.
   async revokeOthersAndRotate(
-    caller: AuthenticatedUser,
+    userId: number,
     callerRefreshToken: string | undefined,
-  ): Promise<{ access_token: string; refresh_token: string }> {
+  ): Promise<TokenPair> {
     const callersOwn = await this.callersLiveRefreshRecord(
-      caller.sub,
+      userId,
       callerRefreshToken,
     );
 
     // Spared here only so the rotation below can revoke-and-replace it; a
     // family killed outright has nothing left to rotate.
-    await this.revokeAllFamiliesForUser(caller.sub, callersOwn?.familyId);
-
-    // Recomputed from the database rather than copied off the access token
-    // the caller presented, for the same reason refreshTokens does it.
-    const claims = await this.freshClaims(caller);
+    await this.revokeAllFamiliesForUser(userId, callersOwn?.familyId);
 
     // No usable cookie (missing, expired, or already rotated out) leaves no
-    // family to continue, so the caller starts a fresh one. They asked for
-    // this while holding a valid access token and just proved they know the
-    // password, so signing them out instead would be a gratuitous refusal.
+    // family to continue, so the caller starts a fresh Session. They asked
+    // for this while holding a valid access token and just proved they know
+    // the password, so signing them out instead would be a gratuitous
+    // refusal.
     const rotated = callersOwn
-      ? await this.rotateRefreshRecord(callersOwn, claims)
+      ? await this.rotateRefreshRecord(
+          callersOwn,
+          await this.claimsFor(userId, INVALID_TOKEN),
+        )
       : null;
     if (rotated) {
       return rotated;
@@ -87,10 +179,7 @@ export class SessionsService {
       await this.revokeFamily(callersOwn.familyId);
     }
 
-    return {
-      access_token: await this.createAccessToken(claims),
-      refresh_token: await this.createRefreshToken(claims, randomUUID()),
-    };
+    return this.start(userId);
   }
 
   // "Sign out everywhere else" — the same sweep changePassword performs,
@@ -113,11 +202,11 @@ export class SessionsService {
   // family to identify as "this one" — and that case is refused outright,
   // with nothing revoked. Both alternatives are worse. Revoking everything
   // signs out the one person who asked to stay. Revoking everything and then
-  // starting the caller a fresh family looks kind but breaks the paragraph
+  // starting the caller a fresh Session looks kind but breaks the paragraph
   // above: a bare access token, good for 8h at most, would buy a 7-day
   // refresh token that rotates indefinitely, from an endpoint that is only
   // allowed to skip the password *because* it never grants anything.
-  // changePassword does start a fresh family on its own no-cookie path, but
+  // changePassword does start a fresh Session on its own no-cookie path, but
   // it has verified the password by then; this has verified nothing.
   //
   // A browser essentially never gets here — the cookie is httpOnly, path "/",
@@ -139,6 +228,15 @@ export class SessionsService {
     }
 
     await this.revokeAllFamiliesForUser(userId, callersOwn.familyId);
+  }
+
+  // Ends every Session this User holds, on every browser, the caller's
+  // included — for the moments nothing of theirs should survive. Today that
+  // is AuthService.resetPassword: whoever prompted the reset is locked out
+  // along with everyone else, and the User signs in again with the new
+  // password.
+  async revokeAll(userId: number): Promise<void> {
+    await this.revokeAllFamiliesForUser(userId);
   }
 
   // The caller's own live refresh-token row, or null if the cookie never
@@ -174,9 +272,9 @@ export class SessionsService {
   // user is harmless — the userId filter means it can't match, so this can
   // never spare a session it wasn't meant to.
   //
-  // Public because AuthService.resetPassword ends with the unconditional
-  // form of this sweep (no family spared).
-  async revokeAllFamiliesForUser(
+  // Private because a family id is how a Session is stored, not something a
+  // caller should hold: the public forms take a User id and a cookie value.
+  private async revokeAllFamiliesForUser(
     userId: number,
     exceptFamilyId?: string | null,
   ): Promise<void> {
@@ -201,67 +299,60 @@ export class SessionsService {
     return await this.jwtService.signAsync(payload, { expiresIn });
   }
 
-  async createAccessToken(claims: TokenClaims) {
+  private async signAccessToken(claims: AccessTokenClaims) {
     return await this.sign({ ...claims, typ: 'access' }, '8h');
   }
 
-  private async signRefreshToken(claims: TokenClaims, jti: string) {
-    return await this.sign({ ...claims, typ: 'refresh', jti }, '7d');
+  private async signRefreshToken(userId: number, jti: string) {
+    const payload: RefreshTokenPayload = { sub: userId, jti, typ: 'refresh' };
+    return await this.sign({ ...payload }, REFRESH_TOKEN_TTL_SECONDS);
   }
 
   // Allocates a fresh jti, records it against `familyId`, and signs a token
-  // for it. `familyId` is fresh (randomUUID()) for a brand-new session
-  // (signin/signup/accept-invite, see AuthController) and carried through
-  // unchanged on every rotation (refreshTokens) — it's the unit reuse
-  // detection revokes as a whole.
+  // for it. `familyId` is fresh (randomUUID()) for a brand-new Session
+  // (start) and carried through unchanged on every rotation (refreshTokens)
+  // — it's the unit reuse detection revokes as a whole.
   private async mintRefreshToken(
-    claims: TokenClaims,
+    userId: number,
     familyId: string,
   ): Promise<{ token: string; jti: string }> {
     const jti = randomUUID();
     await this.db
       .insert(userRefreshTokensTable)
-      .values({ userId: claims.sub, jti, familyId });
-    const token = await this.signRefreshToken(claims, jti);
+      .values({ userId, jti, familyId });
+    const token = await this.signRefreshToken(userId, jti);
     return { token, jti };
   }
 
-  async createRefreshToken(
-    claims: TokenClaims,
-    familyId: string,
-  ): Promise<string> {
-    const { token } = await this.mintRefreshToken(claims, familyId);
-    return token;
-  }
-
-  // The claim set for a caller, recomputed against the database rather than
-  // carried over from whatever token they presented. deactivatedAt,
-  // emailVerifiedAt and the factor claims are all baked in at mint time, so
-  // trusting the presented token would carry a stale answer forward through
-  // every later token instead of picking up a change made since.
-  //
-  // Only the identity fields ride along from `identity` — those can't drift
-  // without a re-mint anyway.
-  private async freshClaims(identity: AuthenticatedUser): Promise<TokenClaims> {
+  // The one function that decides what a token asserts: given a User id and
+  // nothing else, every claim is computed from the database. Nothing is
+  // carried over from a token the caller presented — deactivatedAt,
+  // emailVerifiedAt, the Account and the Factor claim are all baked in at
+  // mint time, so trusting a presented token would carry a stale answer
+  // forward through every later one instead of picking up a change made
+  // since. Every mint goes through here, which is also what refuses a
+  // missing or deactivated User on every path at once.
+  private async claimsFor(
+    userId: number,
+    refusal?: string,
+  ): Promise<AccessTokenClaims> {
     const [userRow] = await this.db
       .select({
+        accountId: usersTable.accountId,
         deactivatedAt: usersTable.deactivatedAt,
         emailVerifiedAt: usersTable.emailVerifiedAt,
       })
       .from(usersTable)
-      .where(eq(usersTable.id, identity.sub));
+      .where(eq(usersTable.id, userId));
     if (!userRow || userRow.deactivatedAt) {
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new UnauthorizedException(refusal);
     }
 
     return {
-      sub: identity.sub,
-      email: identity.email,
-      accountId: identity.accountId,
-      firstName: identity.firstName,
-      lastName: identity.lastName,
+      sub: userId,
+      accountId: userRow.accountId,
       emailVerified: userRow.emailVerifiedAt !== null,
-      ...(await this.factorState.getFactorClaims(identity.sub)),
+      ...(await this.factorState.getFactorClaims(userId)),
     };
   }
 
@@ -295,8 +386,8 @@ export class SessionsService {
   // rotating a session means.
   private async rotateRefreshRecord(
     record: { id: number; familyId: string },
-    claims: TokenClaims,
-  ): Promise<{ access_token: string; refresh_token: string } | null> {
+    claims: AccessTokenClaims,
+  ): Promise<TokenPair | null> {
     const nextJti = randomUUID();
     const won = await this.db.transaction(async (tx) => {
       const [retired] = await tx
@@ -321,8 +412,8 @@ export class SessionsService {
     if (!won) return null;
 
     return {
-      access_token: await this.createAccessToken(claims),
-      refresh_token: await this.signRefreshToken(claims, nextJti),
+      access_token: await this.signAccessToken(claims),
+      refresh_token: await this.signRefreshToken(claims.sub, nextJti),
     };
   }
 
@@ -347,28 +438,19 @@ export class SessionsService {
   // side. The one exception is the grace window below, for concurrent
   // *legitimate* redemptions of the same token (two tabs, a retried
   // request) — see user-refresh-tokens.ts.
-  async refreshTokens(
-    refreshToken: string,
-  ): Promise<{ access_token: string; refresh_token: string }> {
-    let payload: AuthenticatedUser;
-    try {
-      payload =
-        await this.jwtService.verifyAsync<AuthenticatedUser>(refreshToken);
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
-
-    if (payload.typ !== 'refresh' || !payload.jti) {
-      throw new UnauthorizedException('Invalid or expired token');
+  async refreshTokens(refreshToken: string): Promise<TokenPair> {
+    const payload = await this.verifyRefreshToken(refreshToken);
+    if (!payload) {
+      throw new UnauthorizedException(INVALID_TOKEN);
     }
 
     // a staff member deactivated mid-session still holds a valid 7-day
-    // refresh token — freshClaims re-checks the row here so they can't keep
+    // refresh token — claimsFor re-checks the row here so they can't keep
     // minting access tokens (gated routes already 403 them; this also cuts
     // off the authenticated-but-ungated ones), and recomputes the
-    // emailVerified/factor claims rather than carrying the presented
-    // token's stale answers forward through every future rotation
-    const claims = await this.freshClaims(payload);
+    // emailVerified/factor claims so a change made since the last mint is
+    // picked up at the next rotation
+    const claims = await this.claimsFor(payload.sub, INVALID_TOKEN);
 
     let [record] = await this.db
       .select()
@@ -413,8 +495,11 @@ export class SessionsService {
         // unnecessary rotation (or worse, get mistaken for reuse)
         if (replacement && !replacement.revokedAt) {
           return {
-            access_token: await this.createAccessToken(claims),
-            refresh_token: await this.signRefreshToken(claims, replacement.jti),
+            access_token: await this.signAccessToken(claims),
+            refresh_token: await this.signRefreshToken(
+              claims.sub,
+              replacement.jti,
+            ),
           };
         }
       }
@@ -430,6 +515,31 @@ export class SessionsService {
     throw new UnauthorizedException('Invalid or expired token');
   }
 
+  // The payload of a presented refresh token, or null if it isn't one: a bad
+  // signature, an expired token, or — the check that matters most — a token
+  // of another type. An access token carries a valid signature too; without
+  // the `typ` test it would be redeemable here. Only sub/jti/typ are read,
+  // so a token minted before OS-527 (which also carried the claim set) still
+  // verifies and its extra fields are ignored.
+  private async verifyRefreshToken(
+    refreshToken: string,
+  ): Promise<RefreshTokenPayload | null> {
+    let payload: Partial<RefreshTokenPayload>;
+    try {
+      payload =
+        await this.jwtService.verifyAsync<Partial<RefreshTokenPayload>>(
+          refreshToken,
+        );
+    } catch {
+      return null;
+    }
+
+    if (payload.typ !== 'refresh' || !payload.jti || !payload.sub) {
+      return null;
+    }
+    return { sub: payload.sub, jti: payload.jti, typ: 'refresh' };
+  }
+
   // The row a presented refresh token names, or null if it names none.
   // Deliberately total rather than throwing: both callers (logout,
   // changePassword) treat an invalid/expired/unknown token as "no session to
@@ -438,15 +548,8 @@ export class SessionsService {
   // caller decides what that means (logout doesn't care; changePassword only
   // rotates a row that's still live).
   private async refreshRecordFor(refreshToken: string) {
-    let payload: AuthenticatedUser;
-    try {
-      payload =
-        await this.jwtService.verifyAsync<AuthenticatedUser>(refreshToken);
-    } catch {
-      return null;
-    }
-
-    if (payload.typ !== 'refresh' || !payload.jti) {
+    const payload = await this.verifyRefreshToken(refreshToken);
+    if (!payload) {
       return null;
     }
 

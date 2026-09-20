@@ -34,12 +34,12 @@ function guard() {
   return new AuthGuard(jwt, new Reflector());
 }
 
+// the access token's claim set as SessionsService mints it
 const payload = {
   sub: 1,
-  email: 'x@store.test',
   accountId: 1,
-  firstName: 'X',
-  lastName: 'Y',
+  emailVerified: true,
+  mfaEnrollmentSatisfied: true,
 };
 
 describe('AuthGuard typ enforcement (OS-467)', () => {

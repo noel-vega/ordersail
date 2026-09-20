@@ -35,10 +35,7 @@ function guard() {
 
 const unsatisfiedUser: AuthenticatedRequest['user'] = {
   sub: 1,
-  email: 'x@store.test',
   accountId: 1,
-  firstName: 'X',
-  lastName: 'Y',
   emailVerified: true,
   mfaEnrollmentSatisfied: false,
   typ: 'access',

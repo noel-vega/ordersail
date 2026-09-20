@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   Controller,
   Get,
@@ -11,9 +10,13 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { AuthService, claimsFromSignInResult } from './auth.service';
+import { AuthService } from './auth.service';
 import { SessionsService } from './sessions.service';
-import { claimsFromUser } from './token-claims';
+import {
+  clearSessionCookie,
+  readSessionCookie,
+  respondWithSession,
+} from './session-cookie';
 import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
@@ -43,7 +46,6 @@ import {
   type AuthenticatedUser,
   NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
-import { env } from 'src/shared/env';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ApiBadRequestResponse,
@@ -56,8 +58,11 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 
-const REFRESH_TOKEN_COOKIE = 'refresh_token';
-
+// Every handler that ends with a Session — a sign-in, a refresh, a rotation
+// — is handed a token pair by the service it called and finishes with
+// respondWithSession(), which writes the refresh cookie and returns the
+// access-token body. Nothing here starts a Session, assembles a claim or
+// names the cookie; see session-cookie.ts and SessionsService.
 @Controller('auth')
 @NoMfaFactorRequired()
 export class AuthController {
@@ -69,16 +74,6 @@ export class AuthController {
     private readonly sessionsService: SessionsService,
     private readonly usersService: UsersService,
   ) {}
-
-  private setRefreshCookie(res: FastifyReply, refreshToken: string): void {
-    res.setCookie(REFRESH_TOKEN_COOKIE, refreshToken, {
-      httpOnly: true, // Prevents client-side JS from accessing the cookie
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax', // Helps protect against CSRF attacks
-      path: '/', // Scopes the cookie to the entire domain
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-    });
-  }
 
   @Public()
   // brute-force/credential-stuffing protection — tighter than the 100/min
@@ -112,14 +107,7 @@ export class AuthController {
       };
     }
 
-    const refreshToken = await this.sessionsService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
+    return respondWithSession(res, result);
   }
 
   // exchanges a signin()-issued MFA challenge for real tokens — public
@@ -135,19 +123,10 @@ export class AuthController {
     @Body() dto: MfaVerifyDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.authService.verifyMfaChallenge(
-      dto.challengeToken,
-      dto.code,
+    return respondWithSession(
+      res,
+      await this.authService.verifyMfaChallenge(dto.challengeToken, dto.code),
     );
-
-    const refreshToken = await this.sessionsService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
   }
 
   // exempt from MfaEnrollmentGuard — a caller gated into forced enrollment
@@ -175,22 +154,9 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: MfaConfirmDto,
   ): Promise<MfaConfirmResponseDto> {
-    const result = await this.authService.confirmMfa(
-      user.sub,
-      dto.code,
-      dto.password,
-    );
-
-    // this caller may have been gated into forced enrollment
-    // (mfaEnrollmentSatisfied: false baked into their current access
-    // token) — re-mint immediately with the now-satisfied claim so they
-    // aren't stuck until their token naturally refreshes
-    const access_token = await this.sessionsService.createAccessToken({
-      ...claimsFromUser(user),
-      mfaEnrollmentSatisfied: true,
-    });
-
-    return { recoveryCodes: result.recoveryCodes, access_token };
+    // comes back with a re-minted access token as well as the codes — see
+    // AuthService.confirmMfa. The refresh cookie is untouched.
+    return this.authService.confirmMfa(user.sub, dto.code, dto.password);
   }
 
   @AuthenticatedOnly()
@@ -230,16 +196,7 @@ export class AuthController {
     @Body() signupDto: SignUpDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.authService.signup(signupDto);
-
-    const refreshToken = await this.sessionsService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
+    return respondWithSession(res, await this.authService.signup(signupDto));
   }
 
   @Public()
@@ -252,16 +209,10 @@ export class AuthController {
     @Body() acceptInviteDto: AcceptInviteDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.authService.acceptInvite(acceptInviteDto);
-
-    const refreshToken = await this.sessionsService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
+    return respondWithSession(
+      res,
+      await this.authService.acceptInvite(acceptInviteDto),
     );
-
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
   }
 
   @Public()
@@ -290,7 +241,7 @@ export class AuthController {
   // AuthService.verifyEmail). Exempt from both gates: a caller here is
   // unverified by definition, and may also be MFA-gated. Returns a re-minted
   // access token carrying emailVerified: true (same idea as mfa/confirm);
-  // the refresh cookie is untouched and picks the claim up on next rotation.
+  // the refresh cookie is untouched — it carries no claims to go stale.
   @AuthenticatedOnly()
   @SkipEmailVerification()
   @SkipMfaEnrollment()
@@ -428,16 +379,15 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const { access_token, refresh_token } =
+    return respondWithSession(
+      res,
       await this.authService.changePassword(
-        user,
+        user.sub,
         dto.currentPassword,
         dto.newPassword,
-        req.cookies[REFRESH_TOKEN_COOKIE],
-      );
-
-    this.setRefreshCookie(res, refresh_token);
-    return { access_token };
+        readSessionCookie(req),
+      ),
+    );
   }
 
   // Under /auth/me for the same reason change-password is: there is no user
@@ -472,7 +422,7 @@ export class AuthController {
   ): Promise<void> {
     await this.sessionsService.revokeOtherSessions(
       user.sub,
-      req.cookies[REFRESH_TOKEN_COOKIE],
+      readSessionCookie(req),
     );
   }
 
@@ -483,13 +433,11 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<void> {
-    const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
+    const refreshToken = readSessionCookie(req);
     if (refreshToken) {
       await this.sessionsService.logout(refreshToken);
     }
-    // refresh_token is httpOnly, so it can only be cleared by the server —
-    // the client can't just delete it itself
-    res.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
+    clearSessionCookie(res);
   }
 
   @Public()
@@ -501,14 +449,14 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
+    const refreshToken = readSessionCookie(req);
     if (!refreshToken) {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    const { access_token, refresh_token } =
-      await this.sessionsService.refreshTokens(refreshToken);
-    this.setRefreshCookie(res, refresh_token);
-    return { access_token };
+    return respondWithSession(
+      res,
+      await this.sessionsService.refreshTokens(refreshToken),
+    );
   }
 }

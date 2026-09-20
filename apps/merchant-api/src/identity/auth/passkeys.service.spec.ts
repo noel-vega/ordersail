@@ -12,6 +12,7 @@ import {
   eq,
   userMfaRecoveryCodesTable,
   userPasskeysTable,
+  userRefreshTokensTable,
   usersTable,
   webauthnChallengesTable,
 } from 'db/identity';
@@ -33,7 +34,11 @@ import { FactorStateService } from './factor-state.service';
 import { SessionsService } from './sessions.service';
 import { PasskeysService } from './passkeys.service';
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
-import { type AuthenticatedUser } from 'src/shared/auth/decorators';
+import {
+  TEST_JWT_SECRET,
+  expectWorkingSession,
+  presentAccessToken,
+} from './sessions.spec-support';
 
 // The WebAuthn verifier itself is mocked. Its COSE/CBOR parsing and
 // signature checks are @simplewebauthn's code, already tested upstream, and
@@ -97,7 +102,7 @@ async function buildRef() {
       { provide: DRIZZLE, useValue: db },
       {
         provide: JwtService,
-        useValue: new JwtService({ secret: 'test-secret' }),
+        useValue: new JwtService({ secret: TEST_JWT_SECRET }),
       },
       {
         provide: UsersService,
@@ -142,23 +147,6 @@ async function seedUser(
     factorRequiredAt: opts.factorRequiredAt ?? null,
   });
   return { account, user };
-}
-
-function principal(user: {
-  id: number;
-  accountId: number;
-  email: string;
-}): AuthenticatedUser {
-  return {
-    sub: user.id,
-    email: user.email,
-    accountId: user.accountId,
-    firstName: 'Staff',
-    lastName: 'Member',
-    emailVerified: true,
-    mfaEnrollmentSatisfied: true,
-    typ: 'access',
-  };
 }
 
 // A RegistrationResponseJSON is only ever handed to the mocked verifier, so
@@ -232,16 +220,22 @@ describe('PasskeysService — registration (OS-485)', () => {
     ]);
   });
 
-  it('stores the credential and re-mints as enrollment-satisfied', async () => {
+  it('stores the credential and re-mints an access token the enrollment gate now accepts', async () => {
+    // a staff member at the join gate (OS-494): the token they registered
+    // with is held there, and the one they get back must not be
     const { user } = await seedUser({ factorRequiredAt: new Date() });
-    const service = await build();
+    const ref = await buildRef();
+    const service = ref.get(PasskeysService);
+    const session = await ref.get(SessionsService).start(user.id);
+    expect(await presentAccessToken(session.access_token)).toEqual({
+      admitted: false,
+      refusal: 'MFA enrollment required',
+    });
     const challenge = await optionsChallengeFor(service, user.id);
     verifierReturns('new-credential');
 
     const result = await service.verifyRegistration(
-      // a staff member at the join gate (OS-494): the token they registered
-      // with says unsatisfied, and the one they get back must not
-      { ...principal(user), mfaEnrollmentSatisfied: false },
+      user.id,
       responseFor(challenge) as never,
       'MacBook',
     );
@@ -250,13 +244,15 @@ describe('PasskeysService — registration (OS-485)', () => {
       nickname: 'MacBook',
       backedUp: true,
     });
-    const payload = new JwtService({ secret: 'test-secret' }).decode<{
-      mfaEnrollmentSatisfied: boolean;
-    }>(result.access_token);
-    // forced true, the same as confirmMfa — carrying the stale claim over
-    // would leave them gated until the next refresh. Safe since OS-489:
-    // sign-in challenges on a passkey, so holding one really is enrollment.
-    expect(payload.mfaEnrollmentSatisfied).toBe(true);
+    // the same as confirmMfa — leaving them with the stale claim would keep
+    // them gated until the next refresh. Safe since OS-489: sign-in
+    // challenges on a passkey, so holding one really is enrollment.
+    expect(await presentAccessToken(result.access_token)).toMatchObject({
+      admitted: true,
+      user: { sub: user.id },
+    });
+    // a re-mint, not a new Session
+    expect(await db.select().from(userRefreshTokensTable)).toHaveLength(1);
   });
 
   it('never returns the credential id or public key', async () => {
@@ -266,7 +262,7 @@ describe('PasskeysService — registration (OS-485)', () => {
     verifierReturns('secret-credential-id');
 
     const result = await service.verifyRegistration(
-      principal(user),
+      user.id,
       responseFor(challenge) as never,
       undefined,
     );
@@ -284,7 +280,7 @@ describe('PasskeysService — registration (OS-485)', () => {
       const challenge = await optionsChallengeFor(service, user.id);
       verifierReturns('first');
       await service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challenge) as never,
         undefined,
       );
@@ -292,7 +288,7 @@ describe('PasskeysService — registration (OS-485)', () => {
       verifierReturns('second');
       await expect(
         service.verifyRegistration(
-          principal(user),
+          user.id,
           responseFor(challenge) as never,
           undefined,
         ),
@@ -311,7 +307,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
       await expect(
         service.verifyRegistration(
-          principal(user),
+          user.id,
           responseFor(stale.challenge) as never,
           undefined,
         ),
@@ -330,7 +326,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
       await expect(
         service.verifyRegistration(
-          principal(user),
+          user.id,
           responseFor(other.challenge) as never,
           undefined,
         ),
@@ -348,7 +344,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
       await expect(
         service.verifyRegistration(
-          principal(mine),
+          mine.id,
           responseFor(theirChallenge) as never,
           undefined,
         ),
@@ -382,7 +378,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
     await expect(
       service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challenge) as never,
         undefined,
       ),
@@ -397,7 +393,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
     await expect(
       service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challenge) as never,
         undefined,
       ),
@@ -414,7 +410,7 @@ describe('PasskeysService — recovery codes (OS-485)', () => {
     const challenge = await optionsChallengeFor(service, user.id);
     verifierReturns(credentialId);
     return service.verifyRegistration(
-      principal(user),
+      user.id,
       responseFor(challenge) as never,
       undefined,
     );
@@ -467,12 +463,12 @@ describe('PasskeysService — recovery codes (OS-485)', () => {
 
     const results = await Promise.allSettled([
       service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challengeA) as never,
         undefined,
       ),
       service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challengeB) as never,
         undefined,
       ),
@@ -503,7 +499,7 @@ describe('PasskeysService — recovery codes (OS-485)', () => {
     verifierReturns('locked');
 
     await service.verifyRegistration(
-      principal(user),
+      user.id,
       responseFor(challenge) as never,
       undefined,
     );
@@ -673,8 +669,8 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
   // TOTP factor as well, because until OS-489 signin only challenges on
   // TOTP — which is also the realistic shape here: someone who holds both
   // and is offered the passkey first.
-  async function seedChallengedUser() {
-    const { user } = await seedUser();
+  async function seedChallengedUser(opts: Parameters<typeof seedUser>[0] = {}) {
+    const { user } = await seedUser(opts);
     await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
     const passkey = await insertUserPasskey(db, {
       userId: user.id,
@@ -732,19 +728,24 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
     expect(row).toMatchObject({ type: 'authentication', userId: user.id });
   });
 
-  it('exchanges a valid assertion for tokens and stamps the credential', async () => {
-    const { passkey, service, token } = await seedChallengedUser();
+  it('exchanges a valid assertion for a Session and stamps the credential', async () => {
+    const { user, passkey, service, sessionsService, token } =
+      await seedChallengedUser({ requireMfaAt: new Date() });
     const options = await service.getChallengeAuthenticationOptions(token);
     assertionVerifies(7);
 
-    const result = await service.verifyChallengeAssertion(
+    const session = await service.verifyChallengeAssertion(
       token,
       assertionFor(options.challenge) as never,
     );
 
-    expect(result.access_token).toBeTruthy();
-    // proving possession always satisfies an account-wide requirement
-    expect(result.mfaEnrollmentSatisfied).toBe(true);
+    // past every gate, the account-wide requirement included: the Factor
+    // they just proved is what satisfies it
+    expect(await presentAccessToken(session.access_token)).toMatchObject({
+      admitted: true,
+      user: { sub: user.id },
+    });
+    await expectWorkingSession(sessionsService, session, user.id);
 
     const [stored] = await db
       .select()
@@ -777,18 +778,10 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
 
   it('rejects an access token presented as a challenge token', async () => {
     const { user, service, sessionsService } = await seedChallengedUser();
-    const accessToken = await sessionsService.createAccessToken({
-      sub: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: 'Staff',
-      lastName: 'Member',
-      emailVerified: true,
-      mfaEnrollmentSatisfied: false,
-    });
+    const { access_token } = await sessionsService.start(user.id);
 
     await expect(
-      service.getChallengeAuthenticationOptions(accessToken),
+      service.getChallengeAuthenticationOptions(access_token),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
@@ -835,6 +828,7 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
       .from(userPasskeysTable)
       .where(eq(userPasskeysTable.id, passkey.id));
     expect(stored?.lastUsedAt).toBeNull();
+    expect(await db.select().from(userRefreshTokensTable)).toHaveLength(0);
   });
 
   // a registration challenge must not be redeemable as an assertion
@@ -935,8 +929,10 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
 });
 
 describe('PasskeysService — usernameless sign-in (OS-490)', () => {
-  async function seedCredential(opts: { deactivated?: boolean } = {}) {
-    const { user } = await seedUser();
+  async function seedCredential(
+    opts: { deactivated?: boolean; requireMfaAt?: Date } = {},
+  ) {
+    const { user } = await seedUser({ requireMfaAt: opts.requireMfaAt });
     if (opts.deactivated) {
       await db
         .update(usersTable)
@@ -953,8 +949,14 @@ describe('PasskeysService — usernameless sign-in (OS-490)', () => {
       .select({ handle: usersTable.webauthnHandle })
       .from(usersTable)
       .where(eq(usersTable.id, user.id));
-    const service = await build();
-    return { user, passkey, service, handle: row.handle };
+    const ref = await buildRef();
+    return {
+      user,
+      passkey,
+      service: ref.get(PasskeysService),
+      sessionsService: ref.get(SessionsService),
+      handle: row.handle,
+    };
   }
 
   // A real browser returns userHandle BASE64URL-ENCODED — registration hands
@@ -1009,17 +1011,23 @@ describe('PasskeysService — usernameless sign-in (OS-490)', () => {
   });
 
   it('resolves the user from the credential alone and signs them in', async () => {
-    const { user, passkey, service, handle } = await seedCredential();
+    const { user, passkey, service, sessionsService, handle } =
+      await seedCredential({ requireMfaAt: new Date() });
     const options = await service.getSignInOptions();
     assertionVerifies(3);
 
-    const result = await service.verifySignIn(
+    const session = await service.verifySignIn(
       assertionFor(options.challenge, { userHandle: handle }) as never,
     );
 
-    expect(result.userId).toBe(user.id);
-    // a user-verified assertion is possession + biometric in one gesture
-    expect(result.mfaEnrollmentSatisfied).toBe(true);
+    // A Session like any other sign-in's, for the User the credential names
+    // — and past the account's MFA requirement: a user-verified assertion is
+    // possession + biometric in one gesture.
+    expect(await presentAccessToken(session.access_token)).toMatchObject({
+      admitted: true,
+      user: { sub: user.id, accountId: user.accountId },
+    });
+    await expectWorkingSession(sessionsService, session, user.id);
 
     const [stored] = await db
       .select()
