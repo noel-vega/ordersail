@@ -35,7 +35,7 @@ export function JoinView(props: { token: string }) {
 
   // This step is a convenience, not the enforcement: accepting the invite
   // stamped users.factor_required_at, so leaving now lands on
-  // /app/settings/security?required=true and every gated API call 403s
+  // /app/me/security?required=true and every gated API call 403s
   // until a factor exists. Hence no "Not now".
   const factorSetup = useFactorSetup({
     onEnrolled: () => navigate({ to: appConfig.homeRoute }),

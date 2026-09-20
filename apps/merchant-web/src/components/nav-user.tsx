@@ -71,7 +71,7 @@ export function NavUser() {
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem render={<Link to="/app/settings/security" />}>
+            <DropdownMenuItem render={<Link to="/app/me/security" />}>
               <ShieldIcon />
               Security
             </DropdownMenuItem>

@@ -19,6 +19,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as App403RouteImport } from './routes/app/403'
+import { Route as AppMeRouteRouteImport } from './routes/app/me/route'
 import { Route as AppProductsRouteRouteImport } from './routes/app/products/route'
 import { Route as AppRolesRouteRouteImport } from './routes/app/roles/route'
 import { Route as AppCartsIndexRouteImport } from './routes/app/carts/index'
@@ -32,6 +33,9 @@ import { Route as AppInventoryIndexRouteImport } from './routes/app/inventory/in
 import { Route as AppInventoryMovementsRouteImport } from './routes/app/inventory/movements'
 import { Route as AppLocationsIndexRouteImport } from './routes/app/locations/index'
 import { Route as AppLocationsCreateRouteImport } from './routes/app/locations/create'
+import { Route as AppMeIndexRouteImport } from './routes/app/me/index'
+import { Route as AppMeProfileRouteImport } from './routes/app/me/profile'
+import { Route as AppMeSecurityRouteImport } from './routes/app/me/security'
 import { Route as AppOrdersIndexRouteImport } from './routes/app/orders/index'
 import { Route as AppOrdersIdRouteImport } from './routes/app/orders/$id'
 import { Route as AppPaymentsIndexRouteImport } from './routes/app/payments/index'
@@ -43,7 +47,6 @@ import { Route as AppRolesIndexRouteImport } from './routes/app/roles/index'
 import { Route as AppRolesIdRouteImport } from './routes/app/roles/$id'
 import { Route as AppRolesCreateRouteImport } from './routes/app/roles/create'
 import { Route as AppSettingsIndexRouteImport } from './routes/app/settings/index'
-import { Route as AppSettingsSecurityRouteImport } from './routes/app/settings/security'
 import { Route as AppUsersIndexRouteImport } from './routes/app/users/index'
 import { Route as AppUsersIdRouteImport } from './routes/app/users/$id'
 import { Route as AppUsersCreateRouteImport } from './routes/app/users/create'
@@ -100,6 +103,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const App403Route = App403RouteImport.update({
   id: '/403',
   path: '/403',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppMeRouteRoute = AppMeRouteRouteImport.update({
+  id: '/me',
+  path: '/me',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppProductsRouteRoute = AppProductsRouteRouteImport.update({
@@ -167,6 +175,21 @@ const AppLocationsCreateRoute = AppLocationsCreateRouteImport.update({
   path: '/locations/create',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppMeIndexRoute = AppMeIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppMeRouteRoute,
+} as any)
+const AppMeProfileRoute = AppMeProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppMeRouteRoute,
+} as any)
+const AppMeSecurityRoute = AppMeSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => AppMeRouteRoute,
+} as any)
 const AppOrdersIndexRoute = AppOrdersIndexRouteImport.update({
   id: '/orders/',
   path: '/orders/',
@@ -222,11 +245,6 @@ const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   path: '/settings/',
   getParentRoute: () => AppRouteRoute,
 } as any)
-const AppSettingsSecurityRoute = AppSettingsSecurityRouteImport.update({
-  id: '/settings/security',
-  path: '/settings/security',
-  getParentRoute: () => AppRouteRoute,
-} as any)
 const AppUsersIndexRoute = AppUsersIndexRouteImport.update({
   id: '/users/',
   path: '/users/',
@@ -274,6 +292,7 @@ export interface FileRoutesByFullPath {
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/app/me': typeof AppMeRouteRouteWithChildren
   '/app/products': typeof AppProductsRouteRouteWithChildren
   '/app/roles': typeof AppRolesRouteRouteWithChildren
   '/app/403': typeof App403Route
@@ -282,12 +301,13 @@ export interface FileRoutesByFullPath {
   '/app/customers/$id': typeof AppCustomersIdRoute
   '/app/inventory/movements': typeof AppInventoryMovementsRoute
   '/app/locations/create': typeof AppLocationsCreateRoute
+  '/app/me/profile': typeof AppMeProfileRoute
+  '/app/me/security': typeof AppMeSecurityRoute
   '/app/orders/$id': typeof AppOrdersIdRoute
   '/app/products/$id': typeof AppProductsIdRoute
   '/app/products/create': typeof AppProductsCreateRoute
   '/app/roles/$id': typeof AppRolesIdRoute
   '/app/roles/create': typeof AppRolesCreateRoute
-  '/app/settings/security': typeof AppSettingsSecurityRoute
   '/app/users/$id': typeof AppUsersIdRoute
   '/app/users/create': typeof AppUsersCreateRoute
   '/app/carts/': typeof AppCartsIndexRoute
@@ -297,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/app/failed-orders/': typeof AppFailedOrdersIndexRoute
   '/app/inventory/': typeof AppInventoryIndexRoute
   '/app/locations/': typeof AppLocationsIndexRoute
+  '/app/me/': typeof AppMeIndexRoute
   '/app/orders/': typeof AppOrdersIndexRoute
   '/app/payments/': typeof AppPaymentsIndexRoute
   '/app/pos-devices/': typeof AppPosDevicesIndexRoute
@@ -323,12 +344,13 @@ export interface FileRoutesByTo {
   '/app/customers/$id': typeof AppCustomersIdRoute
   '/app/inventory/movements': typeof AppInventoryMovementsRoute
   '/app/locations/create': typeof AppLocationsCreateRoute
+  '/app/me/profile': typeof AppMeProfileRoute
+  '/app/me/security': typeof AppMeSecurityRoute
   '/app/orders/$id': typeof AppOrdersIdRoute
   '/app/products/$id': typeof AppProductsIdRoute
   '/app/products/create': typeof AppProductsCreateRoute
   '/app/roles/$id': typeof AppRolesIdRoute
   '/app/roles/create': typeof AppRolesCreateRoute
-  '/app/settings/security': typeof AppSettingsSecurityRoute
   '/app/users/$id': typeof AppUsersIdRoute
   '/app/users/create': typeof AppUsersCreateRoute
   '/app/carts': typeof AppCartsIndexRoute
@@ -338,6 +360,7 @@ export interface FileRoutesByTo {
   '/app/failed-orders': typeof AppFailedOrdersIndexRoute
   '/app/inventory': typeof AppInventoryIndexRoute
   '/app/locations': typeof AppLocationsIndexRoute
+  '/app/me': typeof AppMeIndexRoute
   '/app/orders': typeof AppOrdersIndexRoute
   '/app/payments': typeof AppPaymentsIndexRoute
   '/app/pos-devices': typeof AppPosDevicesIndexRoute
@@ -360,6 +383,7 @@ export interface FileRoutesById {
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/app/me': typeof AppMeRouteRouteWithChildren
   '/app/products': typeof AppProductsRouteRouteWithChildren
   '/app/roles': typeof AppRolesRouteRouteWithChildren
   '/app/403': typeof App403Route
@@ -368,12 +392,13 @@ export interface FileRoutesById {
   '/app/customers/$id': typeof AppCustomersIdRoute
   '/app/inventory/movements': typeof AppInventoryMovementsRoute
   '/app/locations/create': typeof AppLocationsCreateRoute
+  '/app/me/profile': typeof AppMeProfileRoute
+  '/app/me/security': typeof AppMeSecurityRoute
   '/app/orders/$id': typeof AppOrdersIdRoute
   '/app/products/$id': typeof AppProductsIdRoute
   '/app/products/create': typeof AppProductsCreateRoute
   '/app/roles/$id': typeof AppRolesIdRoute
   '/app/roles/create': typeof AppRolesCreateRoute
-  '/app/settings/security': typeof AppSettingsSecurityRoute
   '/app/users/$id': typeof AppUsersIdRoute
   '/app/users/create': typeof AppUsersCreateRoute
   '/app/carts/': typeof AppCartsIndexRoute
@@ -383,6 +408,7 @@ export interface FileRoutesById {
   '/app/failed-orders/': typeof AppFailedOrdersIndexRoute
   '/app/inventory/': typeof AppInventoryIndexRoute
   '/app/locations/': typeof AppLocationsIndexRoute
+  '/app/me/': typeof AppMeIndexRoute
   '/app/orders/': typeof AppOrdersIndexRoute
   '/app/payments/': typeof AppPaymentsIndexRoute
   '/app/pos-devices/': typeof AppPosDevicesIndexRoute
@@ -406,6 +432,7 @@ export interface FileRouteTypes {
     | '/signin'
     | '/signup'
     | '/verify-email'
+    | '/app/me'
     | '/app/products'
     | '/app/roles'
     | '/app/403'
@@ -414,12 +441,13 @@ export interface FileRouteTypes {
     | '/app/customers/$id'
     | '/app/inventory/movements'
     | '/app/locations/create'
+    | '/app/me/profile'
+    | '/app/me/security'
     | '/app/orders/$id'
     | '/app/products/$id'
     | '/app/products/create'
     | '/app/roles/$id'
     | '/app/roles/create'
-    | '/app/settings/security'
     | '/app/users/$id'
     | '/app/users/create'
     | '/app/carts/'
@@ -429,6 +457,7 @@ export interface FileRouteTypes {
     | '/app/failed-orders/'
     | '/app/inventory/'
     | '/app/locations/'
+    | '/app/me/'
     | '/app/orders/'
     | '/app/payments/'
     | '/app/pos-devices/'
@@ -455,12 +484,13 @@ export interface FileRouteTypes {
     | '/app/customers/$id'
     | '/app/inventory/movements'
     | '/app/locations/create'
+    | '/app/me/profile'
+    | '/app/me/security'
     | '/app/orders/$id'
     | '/app/products/$id'
     | '/app/products/create'
     | '/app/roles/$id'
     | '/app/roles/create'
-    | '/app/settings/security'
     | '/app/users/$id'
     | '/app/users/create'
     | '/app/carts'
@@ -470,6 +500,7 @@ export interface FileRouteTypes {
     | '/app/failed-orders'
     | '/app/inventory'
     | '/app/locations'
+    | '/app/me'
     | '/app/orders'
     | '/app/payments'
     | '/app/pos-devices'
@@ -491,6 +522,7 @@ export interface FileRouteTypes {
     | '/signin'
     | '/signup'
     | '/verify-email'
+    | '/app/me'
     | '/app/products'
     | '/app/roles'
     | '/app/403'
@@ -499,12 +531,13 @@ export interface FileRouteTypes {
     | '/app/customers/$id'
     | '/app/inventory/movements'
     | '/app/locations/create'
+    | '/app/me/profile'
+    | '/app/me/security'
     | '/app/orders/$id'
     | '/app/products/$id'
     | '/app/products/create'
     | '/app/roles/$id'
     | '/app/roles/create'
-    | '/app/settings/security'
     | '/app/users/$id'
     | '/app/users/create'
     | '/app/carts/'
@@ -514,6 +547,7 @@ export interface FileRouteTypes {
     | '/app/failed-orders/'
     | '/app/inventory/'
     | '/app/locations/'
+    | '/app/me/'
     | '/app/orders/'
     | '/app/payments/'
     | '/app/pos-devices/'
@@ -610,6 +644,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof App403RouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/me': {
+      id: '/app/me'
+      path: '/me'
+      fullPath: '/app/me'
+      preLoaderRoute: typeof AppMeRouteRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/app/products': {
       id: '/app/products'
       path: '/products'
@@ -701,6 +742,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLocationsCreateRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/me/': {
+      id: '/app/me/'
+      path: '/'
+      fullPath: '/app/me/'
+      preLoaderRoute: typeof AppMeIndexRouteImport
+      parentRoute: typeof AppMeRouteRoute
+    }
+    '/app/me/profile': {
+      id: '/app/me/profile'
+      path: '/profile'
+      fullPath: '/app/me/profile'
+      preLoaderRoute: typeof AppMeProfileRouteImport
+      parentRoute: typeof AppMeRouteRoute
+    }
+    '/app/me/security': {
+      id: '/app/me/security'
+      path: '/security'
+      fullPath: '/app/me/security'
+      preLoaderRoute: typeof AppMeSecurityRouteImport
+      parentRoute: typeof AppMeRouteRoute
+    }
     '/app/orders/': {
       id: '/app/orders/'
       path: '/orders'
@@ -778,13 +840,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsIndexRouteImport
       parentRoute: typeof AppRouteRoute
     }
-    '/app/settings/security': {
-      id: '/app/settings/security'
-      path: '/settings/security'
-      fullPath: '/app/settings/security'
-      preLoaderRoute: typeof AppSettingsSecurityRouteImport
-      parentRoute: typeof AppRouteRoute
-    }
     '/app/users/': {
       id: '/app/users/'
       path: '/users'
@@ -837,6 +892,22 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppMeRouteRouteChildren {
+  AppMeProfileRoute: typeof AppMeProfileRoute
+  AppMeSecurityRoute: typeof AppMeSecurityRoute
+  AppMeIndexRoute: typeof AppMeIndexRoute
+}
+
+const AppMeRouteRouteChildren: AppMeRouteRouteChildren = {
+  AppMeProfileRoute: AppMeProfileRoute,
+  AppMeSecurityRoute: AppMeSecurityRoute,
+  AppMeIndexRoute: AppMeIndexRoute,
+}
+
+const AppMeRouteRouteWithChildren = AppMeRouteRoute._addFileChildren(
+  AppMeRouteRouteChildren,
+)
+
 interface AppProductsRouteRouteChildren {
   AppProductsIdRoute: typeof AppProductsIdRoute
   AppProductsCreateRoute: typeof AppProductsCreateRoute
@@ -877,6 +948,7 @@ const AppRolesRouteRouteWithChildren = AppRolesRouteRoute._addFileChildren(
 )
 
 interface AppRouteRouteChildren {
+  AppMeRouteRoute: typeof AppMeRouteRouteWithChildren
   AppProductsRouteRoute: typeof AppProductsRouteRouteWithChildren
   AppRolesRouteRoute: typeof AppRolesRouteRouteWithChildren
   App403Route: typeof App403Route
@@ -886,7 +958,6 @@ interface AppRouteRouteChildren {
   AppInventoryMovementsRoute: typeof AppInventoryMovementsRoute
   AppLocationsCreateRoute: typeof AppLocationsCreateRoute
   AppOrdersIdRoute: typeof AppOrdersIdRoute
-  AppSettingsSecurityRoute: typeof AppSettingsSecurityRoute
   AppUsersIdRoute: typeof AppUsersIdRoute
   AppUsersCreateRoute: typeof AppUsersCreateRoute
   AppCartsIndexRoute: typeof AppCartsIndexRoute
@@ -904,6 +975,7 @@ interface AppRouteRouteChildren {
 }
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
+  AppMeRouteRoute: AppMeRouteRouteWithChildren,
   AppProductsRouteRoute: AppProductsRouteRouteWithChildren,
   AppRolesRouteRoute: AppRolesRouteRouteWithChildren,
   App403Route: App403Route,
@@ -913,7 +985,6 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppInventoryMovementsRoute: AppInventoryMovementsRoute,
   AppLocationsCreateRoute: AppLocationsCreateRoute,
   AppOrdersIdRoute: AppOrdersIdRoute,
-  AppSettingsSecurityRoute: AppSettingsSecurityRoute,
   AppUsersIdRoute: AppUsersIdRoute,
   AppUsersCreateRoute: AppUsersCreateRoute,
   AppCartsIndexRoute: AppCartsIndexRoute,
