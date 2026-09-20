@@ -16,6 +16,7 @@ import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
 import { MfaChallengeDto } from './dto/mfa-challenge.dto';
@@ -333,6 +334,48 @@ export class AuthController {
   @ApiUnauthorizedResponse()
   me(@CurrentUser() user: AuthenticatedUser): Promise<AuthMe> {
     return this.authService.me(user);
+  }
+
+  // Under /auth/me because it can only ever touch the caller's own row —
+  // there's no user id to pass and so no way to aim it at anyone else. The
+  // signed-in counterpart to POST /auth/reset-password, which is for
+  // someone who can't sign in at all.
+  //
+  // Deliberately carries no @RequireMfaFactor, unlike the money and access
+  // actions gated that way (OS-492): it would lock out exactly the
+  // password-only users this exists for, who by definition hold no factor.
+  // The current password is the re-authentication, the same bar mfa/disable
+  // and passkey removal already apply.
+  //
+  // Every live refresh token for this user dies here, this browser's
+  // included — so the cookie is read in and a rotated replacement written
+  // back out, exactly as token/refresh does, and the re-minted access token
+  // is returned. Without that the caller would be signed out of the browser
+  // they just used to change their own password.
+  @AuthenticatedOnly()
+  // mirrors mfa/disable — this one also guesses at the current password, so
+  // it gets the same tight bucket rather than the looser credential-entry one
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('me/change-password')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiUnauthorizedResponse()
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    const { access_token, refresh_token } =
+      await this.authService.changePassword(
+        user,
+        dto.currentPassword,
+        dto.newPassword,
+        req.cookies[REFRESH_TOKEN_COOKIE],
+      );
+
+    this.setRefreshCookie(res, refresh_token);
+    return { access_token };
   }
 
   @Public()

@@ -228,6 +228,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/me/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["AuthController_changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/logout": {
         parameters: {
             query?: never;
@@ -1376,6 +1392,10 @@ export interface components {
             mfaEnrollmentSatisfied: boolean;
             permissions: string[];
         };
+        ChangePasswordDto: {
+            currentPassword: string;
+            newPassword: string;
+        };
         PasskeySignInVerifyDto: {
             response: {
                 [key: string]: unknown;
@@ -2501,6 +2521,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthMe"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuthController_changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessTokenDto"];
                 };
             };
             401: {

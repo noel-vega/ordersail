@@ -36,6 +36,7 @@ import {
   eq,
   isNull,
   isUniqueViolation,
+  ne,
   userEmailVerificationsTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
@@ -967,7 +968,100 @@ export class AuthService {
     await this.revokeAllFamiliesForUser(reset.userId);
   }
 
-  private async revokeAllFamiliesForUser(userId: number): Promise<void> {
+  // Changes the password of a caller who is already signed in — the
+  // self-service counterpart to resetPassword, which exists for someone who
+  // can't sign in at all. The current password is the re-authentication,
+  // checked first and on its own, so a caller holding a stolen access token
+  // but not the password can't get as far as touching the row (the same bar
+  // disableMfa and passkey removal apply).
+  //
+  // Then EVERY live refresh token for this user is invalidated, the caller's
+  // included. resetPassword already revokes unconditionally, and the usual
+  // reason to change a password is believing it's compromised — leaving any
+  // of them alive would make the self-service path weaker than the emailed
+  // one. The threat this closes is a *copy* of the caller's own refresh
+  // token: it lives in the caller's family, so merely sparing that family
+  // would leave the attacker redeeming it for up to its full 7-day life.
+  //
+  // The caller still doesn't get signed out, because their family is rotated
+  // rather than killed: the presented token is revoked and replaced in place,
+  // exactly as an ordinary refresh does. Keeping the same family is what
+  // preserves reuse detection — if the stolen copy is ever presented it hits
+  // the replacedByJti path and takes the family down with it.
+  //
+  // Returns the replacement pair; the caller must set the new refresh cookie
+  // (see AuthController.changePassword), which is the same contract
+  // token/refresh already has.
+  async changePassword(
+    caller: AuthenticatedUser,
+    currentPassword: string,
+    newPassword: string,
+    callerRefreshToken: string | undefined,
+  ): Promise<{ access_token: string; refresh_token: string }> {
+    try {
+      await this.verifyPassword(caller.sub, currentPassword);
+    } catch (err) {
+      // Rethrown with the field named rather than left as a bare 401. The
+      // caller is already authenticated, so saying which input was wrong
+      // enumerates nothing — and without it the dashboard can't tell this
+      // apart from an expired access token, which it would answer by
+      // silently refreshing instead of reporting the mistake.
+      if (err instanceof UnauthorizedException) {
+        throw new UnauthorizedException('Current password is incorrect');
+      }
+      throw err;
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.db
+      .update(usersTable)
+      .set({ password: hashedPassword, updatedAt: new Date() })
+      .where(eq(usersTable.id, caller.sub));
+
+    // Their own live session, if the cookie reached us at all. Guarded on
+    // userId as well as liveness so a token belonging to somebody else can
+    // never be the one that's rotated instead of revoked.
+    const presented = callerRefreshToken
+      ? await this.refreshRecordFor(callerRefreshToken)
+      : null;
+    const callersOwn =
+      presented && presented.userId === caller.sub && !presented.revokedAt
+        ? presented
+        : null;
+
+    // Spared here only so the rotation below can revoke-and-replace it; a
+    // family killed outright has nothing left to rotate.
+    await this.revokeAllFamiliesForUser(caller.sub, callersOwn?.familyId);
+
+    // Recomputed from the database rather than copied off the access token
+    // the caller presented, for the same reason refreshTokens does it.
+    const claims = await this.freshClaims(caller);
+
+    // No usable cookie (missing, expired, or already rotated out) leaves no
+    // family to continue, so the caller starts a fresh one. They asked for
+    // this while holding a valid access token and just proved they know the
+    // password, so signing them out instead would be a gratuitous refusal.
+    return callersOwn
+      ? this.rotateRefreshRecord(callersOwn, claims)
+      : {
+          access_token: await this.createAccessToken(claims),
+          refresh_token: await this.createRefreshToken(claims, randomUUID()),
+        };
+  }
+
+  // `exceptFamilyId` holds one family back from the sweep — the caller's
+  // own, so that a session which asked for this revocation isn't taken down
+  // by the same statement that services it. What happens to the spared
+  // family is the caller's business: changePassword rotates it (so it ends
+  // up retired anyway, but with a successor), while a plain "sign out
+  // everywhere" leaves it running as-is. A family id belonging to some other
+  // user is harmless — the userId filter means it can't match, so this can
+  // never spare a session it wasn't meant to.
+  private async revokeAllFamiliesForUser(
+    userId: number,
+    exceptFamilyId?: string | null,
+  ): Promise<void> {
     await this.db
       .update(userRefreshTokensTable)
       .set({ revokedAt: new Date() })
@@ -975,6 +1069,9 @@ export class AuthService {
         and(
           eq(userRefreshTokensTable.userId, userId),
           isNull(userRefreshTokensTable.revokedAt),
+          ...(exceptFamilyId
+            ? [ne(userRefreshTokensTable.familyId, exceptFamilyId)]
+            : []),
         ),
       );
   }
@@ -1019,6 +1116,64 @@ export class AuthService {
     return token;
   }
 
+  // The claim set for a caller, recomputed against the database rather than
+  // carried over from whatever token they presented. deactivatedAt,
+  // emailVerifiedAt and the factor claims are all baked in at mint time, so
+  // trusting the presented token would carry a stale answer forward through
+  // every later token instead of picking up a change made since.
+  //
+  // Only the identity fields ride along from `identity` — those can't drift
+  // without a re-mint anyway.
+  private async freshClaims(identity: AuthenticatedUser): Promise<TokenClaims> {
+    const [userRow] = await this.db
+      .select({
+        deactivatedAt: usersTable.deactivatedAt,
+        emailVerifiedAt: usersTable.emailVerifiedAt,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, identity.sub));
+    if (!userRow || userRow.deactivatedAt) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    return {
+      sub: identity.sub,
+      email: identity.email,
+      accountId: identity.accountId,
+      firstName: identity.firstName,
+      lastName: identity.lastName,
+      emailVerified: userRow.emailVerifiedAt !== null,
+      ...(await this.getFactorClaims(identity.sub)),
+    };
+  }
+
+  // Exchanges one live refresh-token row for its successor in the same
+  // family: mint the replacement, then revoke the old row and point it at
+  // what replaced it. That back-pointer is what the grace window and reuse
+  // detection in refreshTokens() read, so nothing else may retire a row.
+  //
+  // Shared by the ordinary rotation (refreshTokens) and the forced one
+  // (changePassword) so the two can't drift into different notions of what
+  // rotating a session means.
+  private async rotateRefreshRecord(
+    record: { id: number; familyId: string },
+    claims: TokenClaims,
+  ): Promise<{ access_token: string; refresh_token: string }> {
+    const { token: refresh_token, jti: nextJti } = await this.mintRefreshToken(
+      claims,
+      record.familyId,
+    );
+    await this.db
+      .update(userRefreshTokensTable)
+      .set({ revokedAt: new Date(), replacedByJti: nextJti })
+      .where(eq(userRefreshTokensTable.id, record.id));
+
+    return {
+      access_token: await this.createAccessToken(claims),
+      refresh_token,
+    };
+  }
+
   private async revokeFamily(familyId: string): Promise<void> {
     await this.db
       .update(userRefreshTokensTable)
@@ -1056,40 +1211,12 @@ export class AuthService {
     }
 
     // a staff member deactivated mid-session still holds a valid 7-day
-    // refresh token — re-check the row here so they can't keep minting
-    // access tokens (gated routes already 403 them; this also cuts off the
-    // authenticated-but-ungated ones). emailVerifiedAt is re-checked here
-    // too, for the same reason — trusting payload.emailVerified would carry
-    // a stale claim forward through every future rotation instead of
-    // picking up a verification that happened after this refresh token was
-    // minted.
-    const [userRow] = await this.db
-      .select({
-        deactivatedAt: usersTable.deactivatedAt,
-        emailVerifiedAt: usersTable.emailVerifiedAt,
-      })
-      .from(usersTable)
-      .where(eq(usersTable.id, payload.sub));
-    if (!userRow || userRow.deactivatedAt) {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
-    const emailVerified = userRow.emailVerifiedAt !== null;
-    // same rationale as emailVerified above — recomputed fresh so an
-    // account turning "require MFA" on, or a user finishing enrollment,
-    // is picked up by the next rotation rather than carrying a stale claim
-    const factorClaims = await this.getFactorClaims(payload.sub);
-
-    // identity fields ride along from the presented token; the two
-    // recomputed above deliberately override whatever it carried
-    const claims: TokenClaims = {
-      sub: payload.sub,
-      email: payload.email,
-      accountId: payload.accountId,
-      firstName: payload.firstName,
-      lastName: payload.lastName,
-      emailVerified,
-      ...factorClaims,
-    };
+    // refresh token — freshClaims re-checks the row here so they can't keep
+    // minting access tokens (gated routes already 403 them; this also cuts
+    // off the authenticated-but-ungated ones), and recomputes the
+    // emailVerified/factor claims rather than carrying the presented
+    // token's stale answers forward through every future rotation
+    const claims = await this.freshClaims(payload);
 
     const [record] = await this.db
       .select()
@@ -1128,35 +1255,27 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    const { token: refresh_token, jti: nextJti } = await this.mintRefreshToken(
-      claims,
-      record.familyId,
-    );
-    await this.db
-      .update(userRefreshTokensTable)
-      .set({ revokedAt: new Date(), replacedByJti: nextJti })
-      .where(eq(userRefreshTokensTable.id, record.id));
-
-    const access_token = await this.createAccessToken(claims);
-
-    return { access_token, refresh_token };
+    return this.rotateRefreshRecord(record, claims);
   }
 
-  // Best-effort: an already-invalid/expired/unknown token is treated as a
-  // no-op success, not an error — logging out with a stale token shouldn't
-  // be a user-facing failure, since the end state ("this session is dead")
-  // is the same either way.
-  async logout(refreshToken: string): Promise<void> {
+  // The row a presented refresh token names, or null if it names none.
+  // Deliberately total rather than throwing: both callers (logout,
+  // changePassword) treat an invalid/expired/unknown token as "no session to
+  // act on" rather than a user-facing failure. It does NOT judge whether the
+  // token is still redeemable — a revoked row comes back as itself, and each
+  // caller decides what that means (logout doesn't care; changePassword only
+  // rotates a row that's still live).
+  private async refreshRecordFor(refreshToken: string) {
     let payload: AuthenticatedUser;
     try {
       payload =
         await this.jwtService.verifyAsync<AuthenticatedUser>(refreshToken);
     } catch {
-      return;
+      return null;
     }
 
     if (payload.typ !== 'refresh' || !payload.jti) {
-      return;
+      return null;
     }
 
     const [record] = await this.db
@@ -1164,6 +1283,15 @@ export class AuthService {
       .from(userRefreshTokensTable)
       .where(eq(userRefreshTokensTable.jti, payload.jti));
 
+    return record ?? null;
+  }
+
+  // Best-effort: an already-invalid/expired/unknown token is treated as a
+  // no-op success, not an error — logging out with a stale token shouldn't
+  // be a user-facing failure, since the end state ("this session is dead")
+  // is the same either way.
+  async logout(refreshToken: string): Promise<void> {
+    const record = await this.refreshRecordFor(refreshToken);
     if (!record) {
       return;
     }
