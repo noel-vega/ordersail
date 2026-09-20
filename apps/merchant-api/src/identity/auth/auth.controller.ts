@@ -442,6 +442,34 @@ export class AuthController {
     return { access_token };
   }
 
+  // Under /auth/me for the same reason change-password is: there is no user
+  // id to pass, so it can only ever address the caller's own sessions.
+  //
+  // No body and no password. Every other credential action on the Security
+  // tab re-authenticates because it *weakens* the account; this one only
+  // takes access away, so demanding a password would buy nothing and would
+  // exclude a passkey-only user who may not have one to type.
+  //
+  // The caller's own session survives: the refresh cookie is read to
+  // identify which family to spare, but nothing is written back — unlike
+  // change-password, this doesn't rotate, so the cookie in the browser stays
+  // valid as-is. Every other browser dies at its next refresh, and within at
+  // most one access-token lifetime (8h) even one that never refreshes.
+  @AuthenticatedOnly()
+  @Post('me/sessions/revoke-all')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse()
+  @ApiUnauthorizedResponse()
+  async revokeOtherSessions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: FastifyRequest,
+  ): Promise<void> {
+    await this.authService.revokeOtherSessions(
+      user.sub,
+      req.cookies[REFRESH_TOKEN_COOKIE],
+    );
+  }
+
   @Public()
   @Post('logout')
   @ApiOkResponse()

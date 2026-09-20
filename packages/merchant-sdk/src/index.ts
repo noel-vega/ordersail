@@ -341,6 +341,16 @@ export class AdminClient {
     return result;
   }
 
+  // ends every OTHER session this user holds, leaving this browser signed
+  // in. Unlike changePassword() there's no replacement token to adopt and no
+  // password to send: the API spares the family named by this browser's
+  // refresh cookie and doesn't rotate it, so nothing here changes.
+  async revokeOtherSessions() {
+    unwrap(
+      await this.do(() => this.client.POST("/auth/me/sessions/revoke-all")),
+    );
+  }
+
   // clears the httpOnly refresh_token cookie server-side — the client can't
   // delete it itself — then drops the in-memory access token
   async logout() {

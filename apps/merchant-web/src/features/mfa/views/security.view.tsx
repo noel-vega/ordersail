@@ -17,6 +17,7 @@ import { AddPasskeyDialog } from "../../passkeys/components/add-passkey-dialog";
 import { PasskeyList } from "../../passkeys/components/passkey-list";
 import { RemovePasskeyDialog } from "../../passkeys/components/remove-passkey-dialog";
 import { RenamePasskeyDialog } from "../../passkeys/components/rename-passkey-dialog";
+import { SignOutEverywhereDialog } from "../../auth/components/sign-out-everywhere-dialog";
 import { merchantApi } from "../../../lib/merchant-api-client";
 import { queryClient } from "../../../lib/react-query-client";
 
@@ -37,6 +38,7 @@ export function SecurityView(props: { required?: boolean }) {
   const [addPending, setAddPending] = useState(false);
   const [renaming, setRenaming] = useState<Passkey | null>(null);
   const [removing, setRemoving] = useState<Passkey | null>(null);
+  const [signOutEverywhereOpen, setSignOutEverywhereOpen] = useState(false);
 
   const totpEnabled = me.data?.totpEnabled ?? false;
   const hasMfaFactor = me.data?.hasMfaFactor ?? false;
@@ -229,6 +231,25 @@ export function SecurityView(props: { required?: boolean }) {
         </div>
       )}
 
+      {/* Last, and unconditional: unlike the cards above it isn't about a
+          credential you hold, and it's the one thing on this page a person
+          reaches for in a hurry — a laptop left signed in at the shop. */}
+      <div className="space-y-4 rounded-lg border p-4">
+        <div>
+          <h2 className="text-sm font-medium">Sign out everywhere</h2>
+          <p className="text-sm text-muted-foreground">
+            Ends every other session signed in as you, on every device. This
+            browser stays signed in, and your password doesn&apos;t change.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => setSignOutEverywhereOpen(true)}
+        >
+          Sign out everywhere
+        </Button>
+      </div>
+
       <AddPasskeyDialog
         optionsJSON={addOptions}
         onOpenChange={(open) => !open && setAddOptions(null)}
@@ -252,6 +273,10 @@ export function SecurityView(props: { required?: boolean }) {
       <RegenerateCodesDialog
         open={regenerateOpen}
         onOpenChange={setRegenerateOpen}
+      />
+      <SignOutEverywhereDialog
+        open={signOutEverywhereOpen}
+        onOpenChange={setSignOutEverywhereOpen}
       />
     </div>
   );
