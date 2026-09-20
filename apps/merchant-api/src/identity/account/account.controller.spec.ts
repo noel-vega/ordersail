@@ -5,13 +5,9 @@ import type { AuthenticatedUser } from 'src/shared/auth/decorators';
 
 const user: AuthenticatedUser = {
   sub: 1,
-  email: 'x@store.test',
   accountId: 1,
-  firstName: 'X',
-  lastName: 'Y',
   emailVerified: true,
   mfaEnrollmentSatisfied: true,
-  hasMfaFactor: false,
   typ: 'access',
 };
 

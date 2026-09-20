@@ -11,7 +11,7 @@ import {
   REQUIRE_MFA_FACTOR_KEY,
   type AuthenticatedRequest,
 } from 'src/shared/auth/decorators';
-import { AuthService } from './auth.service';
+import { FactorStateService } from './factor-state.service';
 
 // Allow-by-default with opt-ins, the same polarity as PermissionsGuard —
 // and deliberately NOT folded into MfaEnrollmentGuard, which is
@@ -27,7 +27,7 @@ import { AuthService } from './auth.service';
 export class MfaFactorGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
-    private readonly authService: AuthService,
+    private readonly factorState: FactorStateService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -50,23 +50,26 @@ export class MfaFactorGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const user = request.user;
 
-    // Read the factor state LIVE rather than trusting the token's claim.
+    // Read the factor state LIVE rather than from a token claim — there is
+    // deliberately no hasMfaFactor claim (the dead one was removed in OS-505).
     //
-    // hasMfaFactor is baked in at mint time and only recomputed on refresh,
-    // so an access token asserts it for up to 8h. On an account that doesn't
-    // require MFA a user can remove their last factor and keep using that
-    // stale `true` to connect Stripe or mint an API key — with no factor at
-    // all, which is exactly what this gate exists to prevent.
+    // A claim is baked in at mint time and only recomputed on refresh, so an
+    // access token would go on asserting it for up to 15 minutes after it
+    // stopped being true. On an account that doesn't require MFA a user could
+    // remove their last factor and use that stale `true` to connect Stripe
+    // or mint an API key — with no factor at all, which is exactly what this
+    // gate exists to prevent. The short token life narrows that window but
+    // can't close it: each of these actions is a single request.
     //
     // The other guards deliberately avoid a per-request lookup because they
     // run on every route. This one is opt-in on a handful of money and
     // access actions, so one indexed read is a fair price for the claim
-    // being true at the moment it matters rather than some hours ago. It
+    // being true at the moment it matters rather than some minutes ago. It
     // also means enrolling mid-session works immediately, without waiting
     // for a token refresh.
     const holdsFactor =
       user != null &&
-      (await this.authService.getFactorState(user.sub)).hasMfaFactor;
+      (await this.factorState.getFactorState(user.sub)).hasMfaFactor;
 
     if (!holdsFactor) {
       // The `code` is the point: merchant-web has to tell this apart from a

@@ -7,6 +7,7 @@ import {
 } from 'src/shared/auth/decorators';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { SessionsService } from './sessions.service';
 import { UsersService } from '../users/users.service';
 
 // OS-384 — the Profile aspect of /auth/me (ADR 0001). The claim worth
@@ -18,13 +19,9 @@ import { UsersService } from '../users/users.service';
 
 const user: AuthenticatedUser = {
   sub: 7,
-  email: 'dana@fbi.test',
   accountId: 3,
-  firstName: 'Dana',
-  lastName: 'Scully',
   emailVerified: true,
   mfaEnrollmentSatisfied: true,
-  hasMfaFactor: false,
   typ: 'access',
 };
 
@@ -38,6 +35,7 @@ function build() {
   const updateProfile = jest.fn().mockResolvedValue(profile);
   const controller = new AuthController(
     {} as AuthService,
+    {} as SessionsService,
     {
       getProfile,
       updateProfile,
@@ -65,8 +63,8 @@ describe('AuthController /auth/me/profile (OS-384)', () => {
     });
   });
 
-  // an access token lives 8h, so it outlives a user deleted mid-session
-  // (a revoked invite, say) — that has to be a 404, not a 500 from
+  // an access token outlives a user deleted mid-session (a revoked invite,
+  // say) by up to 15 minutes — that has to be a 404, not a 500 from
   // returning undefined out of a non-nullable handler
   it.each([
     ['profile', (c: AuthController) => c.profile(user)],

@@ -6,6 +6,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -40,10 +41,8 @@ import {
 } from './dto/passkey-challenge.dto';
 import { PasskeySignInVerifyDto } from './dto/passkey-signin.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
-import { AuthService, claimsFromSignInResult } from './auth.service';
-import { env } from 'src/shared/env';
-import type { FastifyReply } from 'fastify';
-import { randomUUID } from 'node:crypto';
+import { readSessionCookie, respondWithSession } from './session-cookie';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 // A separate controller rather than more routes on the 391-line
 // auth.controller.ts — route-guard-coverage.spec.ts filesystem-scans for
@@ -57,23 +56,7 @@ import { randomUUID } from 'node:crypto';
 @Controller('auth/passkeys')
 @NoMfaFactorRequired()
 export class PasskeysController {
-  constructor(
-    private readonly passkeysService: PasskeysService,
-    private readonly authService: AuthService,
-  ) {}
-
-  // Duplicated from AuthController rather than shared: the cookie's name and
-  // attributes are part of that controller's contract with the browser, and
-  // a shared helper would put them somewhere neither controller owns.
-  private setRefreshCookie(res: FastifyReply, refreshToken: string): void {
-    res.setCookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7,
-    });
-  }
+  constructor(private readonly passkeysService: PasskeysService) {}
 
   // No body: there is no user to name yet. The options come back with an
   // empty allowCredentials, which is what makes the credential discoverable
@@ -96,19 +79,14 @@ export class PasskeysController {
     @Body() dto: PasskeySignInVerifyDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.passkeysService.verifySignIn(
-      dto.response as unknown as AuthenticationResponseJSON,
+    // the same ending as every other sign-in: the service started the
+    // Session, the refresh token goes in the cookie (session-cookie.ts)
+    return respondWithSession(
+      res,
+      await this.passkeysService.verifySignIn(
+        dto.response as unknown as AuthenticationResponseJSON,
+      ),
     );
-
-    // randomUUID() here is the new session's refresh-token familyId, the
-    // same as every other entry point that starts a session
-    const refreshToken = await this.authService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
   }
 
   // Both challenge routes are @Public() for the same reason /auth/mfa/verify
@@ -139,18 +117,13 @@ export class PasskeysController {
     @Body() dto: PasskeyChallengeVerifyDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.passkeysService.verifyChallengeAssertion(
-      dto.challengeToken,
-      dto.response as unknown as AuthenticationResponseJSON,
+    return respondWithSession(
+      res,
+      await this.passkeysService.verifyChallengeAssertion(
+        dto.challengeToken,
+        dto.response as unknown as AuthenticationResponseJSON,
+      ),
     );
-
-    const refreshToken = await this.authService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
   }
 
   @AuthenticatedOnly()
@@ -191,7 +164,7 @@ export class PasskeysController {
     @Body() dto: PasskeyRegisterVerifyDto,
   ): Promise<PasskeyRegisteredDto> {
     return this.passkeysService.verifyRegistration(
-      user,
+      user.sub,
       dto.response as unknown as RegistrationResponseJSON,
       dto.nickname,
     );
@@ -213,19 +186,34 @@ export class PasskeysController {
   // POST rather than DELETE: removal takes a password in the body, and
   // bodies on DELETE are legal but flaky through proxies. Matches the
   // existing precedent at pos-devices.controller.ts's :id/revoke.
+  //
+  // Ends like auth/mfa/disable and me/change-password: removing a Factor
+  // revokes the User's other Sessions and rotates this browser's, so the
+  // cookie is read in, its replacement written back out, and the re-minted
+  // access token returned (OS-554).
   @AuthenticatedOnly()
   @SkipMfaEnrollment()
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @Post(':id/remove')
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse()
+  @ApiOkResponse({ type: AccessTokenDto })
   @ApiUnauthorizedResponse()
   @ApiConflictResponse()
   async remove(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: PasskeyRemoveDto,
-  ): Promise<void> {
-    await this.passkeysService.remove(user.sub, id, dto.password);
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    return respondWithSession(
+      res,
+      await this.passkeysService.remove(
+        user.sub,
+        id,
+        dto.password,
+        readSessionCookie(req),
+      ),
+    );
   }
 }

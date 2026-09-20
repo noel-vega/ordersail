@@ -35,20 +35,15 @@ function guard() {
 
 const unsatisfiedUser: AuthenticatedRequest['user'] = {
   sub: 1,
-  email: 'x@store.test',
   accountId: 1,
-  firstName: 'X',
-  lastName: 'Y',
   emailVerified: true,
   mfaEnrollmentSatisfied: false,
-  hasMfaFactor: false,
   typ: 'access',
 };
 
 const satisfiedUser: AuthenticatedRequest['user'] = {
   ...unsatisfiedUser,
   mfaEnrollmentSatisfied: true,
-  hasMfaFactor: false,
 };
 
 describe('MfaEnrollmentGuard (OS-473)', () => {

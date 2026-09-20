@@ -5,6 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { type DbTransaction } from 'src/shared/database/database.types';
 import {
   and,
   type db as Db,
@@ -25,16 +26,6 @@ import { groupBy } from '../shared/group-by.util';
 import { assertCanGrant } from '../shared/assert-can-grant.util';
 import { getPermissionKeysForRoles } from '../shared/get-permission-keys-for-roles.util';
 import { PermissionsService } from '../permissions/permissions.service';
-
-// callback param type of db.transaction() — lets createSystemRole join a
-// transaction started by a caller in another module (auth.service.ts's
-// signup), rather than opening its own
-type DbTransaction = Parameters<(typeof Db)['transaction']>[0] extends (
-  tx: infer T,
-  ...rest: never[]
-) => unknown
-  ? T
-  : never;
 
 // narrowed to only what getPermissionsByRoleId actually calls, so both
 // this.db and a transaction handle (which lacks this.db's $client: Pool)
@@ -251,7 +242,7 @@ export class RolesService {
   // seeds the account's non-deletable "Owner" role with every permission
   // currently in the catalog, and assigns it to the newly created owner.
   // Takes the caller's transaction handle so it's atomic with account/user
-  // creation in AuthService.signup().
+  // creation in AccountService.provision().
   async createSystemRole(
     tx: DbTransaction,
     accountId: number,

@@ -167,10 +167,11 @@ there must agree with this table).
   listings; `stock` reads product identity for inventory views. They change
   together. If it bites: merge the two contexts, or break the reads through
   service ports (OS-345 pattern).
-- **¹ `identity → stock`** — signup (`auth.service`) seeds the new tenant's
-  default `locations` row in the same transaction as the account. A provisioning
-  *write*, not a read. Revisit via an `account.created` domain event so `stock`
-  owns it.
+- **¹ `identity → stock`** — tenant provisioning (`identity/account`'s
+  `AccountService.provision`, called by signup) seeds the new tenant's default
+  `locations` row in the same transaction as the account. A provisioning
+  *write*, not a read. Revisit via an `account.created` domain event, emitted
+  from `provision`, so `stock` owns it.
 
 Reads still cross **only** these edges; a genuine service call between contexts
 goes through the barrel (see *Cross-context communication*), not raw table

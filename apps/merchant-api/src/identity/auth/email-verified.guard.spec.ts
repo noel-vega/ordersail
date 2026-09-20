@@ -34,13 +34,9 @@ function guard() {
 
 const unverifiedUser: AuthenticatedRequest['user'] = {
   sub: 1,
-  email: 'x@store.test',
   accountId: 1,
-  firstName: 'X',
-  lastName: 'Y',
   emailVerified: false,
   mfaEnrollmentSatisfied: true,
-  hasMfaFactor: false,
   typ: 'access',
 };
 

@@ -13,6 +13,7 @@ import { PaginatedUsers } from './entities/paginated-users.entity';
 import { EmailService } from 'src/shared/email/email.service';
 import { resolvePageParams } from 'src/shared/pagination';
 import { PermissionsService } from '../permissions/permissions.service';
+import { SessionsService } from '../auth/sessions.service';
 import {
   generateToken,
   hashToken,
@@ -87,6 +88,7 @@ export class UsersService {
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private readonly emailService: EmailService,
     private readonly permissionsService: PermissionsService,
+    private readonly sessionsService: SessionsService,
   ) {}
 
   // deactivated users are excluded so sign-in refuses them exactly like a
@@ -586,6 +588,17 @@ export class UsersService {
   // reuses the same Owner-role row lock as updateRoles so concurrent
   // deactivations serialize through one point and can't both slip past the
   // "is there another Owner?" check. Reactivating is always allowed.
+  //
+  // Deactivating also ends every Session the User holds, in the same
+  // transaction: without it their refresh-token rows stay live and only the
+  // claim check at the next refresh turns them away — and that check passes
+  // again the moment they're reactivated, handing back Sessions that predate
+  // the deactivation. In the transaction rather than after it because a
+  // revoke that failed after the commit could never be retried — the second
+  // attempt returns early below, the User being deactivated already.
+  // Reactivating touches no Session: the User signs in again. An access token
+  // already issued still outlives this by up to its TTL (nothing re-checks
+  // the row per request).
   async setDeactivated(
     userId: number,
     accountId: number,
@@ -668,6 +681,10 @@ export class UsersService {
           and(eq(usersTable.id, userId), eq(usersTable.accountId, accountId)),
         )
         .returning();
+
+      if (deactivated && updated) {
+        await this.sessionsService.revokeAll(userId, tx);
+      }
     });
 
     if (!updated) return undefined;

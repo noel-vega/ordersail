@@ -1,11 +1,121 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
-import { accountsTable, type db as Db, eq } from 'db/identity';
+import {
+  accountApiKeysTable,
+  accountsTable,
+  type db as Db,
+  eq,
+  isUniqueViolation,
+  usersTable,
+} from 'db/identity';
+import { locationsTable } from 'db/stock';
+import * as bcrypt from 'bcryptjs';
+import { generateApiKey } from '../api-keys/api-keys.util';
+import { RolesService } from '../roles/roles.service';
 import { UpdateAccountDto } from './dto/update-account.dto';
+
+// The name Postgres gives the inline UNIQUE on users.email (the schema
+// declares `.unique()` without naming it). account.service.spec's duplicate-
+// email case runs against the real migrations, so a rename fails there.
+const USERS_EMAIL_UNIQUE_CONSTRAINT = 'users_email_key';
+
+// Deliberately not auth's SignUpDto: this module sits underneath auth, and
+// the DTO satisfies this structurally anyway.
+export interface ProvisionAccountInput {
+  businessName: string;
+  phone: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  // plaintext — hashed here, so no caller can hand over an unhashed value
+  // under a "hashed" name
+  password: string;
+}
 
 @Injectable()
 export class AccountService {
-  constructor(@Inject(DRIZZLE) private readonly db: typeof Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: typeof Db,
+    private readonly rolesService: RolesService,
+  ) {}
+
+  // Creates an Account with its first Owner — everything a new tenant needs
+  // to be usable, in one transaction: the Account, its first API key, the
+  // Default location, the first User, and the Owner Role assigned to them.
+  // Starting a session for that User is the caller's business (see
+  // AuthService.signup).
+  //
+  // An email already in use is refused as a 409, and the translation lives
+  // here because this is where the constraint is known: several unique
+  // columns are written below (the API key, the User's WebAuthn handle, the
+  // Role name) and only a violation of users.email means "that email is
+  // taken". Anything else is a fault and propagates as one. A caller that
+  // caught unique violations around this call and its own later writes would
+  // report every one of them as a duplicate email — signup used to.
+  async provision(input: ProvisionAccountInput) {
+    // hashed before the transaction opens, so a pooled connection isn't held
+    // idle for the length of a bcrypt round
+    const hashedPassword = await bcrypt.hash(input.password, 10);
+
+    try {
+      return await this.provisionTenant(input, hashedPassword);
+    } catch (err) {
+      if (isUniqueViolation(err, USERS_EMAIL_UNIQUE_CONSTRAINT)) {
+        throw new ConflictException('Email already in use');
+      }
+      throw err;
+    }
+  }
+
+  private provisionTenant(
+    input: ProvisionAccountInput,
+    hashedPassword: string,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const [account] = await tx
+        .insert(accountsTable)
+        .values({
+          name: input.businessName,
+          phone: input.phone,
+          email: input.email,
+        })
+        .returning();
+
+      await tx.insert(accountApiKeysTable).values({
+        accountId: account.id,
+        key: generateApiKey(),
+      });
+
+      // products need somewhere to hold stock — every account starts
+      // with a single seeded location, see locationsTable
+      await tx.insert(locationsTable).values({
+        accountId: account.id,
+        name: 'Default',
+      });
+
+      const [owner] = await tx
+        .insert(usersTable)
+        .values({
+          firstname: input.firstName,
+          lastname: input.lastName,
+          email: input.email,
+          password: hashedPassword,
+          accountId: account.id,
+        })
+        .returning();
+
+      // every account starts with a non-deletable "Owner" role holding
+      // every permission, assigned to the account's first user
+      await this.rolesService.createSystemRole(tx, account.id, owner.id);
+
+      return { account, owner };
+    });
+  }
 
   async findOne(accountId: number) {
     const [account] = await this.db

@@ -66,34 +66,40 @@ export const AUTHENTICATED_ONLY_KEY = 'authenticatedOnly';
 export const AuthenticatedOnly = () =>
   SetMetadata(AUTHENTICATED_ONLY_KEY, true);
 
+// The authenticated caller: the decoded access token, exactly as
+// SessionsService mints it (identity/auth/sessions.service.ts) and nothing
+// more. It carries only what has to be read without a database hit — who,
+// which Account, and the two facts that gate every request. Email and name
+// are deliberately absent: a person can edit them, so whoever needs them
+// reads the User row (AuthService.me) instead of a copy that went stale the
+// moment it was minted. A token minted before OS-527 still carries them;
+// they are simply not read.
 export interface AuthenticatedUser {
   sub: number;
-  email: string;
   accountId: number;
-  firstName: string;
-  lastName: string;
+  // AuthGuard refuses anything but 'access'; the union is what lets it ask.
+  // A refresh token never becomes a request.user — its payload is
+  // SessionsService's own business.
   typ: 'access' | 'refresh';
   // baked in at mint time rather than looked up from the DB per request
   // (OS-470) — mirrors how deactivatedAt is only re-checked at refresh
-  // time, not per access-token call. Set true again by re-minting the pair
-  // in verify-email/accept-invite, not by mutating an existing token.
+  // time, not per access-token call. Flipped true mid-Session by a re-mint
+  // (AuthService.verifyEmail), not by mutating an existing token.
   emailVerified: boolean;
   // true when the caller's account doesn't require MFA, or does and they
   // have a confirmed factor — i.e. "nothing is blocking them" (OS-473).
   // Same baked-in-at-mint-time, recomputed-on-refresh treatment as
   // emailVerified. A caller who enrolls mid-session gets this flipped true
-  // immediately via a token re-mint in AuthService.confirmMfa, rather than
-  // waiting for their next refresh.
+  // immediately via a token re-mint (AuthService.confirmMfa,
+  // PasskeysService.verifyRegistration), rather than waiting for their next
+  // refresh.
+  //
+  // Not the same question as "does the caller hold a factor": a user on an
+  // account that doesn't require MFA is satisfied with none at all. That
+  // one is deliberately NOT a claim — MfaFactorGuard reads it live
+  // (FactorStateService.getFactorState) so a factor change takes effect on the
+  // very next request (OS-492).
   mfaEnrollmentSatisfied: boolean;
-  // true when the caller holds ANY second factor — a confirmed TOTP row or
-  // at least one passkey (OS-484). Distinct from mfaEnrollmentSatisfied,
-  // which asks whether anything is *blocking* them: a user on an account
-  // that doesn't require MFA is satisfied with no factor at all. Read by
-  // MfaFactorGuard to gate money/access-sensitive actions (OS-492).
-  hasMfaFactor: boolean;
-  // only present on refresh tokens — identifies the user_refresh_tokens row
-  // this specific token corresponds to (rotation/reuse-detection, OS-467)
-  jti?: string;
 }
 
 // what AuthGuard / PermissionsGuard stash on the request object for

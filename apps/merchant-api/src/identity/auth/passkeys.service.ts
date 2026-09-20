@@ -30,9 +30,9 @@ import {
   webauthnChallengesTable,
 } from 'db/identity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
-import { type AuthenticatedUser } from 'src/shared/auth/decorators';
-import { AuthService, type SignInSuccessResult } from './auth.service';
-import { claimsFromUser } from './token-claims';
+import { AuthService } from './auth.service';
+import { FactorStateService } from './factor-state.service';
+import { SessionsService, type TokenPair } from './sessions.service';
 import { PasskeyDto } from './dto/passkey.dto';
 import { WEBAUTHN_CHALLENGE_TTL_MS, webauthnConfig } from './webauthn.config';
 
@@ -43,6 +43,8 @@ export class PasskeysService {
   constructor(
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private readonly authService: AuthService,
+    private readonly sessionsService: SessionsService,
+    private readonly factorState: FactorStateService,
   ) {}
 
   async list(userId: number): Promise<PasskeyDto[]> {
@@ -106,7 +108,7 @@ export class PasskeysService {
   }
 
   async verifyRegistration(
-    user: AuthenticatedUser,
+    userId: number,
     response: RegistrationResponseJSON,
     nickname: string | undefined,
   ): Promise<{
@@ -117,7 +119,7 @@ export class PasskeysService {
     const challenge = await this.consumeChallenge(
       readChallengeFromResponse(response),
       'registration',
-      user.sub,
+      userId,
     );
 
     let verification: Awaited<ReturnType<typeof verifyRegistrationResponse>>;
@@ -151,14 +153,14 @@ export class PasskeysService {
     // recovery codes at all, silently.
     const { inserted, recoveryCodes } = await this.db.transaction(
       async (tx) => {
-        await this.authService.lockUserFactors(tx, user.sub);
+        await this.authService.lockUserFactors(tx, userId);
 
         let row: typeof userPasskeysTable.$inferSelect;
         try {
           [row] = await tx
             .insert(userPasskeysTable)
             .values({
-              userId: user.sub,
+              userId,
               credentialId: credential.id,
               publicKey: isoBase64URL.fromBuffer(credential.publicKey),
               counter: credential.counter,
@@ -182,31 +184,28 @@ export class PasskeysService {
         // before passkeys this only happened in confirmMfa, which would have
         // left a passkey-only user with no recovery path at all.
         const { totpConfirmed, passkeyCount } =
-          await this.authService.getFactorState(user.sub, tx);
+          await this.factorState.getFactorState(userId, tx);
         const isFirstFactor = !totpConfirmed && passkeyCount === 1;
 
         return {
           inserted: row,
           recoveryCodes: isFirstFactor
-            ? await this.authService.issueRecoveryCodes(tx, user.sub)
+            ? await this.authService.issueRecoveryCodes(tx, userId)
             : null,
         };
       },
     );
 
     // Re-mint so a caller who was being gated isn't stuck behind a stale
-    // claim for the rest of their token's 8h life — same reason confirmMfa
-    // re-mints, and with the same two claims. mfaEnrollmentSatisfied used to
-    // be carried over unchanged here, because between OS-484 and OS-489
-    // sign-in couldn't challenge on a passkey and counting one would have
-    // been a bypass. It can now, toFactorClaims() counts passkeys, and an
-    // invited staff member choosing a passkey at the join gate (OS-494) has
-    // to come unstuck without waiting for a refresh.
-    const access_token = await this.authService.createAccessToken({
-      ...claimsFromUser(user),
-      hasMfaFactor: true,
-      mfaEnrollmentSatisfied: true,
-    });
+    // claim until their next refresh — up to 15 minutes off, and the gate's
+    // 403 isn't what prompts the SDK to refresh (only a 401 is) — same
+    // reason confirmMfa re-mints, and for the same one claim. After the
+    // transaction, so the claim is computed from the passkey that now
+    // exists: toFactorClaims() counts passkeys (since OS-489, when sign-in
+    // became able to challenge on one), and an invited staff member choosing
+    // a passkey at the join gate (OS-494) has to come unstuck without
+    // waiting for a refresh.
+    const access_token = await this.sessionsService.remintAccessToken(userId);
 
     return {
       passkey: toPasskeyDto(inserted),
@@ -253,7 +252,7 @@ export class PasskeysService {
   async verifyChallengeAssertion(
     challengeToken: string,
     response: AuthenticationResponseJSON,
-  ): Promise<SignInSuccessResult> {
+  ): Promise<TokenPair> {
     const user =
       await this.authService.resolveMfaChallengeToken(challengeToken);
 
@@ -300,12 +299,10 @@ export class PasskeysService {
 
     await this.stampCredentialUse(passkey, verification.authenticationInfo);
 
-    // Same terminus as verifyMfaChallenge: a factor the caller just proved
-    // possession of always satisfies an account-wide requirement.
-    return this.authService.buildSignInSuccess(user, {
-      mfaEnrollmentSatisfied: true,
-      hasMfaFactor: true,
-    });
+    // Same terminus as verifyMfaChallenge: the Factor is proven, so the
+    // Session starts. Holding the passkey just presented is what satisfies
+    // any requirement, and start() computes that like every other claim.
+    return this.sessionsService.start(user.id);
   }
 
   // The second door: sign in from a discoverable credential alone, with no
@@ -325,9 +322,7 @@ export class PasskeysService {
     return options;
   }
 
-  async verifySignIn(
-    response: AuthenticationResponseJSON,
-  ): Promise<SignInSuccessResult> {
+  async verifySignIn(response: AuthenticationResponseJSON): Promise<TokenPair> {
     const challenge = await this.consumeChallenge(
       readChallengeFromResponse(response),
       'authentication',
@@ -352,7 +347,10 @@ export class PasskeysService {
     // Checked explicitly because this path doesn't go through
     // UsersService.getByEmail, which is where password sign-in filters
     // deactivated staff out. A deactivated member's passkey still sits on
-    // their device and would otherwise still work.
+    // their device. SessionsService.start would refuse them a Session
+    // anyway; refusing here keeps the failure indistinguishable from an
+    // unknown credential, and happens before the credential is stamped as
+    // used.
     if (!user || user.deactivatedAt) {
       throw new UnauthorizedException('Could not verify this passkey');
     }
@@ -402,12 +400,10 @@ export class PasskeysService {
     await this.stampCredentialUse(passkey, verification.authenticationInfo);
 
     // A user-verified assertion is possession plus biometric or PIN in one
-    // gesture, so it satisfies an account-wide requirement on its own —
-    // there is no password step here to add to it.
-    return this.authService.buildSignInSuccess(user, {
-      mfaEnrollmentSatisfied: true,
-      hasMfaFactor: true,
-    });
+    // gesture — there is no password step here to add to it — so this is a
+    // full sign-in and ends the way they all do. Whoever signs in this way
+    // holds a passkey, which is what satisfies any Factor requirement.
+    return this.sessionsService.start(user.id);
   }
 
   async rename(
@@ -433,11 +429,19 @@ export class PasskeysService {
   // Requires current-password re-entry, the same bar as disabling TOTP: the
   // point of a second factor is that a password alone shouldn't be enough to
   // weaken an account.
+  //
+  // And it ends the way AuthService.disableMfa does, for the same reason:
+  // once the passkey is gone every other Session is revoked and the caller's
+  // own is rotated in place (SessionsService.revokeOthersAndRotate) — if
+  // someone else registered that passkey, their Session must not outlive it.
+  // Nothing is touched when the removal is refused. Returns the replacement
+  // pair for the caller to set as the new refresh cookie.
   async remove(
     userId: number,
     passkeyId: number,
     password: string,
-  ): Promise<void> {
+    callerRefreshToken: string | undefined,
+  ): Promise<TokenPair> {
     await this.authService.verifyPassword(userId, password);
 
     const [passkey] = await this.db
@@ -459,10 +463,10 @@ export class PasskeysService {
       await this.authService.lockUserFactors(tx, userId);
 
       // account-wide policy or the invited-staff stamp — one rule, shared
-      // with the enrollment claim (see AuthService.getFactorRequirement)
-      if (await this.authService.getFactorRequirement(userId, tx)) {
+      // with the enrollment claim (see FactorStateService.getFactorRequirement)
+      if (await this.factorState.getFactorRequirement(userId, tx)) {
         const { totpConfirmed, passkeyCount } =
-          await this.authService.getFactorState(userId, tx);
+          await this.factorState.getFactorState(userId, tx);
         const remaining = passkeyCount - 1 + (totpConfirmed ? 1 : 0);
         if (remaining === 0) {
           throw new ConflictException(
@@ -475,6 +479,11 @@ export class PasskeysService {
         .delete(userPasskeysTable)
         .where(eq(userPasskeysTable.id, passkey.id));
     });
+
+    return this.sessionsService.revokeOthersAndRotate(
+      userId,
+      callerRefreshToken,
+    );
   }
 
   // Clone detection plus the last-used stamp, shared by both assertion paths

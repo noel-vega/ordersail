@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   Controller,
   Get,
@@ -11,8 +10,13 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { AuthService, claimsFromSignInResult } from './auth.service';
-import { claimsFromUser } from './token-claims';
+import { AuthService } from './auth.service';
+import { SessionsService } from './sessions.service';
+import {
+  clearSessionCookie,
+  readSessionCookie,
+  respondWithSession,
+} from './session-cookie';
 import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
@@ -42,7 +46,6 @@ import {
   type AuthenticatedUser,
   NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
-import { env } from 'src/shared/env';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ApiBadRequestResponse,
@@ -55,8 +58,11 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 
-const REFRESH_TOKEN_COOKIE = 'refresh_token';
-
+// Every handler that ends with a Session — a sign-in, a refresh, a rotation
+// — is handed a token pair by the service it called and finishes with
+// respondWithSession(), which writes the refresh cookie and returns the
+// access-token body. Nothing here starts a Session, assembles a claim or
+// names the cookie; see session-cookie.ts and SessionsService.
 @Controller('auth')
 @NoMfaFactorRequired()
 export class AuthController {
@@ -65,18 +71,9 @@ export class AuthController {
   // AuthModule already imports UsersModule for the sign-in path.
   constructor(
     private readonly authService: AuthService,
+    private readonly sessionsService: SessionsService,
     private readonly usersService: UsersService,
   ) {}
-
-  private setRefreshCookie(res: FastifyReply, refreshToken: string): void {
-    res.setCookie(REFRESH_TOKEN_COOKIE, refreshToken, {
-      httpOnly: true, // Prevents client-side JS from accessing the cookie
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax', // Helps protect against CSRF attacks
-      path: '/', // Scopes the cookie to the entire domain
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-    });
-  }
 
   @Public()
   // brute-force/credential-stuffing protection — tighter than the 100/min
@@ -110,14 +107,7 @@ export class AuthController {
       };
     }
 
-    const refreshToken = await this.authService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
+    return respondWithSession(res, result);
   }
 
   // exchanges a signin()-issued MFA challenge for real tokens — public
@@ -133,19 +123,10 @@ export class AuthController {
     @Body() dto: MfaVerifyDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.authService.verifyMfaChallenge(
-      dto.challengeToken,
-      dto.code,
+    return respondWithSession(
+      res,
+      await this.authService.verifyMfaChallenge(dto.challengeToken, dto.code),
     );
-
-    const refreshToken = await this.authService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
   }
 
   // exempt from MfaEnrollmentGuard — a caller gated into forced enrollment
@@ -173,40 +154,38 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: MfaConfirmDto,
   ): Promise<MfaConfirmResponseDto> {
-    const result = await this.authService.confirmMfa(
-      user.sub,
-      dto.code,
-      dto.password,
-    );
-
-    // this caller may have been gated into forced enrollment
-    // (mfaEnrollmentSatisfied: false baked into their current access
-    // token) — re-mint immediately with the now-satisfied claim so they
-    // aren't stuck until their token naturally refreshes
-    const access_token = await this.authService.createAccessToken({
-      ...claimsFromUser(user),
-      mfaEnrollmentSatisfied: true,
-      // they hold one now — passkey registration sets this too, and without
-      // it a caller who just enrolled TOTP keeps failing every gated action
-      // until their next refresh
-      hasMfaFactor: true,
-    });
-
-    return { recoveryCodes: result.recoveryCodes, access_token };
+    // comes back with a re-minted access token as well as the codes — see
+    // AuthService.confirmMfa. The refresh cookie is untouched.
+    return this.authService.confirmMfa(user.sub, dto.code, dto.password);
   }
 
+  // Removing a Factor ends every other Session this User holds and rotates
+  // this browser's — the same ending as me/change-password, and the same
+  // response for it: the cookie is read in, a rotated replacement written
+  // back out, and the re-minted access token returned (OS-554). A refusal
+  // (wrong password, last Factor while one is required) touches no Session
+  // and writes no cookie.
   @AuthenticatedOnly()
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @Post('mfa/disable')
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse()
+  @ApiOkResponse({ type: AccessTokenDto })
   @ApiUnauthorizedResponse()
   @ApiConflictResponse()
   async disableMfa(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: MfaDisableDto,
-  ): Promise<void> {
-    await this.authService.disableMfa(user.sub, dto.password);
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    return respondWithSession(
+      res,
+      await this.authService.disableMfa(
+        user.sub,
+        dto.password,
+        readSessionCookie(req),
+      ),
+    );
   }
 
   @AuthenticatedOnly()
@@ -232,16 +211,7 @@ export class AuthController {
     @Body() signupDto: SignUpDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.authService.signup(signupDto);
-
-    const refreshToken = await this.authService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
-    );
-
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
+    return respondWithSession(res, await this.authService.signup(signupDto));
   }
 
   @Public()
@@ -254,16 +224,10 @@ export class AuthController {
     @Body() acceptInviteDto: AcceptInviteDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const result = await this.authService.acceptInvite(acceptInviteDto);
-
-    const refreshToken = await this.authService.createRefreshToken(
-      claimsFromSignInResult(result),
-      randomUUID(),
+    return respondWithSession(
+      res,
+      await this.authService.acceptInvite(acceptInviteDto),
     );
-
-    this.setRefreshCookie(res, refreshToken);
-
-    return { access_token: result.access_token };
   }
 
   @Public()
@@ -292,7 +256,7 @@ export class AuthController {
   // AuthService.verifyEmail). Exempt from both gates: a caller here is
   // unverified by definition, and may also be MFA-gated. Returns a re-minted
   // access token carrying emailVerified: true (same idea as mfa/confirm);
-  // the refresh cookie is untouched and picks the claim up on next rotation.
+  // the refresh cookie is untouched — it carries no claims to go stale.
   @AuthenticatedOnly()
   @SkipEmailVerification()
   @SkipMfaEnrollment()
@@ -373,8 +337,8 @@ export class AuthController {
       user.sub,
       user.accountId,
     );
-    // an access token outlives the row it was minted from by up to 8h, so a
-    // deleted user (a revoked invite, say) can still reach this
+    // an access token outlives the row it was minted from by up to 15
+    // minutes, so a deleted user (a revoked invite, say) can still reach this
     if (!profile) throw new NotFoundException();
     return profile;
   }
@@ -430,16 +394,15 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const { access_token, refresh_token } =
+    return respondWithSession(
+      res,
       await this.authService.changePassword(
-        user,
+        user.sub,
         dto.currentPassword,
         dto.newPassword,
-        req.cookies[REFRESH_TOKEN_COOKIE],
-      );
-
-    this.setRefreshCookie(res, refresh_token);
-    return { access_token };
+        readSessionCookie(req),
+      ),
+    );
   }
 
   // Under /auth/me for the same reason change-password is: there is no user
@@ -459,9 +422,10 @@ export class AuthController {
   // browser stays valid as-is and there's no token to return. With no usable
   // cookie the service refuses (409) and revokes nothing, rather than guess
   // which session is "this one" or mint one from a bare access token — see
-  // AuthService.revokeOtherSessions. Every other browser dies at its next
-  // refresh, and within at most one access-token lifetime (8h) even one that
-  // never refreshes.
+  // SessionsService.revokeOtherSessions. Every other browser dies at its next
+  // refresh, which is never far off: the access token it already holds runs
+  // out within 15 minutes (ACCESS_TOKEN_TTL_SECONDS), and that is the most
+  // any of them has left.
   @AuthenticatedOnly()
   @Post('me/sessions/revoke-others')
   @ApiBearerAuth('JWT-auth')
@@ -472,9 +436,9 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: FastifyRequest,
   ): Promise<void> {
-    await this.authService.revokeOtherSessions(
+    await this.sessionsService.revokeOtherSessions(
       user.sub,
-      req.cookies[REFRESH_TOKEN_COOKIE],
+      readSessionCookie(req),
     );
   }
 
@@ -485,13 +449,11 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<void> {
-    const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
+    const refreshToken = readSessionCookie(req);
     if (refreshToken) {
-      await this.authService.logout(refreshToken);
+      await this.sessionsService.logout(refreshToken);
     }
-    // refresh_token is httpOnly, so it can only be cleared by the server —
-    // the client can't just delete it itself
-    res.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
+    clearSessionCookie(res);
   }
 
   @Public()
@@ -503,14 +465,14 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AccessTokenDto> {
-    const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
+    const refreshToken = readSessionCookie(req);
     if (!refreshToken) {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    const { access_token, refresh_token } =
-      await this.authService.refreshTokens(refreshToken);
-    this.setRefreshCookie(res, refresh_token);
-    return { access_token };
+    return respondWithSession(
+      res,
+      await this.sessionsService.refreshTokens(refreshToken),
+    );
   }
 }

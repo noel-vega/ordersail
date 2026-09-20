@@ -8,16 +8,17 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import {
-  accountsTable,
   eq,
   userMfaRecoveryCodesTable,
   userPasskeysTable,
+  userRefreshTokensTable,
   usersTable,
   webauthnChallengesTable,
 } from 'db/identity';
 import {
-  insertAccount,
-  insertUser,
+  deactivateUser,
+  insertAccountWithUser,
+  liveRefreshTokenCount,
   insertUserMfa,
   insertUserPasskey,
   insertWebauthnChallenge,
@@ -25,13 +26,19 @@ import {
 } from 'test-support';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
-import { RolesService } from '../roles/roles.service';
+import { AccountService } from '../account/account.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
+import { FactorStateService } from './factor-state.service';
+import { SessionsService } from './sessions.service';
 import { PasskeysService } from './passkeys.service';
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
-import { type AuthenticatedUser } from 'src/shared/auth/decorators';
+import {
+  TEST_JWT_SECRET,
+  expectWorkingSession,
+  presentAccessToken,
+} from './sessions.spec-support';
 
 // The WebAuthn verifier itself is mocked. Its COSE/CBOR parsing and
 // signature checks are @simplewebauthn's code, already tested upstream, and
@@ -89,17 +96,20 @@ async function buildRef() {
   return Test.createTestingModule({
     providers: [
       AuthService,
+      SessionsService,
+      FactorStateService,
       PasskeysService,
       { provide: DRIZZLE, useValue: db },
       {
         provide: JwtService,
-        useValue: new JwtService({ secret: 'test-secret' }),
+        useValue: new JwtService({ secret: TEST_JWT_SECRET }),
       },
       {
         provide: UsersService,
-        useValue: new UsersService(db, {} as never, {} as never),
+        useValue: new UsersService(db, {} as never, {} as never, {} as never),
       },
-      { provide: RolesService, useValue: new RolesService(db, {} as never) },
+      // signup()'s collaborator — no passkey path reaches it
+      { provide: AccountService, useValue: {} },
       { provide: PermissionsService, useValue: new PermissionsService(db) },
       {
         provide: EmailService,
@@ -116,45 +126,15 @@ async function build() {
   return (await buildRef()).get(PasskeysService);
 }
 
+// every User here can sign in with `password` — removal and registration
+// re-verify it
 async function seedUser(
-  opts: {
-    requireMfaAt?: Date;
-    factorRequiredAt?: Date;
-    emailVerified?: boolean;
-  } = {},
+  opts: Omit<Parameters<typeof insertAccountWithUser>[1], 'password'> = {},
 ) {
-  const account = await insertAccount(db);
-  if (opts.requireMfaAt) {
-    await db
-      .update(accountsTable)
-      .set({ requireMfaAt: opts.requireMfaAt })
-      .where(eq(accountsTable.id, account.id));
-  }
-  const user = await insertUser(db, {
-    accountId: account.id,
+  return insertAccountWithUser(db, {
+    ...opts,
     password: await bcrypt.hash(password, 10),
-    emailVerifiedAt: opts.emailVerified === false ? null : new Date(),
-    factorRequiredAt: opts.factorRequiredAt ?? null,
   });
-  return { account, user };
-}
-
-function principal(user: {
-  id: number;
-  accountId: number;
-  email: string;
-}): AuthenticatedUser {
-  return {
-    sub: user.id,
-    email: user.email,
-    accountId: user.accountId,
-    firstName: 'Staff',
-    lastName: 'Member',
-    emailVerified: true,
-    mfaEnrollmentSatisfied: true,
-    hasMfaFactor: false,
-    typ: 'access',
-  };
 }
 
 // A RegistrationResponseJSON is only ever handed to the mocked verifier, so
@@ -228,16 +208,22 @@ describe('PasskeysService — registration (OS-485)', () => {
     ]);
   });
 
-  it('stores the credential and re-mints with both factor claims set', async () => {
+  it('stores the credential and re-mints an access token the enrollment gate now accepts', async () => {
+    // a staff member at the join gate (OS-494): the token they registered
+    // with is held there, and the one they get back must not be
     const { user } = await seedUser({ factorRequiredAt: new Date() });
-    const service = await build();
+    const ref = await buildRef();
+    const service = ref.get(PasskeysService);
+    const session = await ref.get(SessionsService).start(user.id);
+    expect(await presentAccessToken(session.access_token)).toEqual({
+      admitted: false,
+      refusal: 'MFA enrollment required',
+    });
     const challenge = await optionsChallengeFor(service, user.id);
     verifierReturns('new-credential');
 
     const result = await service.verifyRegistration(
-      // a staff member at the join gate (OS-494): the token they registered
-      // with says unsatisfied, and the one they get back must not
-      { ...principal(user), mfaEnrollmentSatisfied: false },
+      user.id,
       responseFor(challenge) as never,
       'MacBook',
     );
@@ -246,15 +232,35 @@ describe('PasskeysService — registration (OS-485)', () => {
       nickname: 'MacBook',
       backedUp: true,
     });
-    const payload = new JwtService({ secret: 'test-secret' }).decode<{
-      hasMfaFactor: boolean;
-      mfaEnrollmentSatisfied: boolean;
-    }>(result.access_token);
-    expect(payload.hasMfaFactor).toBe(true);
-    // forced true, the same as confirmMfa — carrying the stale claim over
-    // would leave them gated until the next refresh. Safe since OS-489:
-    // sign-in challenges on a passkey, so holding one really is enrollment.
-    expect(payload.mfaEnrollmentSatisfied).toBe(true);
+    // the same as confirmMfa — leaving them with the stale claim would keep
+    // them gated until the next refresh. Safe since OS-489: sign-in
+    // challenges on a passkey, so holding one really is enrollment.
+    expect(await presentAccessToken(result.access_token)).toMatchObject({
+      admitted: true,
+      user: { sub: user.id },
+    });
+    // a re-mint, not a new Session
+    expect(await db.select().from(userRefreshTokensTable)).toHaveLength(1);
+  });
+
+  // Adding a Factor only strengthens sign-in, so nobody is signed out for it
+  // — the opposite of remove() (see "the Sessions it ends" below).
+  it("leaves the User's other Sessions alive (OS-554)", async () => {
+    const { user } = await seedUser();
+    const ref = await buildRef();
+    const service = ref.get(PasskeysService);
+    const sessions = ref.get(SessionsService);
+    const otherBrowser = await sessions.start(user.id);
+    const challenge = await optionsChallengeFor(service, user.id);
+    verifierReturns('new-credential');
+
+    await service.verifyRegistration(
+      user.id,
+      responseFor(challenge) as never,
+      undefined,
+    );
+
+    await expectWorkingSession(sessions, otherBrowser, user.id);
   });
 
   it('never returns the credential id or public key', async () => {
@@ -264,7 +270,7 @@ describe('PasskeysService — registration (OS-485)', () => {
     verifierReturns('secret-credential-id');
 
     const result = await service.verifyRegistration(
-      principal(user),
+      user.id,
       responseFor(challenge) as never,
       undefined,
     );
@@ -282,7 +288,7 @@ describe('PasskeysService — registration (OS-485)', () => {
       const challenge = await optionsChallengeFor(service, user.id);
       verifierReturns('first');
       await service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challenge) as never,
         undefined,
       );
@@ -290,7 +296,7 @@ describe('PasskeysService — registration (OS-485)', () => {
       verifierReturns('second');
       await expect(
         service.verifyRegistration(
-          principal(user),
+          user.id,
           responseFor(challenge) as never,
           undefined,
         ),
@@ -309,7 +315,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
       await expect(
         service.verifyRegistration(
-          principal(user),
+          user.id,
           responseFor(stale.challenge) as never,
           undefined,
         ),
@@ -328,7 +334,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
       await expect(
         service.verifyRegistration(
-          principal(user),
+          user.id,
           responseFor(other.challenge) as never,
           undefined,
         ),
@@ -346,7 +352,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
       await expect(
         service.verifyRegistration(
-          principal(mine),
+          mine.id,
           responseFor(theirChallenge) as never,
           undefined,
         ),
@@ -380,7 +386,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
     await expect(
       service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challenge) as never,
         undefined,
       ),
@@ -395,7 +401,7 @@ describe('PasskeysService — registration (OS-485)', () => {
 
     await expect(
       service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challenge) as never,
         undefined,
       ),
@@ -412,7 +418,7 @@ describe('PasskeysService — recovery codes (OS-485)', () => {
     const challenge = await optionsChallengeFor(service, user.id);
     verifierReturns(credentialId);
     return service.verifyRegistration(
-      principal(user),
+      user.id,
       responseFor(challenge) as never,
       undefined,
     );
@@ -465,12 +471,12 @@ describe('PasskeysService — recovery codes (OS-485)', () => {
 
     const results = await Promise.allSettled([
       service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challengeA) as never,
         undefined,
       ),
       service.verifyRegistration(
-        principal(user),
+        user.id,
         responseFor(challengeB) as never,
         undefined,
       ),
@@ -501,7 +507,7 @@ describe('PasskeysService — recovery codes (OS-485)', () => {
     verifierReturns('locked');
 
     await service.verifyRegistration(
-      principal(user),
+      user.id,
       responseFor(challenge) as never,
       undefined,
     );
@@ -548,7 +554,7 @@ describe('PasskeysService — management (OS-485)', () => {
     const passkey = await insertUserPasskey(db, { userId: user.id });
     const service = await build();
 
-    await service.remove(user.id, passkey.id, password);
+    await service.remove(user.id, passkey.id, password, undefined);
 
     expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
   });
@@ -559,7 +565,7 @@ describe('PasskeysService — management (OS-485)', () => {
     const service = await build();
 
     await expect(
-      service.remove(user.id, passkey.id, 'wrong'),
+      service.remove(user.id, passkey.id, 'wrong', undefined),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(await db.select().from(userPasskeysTable)).toHaveLength(1);
   });
@@ -571,18 +577,18 @@ describe('PasskeysService — management (OS-485)', () => {
     const service = await build();
 
     await expect(
-      service.remove(user.id, theirs.id, password),
+      service.remove(user.id, theirs.id, password, undefined),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   describe('last-factor rule', () => {
     it('refuses to remove the last factor when the account requires MFA', async () => {
-      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const { user } = await seedUser({ accountRequiresMfa: true });
       const passkey = await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
       await expect(
-        service.remove(user.id, passkey.id, password),
+        service.remove(user.id, passkey.id, password, undefined),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -594,28 +600,28 @@ describe('PasskeysService — management (OS-485)', () => {
       const service = await build();
 
       await expect(
-        service.remove(user.id, passkey.id, password),
+        service.remove(user.id, passkey.id, password, undefined),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('allows removing one of two', async () => {
-      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const { user } = await seedUser({ accountRequiresMfa: true });
       const first = await insertUserPasskey(db, { userId: user.id });
       await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
-      await service.remove(user.id, first.id, password);
+      await service.remove(user.id, first.id, password, undefined);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(1);
     });
 
     it('allows removing the last passkey when TOTP remains', async () => {
-      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const { user } = await seedUser({ accountRequiresMfa: true });
       const passkey = await insertUserPasskey(db, { userId: user.id });
       await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
       const service = await build();
 
-      await service.remove(user.id, passkey.id, password);
+      await service.remove(user.id, passkey.id, password, undefined);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
     });
@@ -625,14 +631,14 @@ describe('PasskeysService — management (OS-485)', () => {
     // remain, and the user lands on zero on an account that requires MFA.
     // Same shape as the concurrent recovery-code redemption test.
     it('lets only one of two concurrent removals through', async () => {
-      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const { user } = await seedUser({ accountRequiresMfa: true });
       const first = await insertUserPasskey(db, { userId: user.id });
       const second = await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
       const results = await Promise.allSettled([
-        service.remove(user.id, first.id, password),
-        service.remove(user.id, second.id, password),
+        service.remove(user.id, first.id, password, undefined),
+        service.remove(user.id, second.id, password, undefined),
       ]);
 
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
@@ -647,9 +653,105 @@ describe('PasskeysService — management (OS-485)', () => {
       const passkey = await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
-      await service.remove(user.id, passkey.id, password);
+      await service.remove(user.id, passkey.id, password, undefined);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
+    });
+  });
+
+  // Removing a Factor is a credential change, the same kind of event as
+  // changing the password — if someone else added that passkey, their Session
+  // must not outlive it. The sweep itself is
+  // SessionsService.revokeOthersAndRotate's suite (sessions.service.spec);
+  // these pin that remove() reaches it, and when.
+  describe('the Sessions it ends (OS-554)', () => {
+    async function buildWithSessions() {
+      const ref = await buildRef();
+      return {
+        service: ref.get(PasskeysService),
+        sessions: ref.get(SessionsService),
+      };
+    }
+
+    it("ends the User's other Sessions and rotates the caller's", async () => {
+      const { user } = await seedUser();
+      const passkey = await insertUserPasskey(db, { userId: user.id });
+      const { service, sessions } = await buildWithSessions();
+      const caller = await sessions.start(user.id);
+      const otherBrowser = await sessions.start(user.id);
+
+      const replacement = await service.remove(
+        user.id,
+        passkey.id,
+        password,
+        caller.refresh_token,
+      );
+
+      await expect(
+        sessions.refreshTokens(otherBrowser.refresh_token),
+      ).rejects.toThrow('Invalid or expired token');
+      // rotated, not spared: the token the caller walked in with is retired
+      // and the one handed back is the only live one the User has
+      expect(replacement.refresh_token).not.toBe(caller.refresh_token);
+      expect(await liveRefreshTokenCount(db, user.id)).toBe(1);
+      await expectWorkingSession(sessions, replacement, user.id);
+    });
+
+    it('starts a fresh Session when no cookie is presented, and nothing else survives', async () => {
+      const { user } = await seedUser();
+      const passkey = await insertUserPasskey(db, { userId: user.id });
+      const { service, sessions } = await buildWithSessions();
+      const someBrowser = await sessions.start(user.id);
+
+      const fresh = await service.remove(
+        user.id,
+        passkey.id,
+        password,
+        undefined,
+      );
+
+      await expect(
+        sessions.refreshTokens(someBrowser.refresh_token),
+      ).rejects.toThrow('Invalid or expired token');
+      expect(await liveRefreshTokenCount(db, user.id)).toBe(1);
+      await expectWorkingSession(sessions, fresh, user.id);
+    });
+
+    // Order matters: a refused removal changed no credential, so it must not
+    // cost anyone their Session either.
+    it('touches no Session when the last-Factor rule refuses', async () => {
+      const { user } = await seedUser({ accountRequiresMfa: true });
+      const passkey = await insertUserPasskey(db, { userId: user.id });
+      const { service, sessions } = await buildWithSessions();
+      const caller = await sessions.start(user.id);
+      const otherBrowser = await sessions.start(user.id);
+
+      await expect(
+        service.remove(user.id, passkey.id, password, caller.refresh_token),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      await expectWorkingSession(sessions, caller, user.id);
+      await expectWorkingSession(sessions, otherBrowser, user.id);
+    });
+
+    it("touches no Session on a wrong password or someone else's passkey", async () => {
+      const { user } = await seedUser();
+      const { user: other } = await seedUser();
+      const mine = await insertUserPasskey(db, { userId: user.id });
+      const theirs = await insertUserPasskey(db, { userId: other.id });
+      const { service, sessions } = await buildWithSessions();
+      const caller = await sessions.start(user.id);
+      const otherBrowser = await sessions.start(user.id);
+
+      await expect(
+        service.remove(user.id, mine.id, 'wrong', caller.refresh_token),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(
+        service.remove(user.id, theirs.id, password, caller.refresh_token),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      await expectWorkingSession(sessions, caller, user.id);
+      await expectWorkingSession(sessions, otherBrowser, user.id);
     });
   });
 
@@ -671,8 +773,8 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
   // TOTP factor as well, because until OS-489 signin only challenges on
   // TOTP — which is also the realistic shape here: someone who holds both
   // and is offered the passkey first.
-  async function seedChallengedUser() {
-    const { user } = await seedUser();
+  async function seedChallengedUser(opts: Parameters<typeof seedUser>[0] = {}) {
+    const { user } = await seedUser(opts);
     await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
     const passkey = await insertUserPasskey(db, {
       userId: user.id,
@@ -693,7 +795,7 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
       user,
       passkey,
       service,
-      authService,
+      sessionsService: ref.get(SessionsService),
       token: signin.challengeToken,
     };
   }
@@ -730,20 +832,24 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
     expect(row).toMatchObject({ type: 'authentication', userId: user.id });
   });
 
-  it('exchanges a valid assertion for tokens and stamps the credential', async () => {
-    const { passkey, service, token } = await seedChallengedUser();
+  it('exchanges a valid assertion for a Session and stamps the credential', async () => {
+    const { user, passkey, service, sessionsService, token } =
+      await seedChallengedUser({ accountRequiresMfa: true });
     const options = await service.getChallengeAuthenticationOptions(token);
     assertionVerifies(7);
 
-    const result = await service.verifyChallengeAssertion(
+    const session = await service.verifyChallengeAssertion(
       token,
       assertionFor(options.challenge) as never,
     );
 
-    expect(result.access_token).toBeTruthy();
-    expect(result.hasMfaFactor).toBe(true);
-    // proving possession always satisfies an account-wide requirement
-    expect(result.mfaEnrollmentSatisfied).toBe(true);
+    // past every gate, the account-wide requirement included: the Factor
+    // they just proved is what satisfies it
+    expect(await presentAccessToken(session.access_token)).toMatchObject({
+      admitted: true,
+      user: { sub: user.id },
+    });
+    await expectWorkingSession(sessionsService, session, user.id);
 
     const [stored] = await db
       .select()
@@ -775,20 +881,11 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
   });
 
   it('rejects an access token presented as a challenge token', async () => {
-    const { user, service, authService } = await seedChallengedUser();
-    const accessToken = await authService.createAccessToken({
-      sub: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: 'Staff',
-      lastName: 'Member',
-      emailVerified: true,
-      mfaEnrollmentSatisfied: false,
-      hasMfaFactor: true,
-    });
+    const { user, service, sessionsService } = await seedChallengedUser();
+    const { access_token } = await sessionsService.start(user.id);
 
     await expect(
-      service.getChallengeAuthenticationOptions(accessToken),
+      service.getChallengeAuthenticationOptions(access_token),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
@@ -807,6 +904,32 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
         assertionFor(options.challenge) as never,
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // The usernameless door checks deactivation itself; this one inherits it
+  // from the shared challenge-token resolution. Deactivated AFTER the options
+  // were issued, so it's the completion being refused — the step that would
+  // otherwise hand over a Session (OS-504).
+  it('refuses a Session to a User deactivated mid-challenge', async () => {
+    const { user, passkey, service, token } = await seedChallengedUser();
+    const options = await service.getChallengeAuthenticationOptions(token);
+    assertionVerifies(7);
+
+    await deactivateUser(db, user.id);
+
+    const attempt = service.verifyChallengeAssertion(
+      token,
+      assertionFor(options.challenge) as never,
+    );
+    await expect(attempt).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(attempt).rejects.toThrow('Invalid or expired challenge');
+
+    const [stored] = await db
+      .select()
+      .from(userPasskeysTable)
+      .where(eq(userPasskeysTable.id, passkey.id));
+    expect(stored?.lastUsedAt).toBeNull();
+    expect(await db.select().from(userRefreshTokensTable)).toHaveLength(0);
   });
 
   // a registration challenge must not be redeemable as an assertion
@@ -907,13 +1030,14 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
 });
 
 describe('PasskeysService — usernameless sign-in (OS-490)', () => {
-  async function seedCredential(opts: { deactivated?: boolean } = {}) {
-    const { user } = await seedUser();
+  async function seedCredential(
+    opts: { deactivated?: boolean; accountRequiresMfa?: boolean } = {},
+  ) {
+    const { user } = await seedUser({
+      accountRequiresMfa: opts.accountRequiresMfa,
+    });
     if (opts.deactivated) {
-      await db
-        .update(usersTable)
-        .set({ deactivatedAt: new Date() })
-        .where(eq(usersTable.id, user.id));
+      await deactivateUser(db, user.id);
     }
     const passkey = await insertUserPasskey(db, {
       userId: user.id,
@@ -925,8 +1049,14 @@ describe('PasskeysService — usernameless sign-in (OS-490)', () => {
       .select({ handle: usersTable.webauthnHandle })
       .from(usersTable)
       .where(eq(usersTable.id, user.id));
-    const service = await build();
-    return { user, passkey, service, handle: row.handle };
+    const ref = await buildRef();
+    return {
+      user,
+      passkey,
+      service: ref.get(PasskeysService),
+      sessionsService: ref.get(SessionsService),
+      handle: row.handle,
+    };
   }
 
   // A real browser returns userHandle BASE64URL-ENCODED — registration hands
@@ -981,18 +1111,23 @@ describe('PasskeysService — usernameless sign-in (OS-490)', () => {
   });
 
   it('resolves the user from the credential alone and signs them in', async () => {
-    const { user, passkey, service, handle } = await seedCredential();
+    const { user, passkey, service, sessionsService, handle } =
+      await seedCredential({ accountRequiresMfa: true });
     const options = await service.getSignInOptions();
     assertionVerifies(3);
 
-    const result = await service.verifySignIn(
+    const session = await service.verifySignIn(
       assertionFor(options.challenge, { userHandle: handle }) as never,
     );
 
-    expect(result.userId).toBe(user.id);
-    expect(result.hasMfaFactor).toBe(true);
-    // a user-verified assertion is possession + biometric in one gesture
-    expect(result.mfaEnrollmentSatisfied).toBe(true);
+    // A Session like any other sign-in's, for the User the credential names
+    // — and past the account's MFA requirement: a user-verified assertion is
+    // possession + biometric in one gesture.
+    expect(await presentAccessToken(session.access_token)).toMatchObject({
+      admitted: true,
+      user: { sub: user.id, accountId: user.accountId },
+    });
+    await expectWorkingSession(sessionsService, session, user.id);
 
     const [stored] = await db
       .select()
