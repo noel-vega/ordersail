@@ -23,3 +23,6 @@ crash.log
 # envs/production/alerts-recipients.tf and frontend-auth.tf.
 *.auto.tfvars
 *.auto.tfvars.json
+
+# agent worktrees — full checkouts with their own node_modules
+.claude/worktrees
