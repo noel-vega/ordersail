@@ -955,31 +955,32 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
     await expectWorkingSession(service, replacement, user.id);
   });
 
-  // Looks at rows, which this suite otherwise avoids: that the caller is
-  // rotated *in place* rather than started afresh isn't visible from the
-  // outside until a thief shows up, and it is the property reuse detection
-  // depends on.
-  it('rotates the caller in place, leaving the replacement in the same family', async () => {
+  // The grace window exists for two tabs redeeming the same token at once.
+  // This rotation is not that: it happens because a credential changed, and
+  // the token it retires is the one a thief may hold a copy of. Replaying
+  // the replacement to whoever presents the old token next — as an ordinary
+  // rotation would for 10 seconds — hands the thief the new Session.
+  it("never replays the replacement to the caller's old token, even inside the grace window — presenting it ends the Session", async () => {
     const user = await seedUser();
     const service = await build();
     const caller = await service.start(user.id);
 
-    await service.revokeOthersAndRotate(user.id, caller.refresh_token);
+    const replacement = await service.revokeOthersAndRotate(
+      user.id,
+      caller.refresh_token,
+    );
 
-    const rows = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.userId, user.id));
-    expect(rows).toHaveLength(2);
-
-    const live = rows.filter((r) => r.revokedAt === null);
-    const retired = rows.filter((r) => r.revokedAt !== null);
-    expect(live).toHaveLength(1);
-    expect(retired).toHaveLength(1);
-    // same family, and the retired row points at what replaced it — that
-    // back-pointer is what reuse detection reads if the old token resurfaces
-    expect(live[0]?.familyId).toBe(retired[0]?.familyId);
-    expect(retired[0]?.replacedByJti).toBe(live[0]?.jti);
+    // no elapseGraceWindow: this is the very next moment
+    await expect(service.refreshTokens(caller.refresh_token)).rejects.toThrow(
+      REFUSED,
+    );
+    // ...and it was handled as reuse. The caller was rotated in place, so the
+    // replacement belongs to the Session the old token just took down — both
+    // parties sign in again, and only one of them knows the new password.
+    await expect(
+      service.refreshTokens(replacement.refresh_token),
+    ).rejects.toThrow(REFUSED);
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
   });
 
   // changePassword shares the rotation with an ordinary refresh, and
@@ -987,35 +988,75 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
   // same token. Whichever retires it first, the User must come out with one
   // live token, and it must be the one this call returned: a second live
   // successor in the caller's family is precisely the surviving copy that
-  // changing the password exists to kill (OS-528).
-  it('leaves exactly one live token, the one it returned, when it races a refresh of the same token (OS-528)', async () => {
-    const user = await seedUser();
-    const service = await build();
-    const { refresh_token: callerToken } = await service.start(user.id);
-    await service.start(user.id);
+  // changing the password exists to kill (OS-528). Both orders are staged —
+  // whoever parks on the row first is first in line when it is released.
+  describe('racing a refresh of the same token (OS-528)', () => {
+    const expectOnlySessionLeftIs = async (
+      service: SessionsService,
+      userId: number,
+      pair: { access_token: string; refresh_token: string },
+    ) => {
+      expect(await liveRefreshTokenCount(db, userId)).toBe(1);
+      // redeemable, so the one live token is this one
+      await expectWorkingSession(service, pair, userId);
+    };
 
-    const [result] = await raceForRefreshRow(db, callerToken, 2, () =>
-      Promise.all([
-        service.revokeOthersAndRotate(user.id, callerToken),
-        // resolves either way: it wins the rotation, or replays the winner's
-        service.refreshTokens(callerToken),
-      ]),
-    );
+    it('leaves exactly one live token, the one it returned, when the refresh gets there first', async () => {
+      const user = await seedUser();
+      const service = await build();
+      const { refresh_token: callerToken } = await service.start(user.id);
+      await service.start(user.id);
 
-    const live = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(
-        and(
-          eq(userRefreshTokensTable.userId, user.id),
-          isNull(userRefreshTokensTable.revokedAt),
-        ),
+      const [, result] = await raceForRefreshRow(
+        db,
+        callerToken,
+        2,
+        async () => {
+          // resolves: it wins the rotation
+          const refreshing = service.refreshTokens(callerToken);
+          refreshing.catch(() => undefined);
+          await lockWaiters(db, 1);
+          return Promise.all([
+            refreshing,
+            service.revokeOthersAndRotate(user.id, callerToken),
+          ]);
+        },
       );
-    expect(live.map((r) => r.jti)).toEqual([
-      testJwt().decode<{ jti: string }>(result.refresh_token).jti,
-    ]);
 
-    await expectWorkingSession(service, result, user.id);
+      await expectOnlySessionLeftIs(service, user.id, result);
+    });
+
+    // The refresh that loses here is not replayed the winner's successor —
+    // it may be the thief's — but neither is it reuse: the token was live
+    // when it was read, and lost to a rotation that leaves nothing to
+    // replay. It is refused, and the caller's replacement carries on.
+    it('leaves exactly one live token, the one it returned, when it gets there first — the refresh is refused', async () => {
+      const user = await seedUser();
+      const service = await build();
+      const { refresh_token: callerToken } = await service.start(user.id);
+      await service.start(user.id);
+
+      const [result, refreshing] = await raceForRefreshRow(
+        db,
+        callerToken,
+        2,
+        async () => {
+          const rotating = service.revokeOthersAndRotate(user.id, callerToken);
+          rotating.catch(() => undefined);
+          await lockWaiters(db, 1);
+          return Promise.all([
+            rotating,
+            service.refreshTokens(callerToken).then(
+              () => 'continued' as const,
+              (err: unknown) => err,
+            ),
+          ]);
+        },
+      );
+
+      expect(refreshing).toBeInstanceOf(UnauthorizedException);
+      await expectOnlySessionLeftIs(service, user.id, result);
+    });
   });
 
   // The same meeting, but on somebody else's token: another browser — the

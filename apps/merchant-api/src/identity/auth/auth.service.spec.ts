@@ -580,6 +580,32 @@ describe('AuthService.changePassword (OS-385)', () => {
     ).rejects.toThrow('Invalid or expired token');
   });
 
+  // Story 17: "a stolen copy of my own token dies". An ordinary refresh
+  // replays its successor to the rotated-out token for a few seconds, for
+  // the sake of a second tab; a password change must not, or the copy it
+  // exists to kill is good for one more redemption — which is all it needs.
+  it("refuses a copy of the caller's old refresh token straight away, and ends the Session it was presented to", async () => {
+    const user = await seedUser();
+    const { service, sessions } = await buildBoth();
+    const caller = await sessions.start(user.id);
+
+    const replacement = await service.changePassword(
+      user.id,
+      CURRENT_PASSWORD,
+      NEW_PASSWORD,
+      caller.refresh_token,
+    );
+
+    // the thief, inside what would be the grace window
+    await expect(sessions.refreshTokens(caller.refresh_token)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+    // reuse: the whole Session goes, the caller's replacement included
+    await expect(
+      sessions.refreshTokens(replacement.refresh_token),
+    ).rejects.toThrow('Invalid or expired token');
+  });
+
   it('rejects a wrong current password without touching the row or the sessions', async () => {
     const user = await seedUser();
     const { service, sessions } = await buildBoth();

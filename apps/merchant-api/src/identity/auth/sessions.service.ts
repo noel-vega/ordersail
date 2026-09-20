@@ -168,9 +168,17 @@ export class SessionsService {
   //
   // The caller still doesn't get signed out, because their family is rotated
   // rather than killed: the presented token is revoked and replaced in place,
-  // exactly as an ordinary refresh does. Keeping the same family is what
-  // preserves reuse detection — if the stolen copy is ever presented it hits
-  // the replacedByJti path and takes the family down with it.
+  // in the same family — with one difference from an ordinary refresh. This
+  // rotation is forced (see rotateRefreshRecord): the retired row records no
+  // replacedByJti, so the grace window has nothing to replay. That window
+  // exists for two tabs redeeming one token at the same moment; here the
+  // retired token is the one a thief may hold a copy of, and replaying the
+  // successor to whoever presents it within 10 seconds would hand them the
+  // new Session. Instead the stolen copy, whenever it is presented, reads as
+  // what it is — a revoked token with no successor to replay, i.e. reuse —
+  // and takes the family down with it, the caller's replacement included:
+  // both parties sign in again, and only one of them knows the new password.
+  // Keeping the same family is what makes that possible.
   async revokeOthersAndRotate(
     userId: number,
     callerRefreshToken: string | undefined,
@@ -199,6 +207,7 @@ export class SessionsService {
       ? await this.rotateRefreshRecord(
           callersOwn,
           await this.claimsFor(userId, INVALID_TOKEN),
+          'forced',
         )
       : null;
     if (rotated) {
@@ -439,9 +448,19 @@ export class SessionsService {
   }
 
   // Exchanges one live refresh-token row for its successor in the same
-  // family: revoke the old row, point it at what replaces it, and insert
-  // that replacement. That back-pointer is what the grace window and reuse
-  // detection in refreshTokens() read, so nothing else may retire a row.
+  // family: revoke the old row and insert its replacement. An 'ordinary'
+  // rotation also points the old row at what replaced it, and that
+  // back-pointer is the whole of what refreshTokens() reads to tell a
+  // replayable token from reuse: revoked with a live replacedByJti inside the
+  // grace window is replayed, anything else revoked is reuse. So
+  // replacedByJti means "may be replayed this successor", not merely "was
+  // succeeded" — which is why a 'forced' rotation (revokeOthersAndRotate: a
+  // credential just changed, and the retired token is the one a thief may
+  // hold) leaves it null. The retired row then looks exactly like one a
+  // sweep or a sign-out revoked, and is treated the same when presented.
+  // Chosen over a marker column because there is nothing further to record:
+  // no reader needs to know a forced rotation happened, only that this token
+  // must never be answered with a successor.
   //
   // Returns null when the row was no longer live by the time the write
   // landed — somebody else retired it first — and in that case writes
@@ -489,6 +508,7 @@ export class SessionsService {
   private async rotateRefreshRecord(
     record: { id: number; familyId: string; sessionStartedAt: Date },
     claims: AccessTokenClaims,
+    kind: 'ordinary' | 'forced',
   ): Promise<TokenPair | null> {
     const nextJti = randomUUID();
     const won = await this.db.transaction(async (tx) => {
@@ -503,7 +523,10 @@ export class SessionsService {
 
       const [retired] = await tx
         .update(userRefreshTokensTable)
-        .set({ revokedAt: new Date(), replacedByJti: nextJti })
+        .set({
+          revokedAt: new Date(),
+          replacedByJti: kind === 'ordinary' ? nextJti : null,
+        })
         .where(
           and(
             eq(userRefreshTokensTable.id, record.id),
@@ -604,21 +627,38 @@ export class SessionsService {
     }
 
     if (!record.revokedAt) {
-      const rotated = await this.rotateRefreshRecord(record, claims);
+      const rotated = await this.rotateRefreshRecord(
+        record,
+        claims,
+        'ordinary',
+      );
       if (rotated) {
         return rotated;
       }
 
-      // Live when we read it, retired by the time we wrote: a concurrent
-      // redemption of this same token won the rotation. That is the very
-      // case the grace window exists for, so read the row again — it now
+      // Live when we read it, retired by the time we wrote. Usually a
+      // concurrent redemption of this same token won the rotation — the very
+      // case the grace window exists for — so read the row again: it now
       // carries the winner's revokedAt and replacedByJti, committed together
-      // with the successor they name — and fall through to the replay below
+      // with the successor they name, and falls through to the replay below
       // instead of minting a second successor.
       [record] = await this.db
         .select()
         .from(userRefreshTokensTable)
         .where(eq(userRefreshTokensTable.id, record.id));
+
+      // No back-pointer means it lost to something that leaves nothing to
+      // replay: a sweep, a sign-out, or a forced rotation. Refused, but not
+      // as reuse — this token was live a moment ago, so presenting it proves
+      // nothing about theft — and that distinction matters for exactly one of
+      // the three: a forced rotation's successor lives in this family, and
+      // killing the family here would sign out the caller who just changed
+      // their password because their other tab refreshed at that instant.
+      // (If it was a thief's copy instead, it is refused all the same, and
+      // its next attempt is no longer a race: that one is reuse.)
+      if (record?.revokedAt && !record.replacedByJti) {
+        throw new UnauthorizedException(INVALID_TOKEN);
+      }
     }
 
     if (record?.revokedAt) {
@@ -646,8 +686,10 @@ export class SessionsService {
         }
       }
 
-      // outside the grace window, or the replacement itself has since
-      // moved on (more than one rotation stale) — real reuse signal
+      // outside the grace window, or the replacement itself has since moved
+      // on (more than one rotation stale), or the row was retired by
+      // something that records no replayable successor (a sweep, a sign-out,
+      // a forced rotation) — real reuse signal
       await this.revokeFamily(record.familyId);
       throw new UnauthorizedException('Invalid or expired token');
     }

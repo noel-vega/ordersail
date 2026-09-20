@@ -22,7 +22,13 @@ import z from "zod";
 // rotation, a repeat presentation of the just-rotated-out token replays
 // the same replacement pair instead of revoking the family. Real reuse —
 // presenting a token more than one rotation stale, or outside the window —
-// still revokes the family. storefront-api's customer_refresh_tokens
+// still revokes the family. So does presenting a token whose row was
+// retired with `replacedByJti` left null: that is every row a sweep or a
+// sign-out revoked, and also the one a *forced* rotation replaced
+// (SessionsService.revokeOthersAndRotate — a credential changed, so the
+// retired token must never be answered with its successor). The column
+// means "may be replayed this successor", not merely "was succeeded".
+// storefront-api's customer_refresh_tokens
 // shipped without this and needed a follow-up fix (OS-461) after hitting
 // the race in practice; built in here from the start.
 //
