@@ -4,6 +4,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import {
   useTestDb,
+  lockWaiters,
+  liveRefreshTokenCount,
   insertAccount,
   insertUser,
   insertUserMfa,
@@ -15,7 +17,6 @@ import {
   eq,
   isNotNull,
   isNull,
-  sql,
   userPasskeysTable,
   userRefreshTokensTable,
   usersTable,
@@ -32,6 +33,7 @@ import {
   UNGATED,
   expectWorkingSession,
   presentAccessToken,
+  raceForRefreshRow,
   testJwt,
 } from './sessions.spec-support';
 
@@ -75,71 +77,6 @@ async function backdateSessionStart(userId: number, days: number) {
     .set({ sessionStartedAt: startedAt })
     .where(eq(userRefreshTokensTable.userId, userId));
   return startedAt;
-}
-
-// Resolves once Postgres reports at least `count` sessions parked on a lock.
-//
-// pg_locks, not pg_stat_activity: the stats views are snapshotted on first
-// read for the rest of a transaction, so from inside one they would go on
-// reporting nobody waiting forever. pg_locks reads the lock manager live.
-// Nothing else shares this database (each jest run boots its own container,
-// maxWorkers: 1), so any ungranted lock is a contender's.
-async function lockWaiters(
-  executor: Pick<typeof db, 'execute'>,
-  count: number,
-): Promise<void> {
-  const deadline = Date.now() + 4_000;
-  for (;;) {
-    const { rows } = await executor.execute<{ waiting: number }>(
-      sql`select count(*)::int as waiting from pg_locks where not granted`,
-    );
-    const waiting = rows[0]?.waiting ?? 0;
-    if (waiting >= count) return;
-    if (Date.now() > deadline) {
-      throw new Error(
-        `lockWaiters: only ${waiting} of ${count} contenders ever blocked on the row — the race was not staged`,
-      );
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-}
-
-// Makes "two redemptions at the same moment" a fact rather than a hope. Two
-// calls fired from one Promise.all usually interleave, but nothing promises
-// it, and a concurrency spec that passes because the scheduler happened to
-// run the calls back to back proves nothing.
-//
-// So the presented token's row is locked FOR UPDATE from a transaction of
-// our own before the contenders start. Their reads go straight through (a
-// plain SELECT takes no row lock), and each then parks on the write that
-// retires the row. Only once Postgres reports every contender waiting on a
-// lock — i.e. every one of them is already past its "is this still live?"
-// read — is the lock released. What happens next is decided by the writes
-// alone, which is exactly the part under test.
-async function raceForRefreshRow<T>(
-  refreshToken: string,
-  contenders: number,
-  start: () => Promise<T>,
-): Promise<T> {
-  const { jti } = testJwt().decode<{ jti: string }>(refreshToken);
-
-  let racing: Promise<T> | undefined;
-  await db.transaction(async (tx) => {
-    await tx
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.jti, jti))
-      .for('update');
-
-    racing = start();
-    // a contender that fails while we're still polling is reported by the
-    // `await racing` below, not as an unhandled rejection in the meantime
-    racing.catch(() => undefined);
-
-    await lockWaiters(tx, contenders);
-  });
-  if (!racing) throw new Error('raceForRefreshRow: contenders never started');
-  return await racing;
 }
 
 async function build() {
@@ -504,7 +441,7 @@ describe('SessionsService.refreshTokens', () => {
   it('mints exactly one successor when the same live token is redeemed twice at once, and both callers get a usable pair (OS-528)', async () => {
     const { service, userId, refresh_token } = await seedSession();
 
-    const [first, second] = await raceForRefreshRow(refresh_token, 2, () =>
+    const [first, second] = await raceForRefreshRow(db, refresh_token, 2, () =>
       Promise.all([
         service.refreshTokens(refresh_token),
         service.refreshTokens(refresh_token),
@@ -920,6 +857,68 @@ describe('SessionsService.revokeAll', () => {
 
     await expectWorkingSession(service, theirs, bystander.id);
   });
+
+  // merchant-web refreshes on every navigation, so a sweep can start while a
+  // rotation has retired the old row and inserted its successor but not yet
+  // committed. A sweep that only waits on the old row never sees that
+  // successor — it isn't in the sweep's snapshot — and the Session "revoke
+  // all" was called to end carries on under a new token. The refresh is
+  // parked first here, so it is the one in flight when the sweep arrives.
+  it('ends a Session whose refresh is already in flight — the successor does not slip past the sweep', async () => {
+    const service = await build();
+    const user = await seedUser();
+    const { refresh_token } = await service.start(user.id);
+
+    const [refreshed] = await raceForRefreshRow(
+      db,
+      refresh_token,
+      2,
+      async () => {
+        const refreshing = service.refreshTokens(refresh_token);
+        refreshing.catch(() => undefined);
+        await lockWaiters(db, 1);
+        return Promise.all([refreshing, service.revokeAll(user.id)]);
+      },
+    );
+
+    // the refresh got there first and was answered — with a token the sweep
+    // then ended along with everything else
+    await expect(
+      service.refreshTokens(refreshed.refresh_token),
+    ).rejects.toThrow(REFUSED);
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
+  });
+
+  // The other order: the sweep holds the User first, and the refresh — which
+  // read its row as live before the sweep got to it — must find nothing left
+  // to rotate once it is let through.
+  it('refuses a refresh that was let through only after the sweep, and writes nothing', async () => {
+    const service = await build();
+    const user = await seedUser();
+    const { refresh_token } = await service.start(user.id);
+
+    const [, refreshing] = await raceForRefreshRow(
+      db,
+      refresh_token,
+      2,
+      async () => {
+        const sweeping = service.revokeAll(user.id);
+        sweeping.catch(() => undefined);
+        await lockWaiters(db, 1);
+        return Promise.all([
+          sweeping,
+          service.refreshTokens(refresh_token).then(
+            () => 'continued' as const,
+            (err: unknown) => err,
+          ),
+        ]);
+      },
+    );
+
+    expect(refreshing).toBeInstanceOf(UnauthorizedException);
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
+    expect(await db.select().from(userRefreshTokensTable)).toHaveLength(1);
+  });
 });
 
 describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
@@ -995,7 +994,7 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
     const { refresh_token: callerToken } = await service.start(user.id);
     await service.start(user.id);
 
-    const [result] = await raceForRefreshRow(callerToken, 2, () =>
+    const [result] = await raceForRefreshRow(db, callerToken, 2, () =>
       Promise.all([
         service.revokeOthersAndRotate(user.id, callerToken),
         // resolves either way: it wins the rotation, or replays the winner's
@@ -1016,6 +1015,40 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
       testJwt().decode<{ jti: string }>(result.refresh_token).jti,
     ]);
 
+    await expectWorkingSession(service, result, user.id);
+  });
+
+  // The same meeting, but on somebody else's token: another browser — the
+  // one the password is being changed to get rid of — is mid-refresh when
+  // the sweep of "every other Session" starts. Its successor is inserted but
+  // not yet committed, so a sweep that waits only on the old row never sees
+  // it, and the attacker's in-flight refresh outlives the password change.
+  it('ends another Session whose refresh is already in flight when the sweep starts', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const caller = await service.start(user.id);
+    const otherBrowser = await service.start(user.id);
+
+    const [refreshed, result] = await raceForRefreshRow(
+      db,
+      otherBrowser.refresh_token,
+      2,
+      async () => {
+        const refreshing = service.refreshTokens(otherBrowser.refresh_token);
+        refreshing.catch(() => undefined);
+        await lockWaiters(db, 1);
+        return Promise.all([
+          refreshing,
+          service.revokeOthersAndRotate(user.id, caller.refresh_token),
+        ]);
+      },
+    );
+
+    await expect(
+      service.refreshTokens(refreshed.refresh_token),
+    ).rejects.toThrow(REFUSED);
+    // one Session left, and it is the caller's
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(1);
     await expectWorkingSession(service, result, user.id);
   });
 
@@ -1075,15 +1108,20 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
       await backdateSessionStart(user.id, 29);
       const [original] = await db.select().from(userRefreshTokensTable);
 
-      const [, result] = await raceForRefreshRow(callerToken, 2, async () => {
-        const refreshing = service.refreshTokens(callerToken);
-        refreshing.catch(() => undefined);
-        await lockWaiters(db, 1);
-        return Promise.all([
-          refreshing,
-          service.revokeOthersAndRotate(user.id, callerToken),
-        ]);
-      });
+      const [, result] = await raceForRefreshRow(
+        db,
+        callerToken,
+        2,
+        async () => {
+          const refreshing = service.refreshTokens(callerToken);
+          refreshing.catch(() => undefined);
+          await lockWaiters(db, 1);
+          return Promise.all([
+            refreshing,
+            service.revokeOthersAndRotate(user.id, callerToken),
+          ]);
+        },
+      );
 
       const live = await liveRow(user.id);
       expect(live.jti).toBe(

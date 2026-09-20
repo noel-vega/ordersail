@@ -1,6 +1,8 @@
 import { type ExecutionContext, HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { eq, userRefreshTokensTable } from 'db/identity';
+import { lockWaiters, type TestDb } from 'test-support';
 import {
   SKIP_EMAIL_VERIFICATION_KEY,
   SKIP_MFA_ENROLLMENT_KEY,
@@ -116,4 +118,48 @@ export async function expectWorkingSession(
     user: { sub: userId },
   });
   return next;
+}
+
+// Makes "two operations at the same moment" a fact rather than a hope. Two
+// calls fired from one Promise.all usually interleave, but nothing promises
+// it, and a concurrency spec that passes because the scheduler happened to
+// run the calls back to back proves nothing.
+//
+// So the presented token's row is locked FOR UPDATE from a transaction of
+// our own before the contenders start. Their reads go straight through (a
+// plain SELECT takes no row lock), and each then parks on a lock: a
+// redemption on the write that retires the held row, a revoke-all sweep
+// either on that same row or behind a redemption that already holds the
+// User row. Only once Postgres reports every contender waiting on a lock —
+// i.e. every one of them is already past its "is this still live?" read —
+// is the row released. What happens next is decided by the writes alone,
+// which is exactly the part under test.
+//
+// To fix who is first in line, have `start` launch one contender, await
+// lockWaiters(db, 1), then launch the next.
+export async function raceForRefreshRow<T>(
+  db: TestDb,
+  refreshToken: string,
+  contenders: number,
+  start: () => Promise<T>,
+): Promise<T> {
+  const { jti } = testJwt().decode<{ jti: string }>(refreshToken);
+
+  let racing: Promise<T> | undefined;
+  await db.transaction(async (tx) => {
+    await tx
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.jti, jti))
+      .for('update');
+
+    racing = start();
+    // a contender that fails while we're still polling is reported by the
+    // `await racing` below, not as an unhandled rejection in the meantime
+    racing.catch(() => undefined);
+
+    await lockWaiters(tx, contenders);
+  });
+  if (!racing) throw new Error('raceForRefreshRow: contenders never started');
+  return await racing;
 }

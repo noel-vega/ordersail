@@ -760,16 +760,24 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    await this.db
-      .update(usersTable)
-      .set({ password: hashedPassword, updatedAt: new Date() })
-      .where(eq(usersTable.id, reset.userId));
+    // One transaction, so "the password changed" and "every Session ended"
+    // commit as one fact: a revoke that failed after the password write had
+    // committed could not be retried with the same link (the token is
+    // consumed), leaving the old password's Sessions running under the new
+    // one. Writing the User row first also takes the lock revokeAll wants —
+    // see SessionsService.revokeAllFamiliesForUser for why a sweep holds it.
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(usersTable)
+        .set({ password: hashedPassword, updatedAt: new Date() })
+        .where(eq(usersTable.id, reset.userId));
 
-    await this.db
-      .delete(userPasswordResetsTable)
-      .where(eq(userPasswordResetsTable.id, reset.id));
+      await tx
+        .delete(userPasswordResetsTable)
+        .where(eq(userPasswordResetsTable.id, reset.id));
 
-    await this.sessionsService.revokeAll(reset.userId);
+      await this.sessionsService.revokeAll(reset.userId, tx);
+    });
   }
 
   // Changes the password of a caller who is already signed in — the

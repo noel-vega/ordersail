@@ -271,8 +271,10 @@ export class SessionsService {
   // included — for the moments nothing of theirs should survive. Two today:
   // AuthService.resetPassword (whoever prompted the reset is locked out
   // along with everyone else, and the User signs in again with the new
-  // password) and UsersService.setDeactivated, which passes its transaction
-  // so that "deactivated" and "holds no live Session" commit as one fact.
+  // password) and UsersService.setDeactivated. Both pass their transaction,
+  // so that "the password changed" / "deactivated" and "holds no live
+  // Session" commit as one fact. Without one the sweep opens its own — it
+  // always runs in a transaction, see revokeAllFamiliesForUser.
   async revokeAll(userId: number, tx?: DbTransaction): Promise<void> {
     await this.revokeAllFamiliesForUser(userId, null, tx);
   }
@@ -326,18 +328,41 @@ export class SessionsService {
     exceptFamilyId?: string | null,
     tx?: DbTransaction,
   ): Promise<void> {
-    await (tx ?? this.db)
-      .update(userRefreshTokensTable)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(
-          eq(userRefreshTokensTable.userId, userId),
-          isNull(userRefreshTokensTable.revokedAt),
-          ...(exceptFamilyId
-            ? [ne(userRefreshTokensTable.familyId, exceptFamilyId)]
-            : []),
-        ),
-      );
+    const sweep = async (tx: DbTransaction) => {
+      // The User row first, FOR UPDATE, before any token row is touched. A
+      // rotation holds the same row FOR SHARE for as long as its retire-and-
+      // insert is uncommitted (see rotateRefreshRecord), so this waits out
+      // any rotation already in flight — and the UPDATE below, a new
+      // statement with a new snapshot, then sees the successor it inserted.
+      // Without it the sweep blocks on the row being retired, re-checks only
+      // that row once the rotation commits, and never sees the successor:
+      // an attacker's in-flight refresh would outlive the password reset
+      // that was meant to end it. A rotation arriving after this lock is
+      // taken waits in turn, and finds its row already revoked. A caller
+      // whose transaction has already written the User row (setDeactivated,
+      // resetPassword) shut rotations out with that write; this adds nothing
+      // there, and is what does the job for the callers that pass no `tx`.
+      await tx
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId))
+        .for('update');
+
+      await tx
+        .update(userRefreshTokensTable)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(userRefreshTokensTable.userId, userId),
+            isNull(userRefreshTokensTable.revokedAt),
+            ...(exceptFamilyId
+              ? [ne(userRefreshTokensTable.familyId, exceptFamilyId)]
+              : []),
+          ),
+        );
+    };
+
+    await (tx ? sweep(tx) : this.db.transaction(sweep));
   }
 
   private async sign(
@@ -438,6 +463,21 @@ export class SessionsService {
   // grace-window replay, which treats a missing replacement as reuse and
   // would kill the family the winner just rotated.
   //
+  // Before either write the transaction takes the User row FOR SHARE, and
+  // holds it until it commits. That is what makes "revoke all" mean all:
+  // revokeAllFamiliesForUser takes the same row FOR UPDATE before it touches
+  // a token, so a sweep can never run in the gap where this rotation's
+  // successor exists but isn't committed yet — the one row a sweep's snapshot
+  // would miss. Either the sweep waits for this commit and then sees the
+  // successor, or this waits for the sweep and then finds its row revoked
+  // (the conditional UPDATE matches nothing → null). SHARE rather than
+  // UPDATE so that one User's rotations in different Sessions don't queue
+  // behind each other; both paths lock the User row before any token row, so
+  // they can't deadlock. The claims were computed before this transaction
+  // began, so the locked row is also where a User deactivated (or deleted)
+  // since then is caught: refused with the same 401 as claimsFor's, nothing
+  // written.
+  //
   // The successor takes the retired row's sessionStartedAt as it stands. A
   // rotation continues a Session, it doesn't begin one, so this is the one
   // value a rotation must never re-stamp: leave it to the column default and
@@ -452,6 +492,15 @@ export class SessionsService {
   ): Promise<TokenPair | null> {
     const nextJti = randomUUID();
     const won = await this.db.transaction(async (tx) => {
+      const [user] = await tx
+        .select({ deactivatedAt: usersTable.deactivatedAt })
+        .from(usersTable)
+        .where(eq(usersTable.id, claims.sub))
+        .for('share');
+      if (!user || user.deactivatedAt) {
+        throw new UnauthorizedException(INVALID_TOKEN);
+      }
+
       const [retired] = await tx
         .update(userRefreshTokensTable)
         .set({ revokedAt: new Date(), replacedByJti: nextJti })

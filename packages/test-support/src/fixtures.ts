@@ -5,15 +5,18 @@ import { createHash } from 'node:crypto';
 import {
   accountApiKeysTable,
   accountsTable,
+  and,
   brandsTable,
   cartItemsTable,
   cartsTable,
   categoriesTable,
   customersTable,
+  eq,
   fulfillmentItemsTable,
   fulfillmentsTable,
   inArray,
   inventoryTable,
+  isNull,
   locationsTable,
   orderItemsTable,
   orderShippingTable,
@@ -37,6 +40,7 @@ import {
   userMfaTable,
   userPasskeysTable,
   userPasswordResetsTable,
+  userRefreshTokensTable,
   userRolesTable,
   usersTable,
   variantOptionValuesTable,
@@ -122,6 +126,28 @@ export async function insertUser(
       })
       .returning(),
   );
+}
+
+// How many refresh tokens this User could still redeem — i.e. how many
+// Sessions they hold. Rows rather than behaviour, so only ever alongside a
+// behavioural check, or for an invariant that can't be seen from outside:
+// inside the refresh grace window a rotated-out token replays its successor,
+// and a live row nobody holds the token for is invisible to every caller
+// until someone turns up with it.
+export async function liveRefreshTokenCount(
+  db: TestDb,
+  userId: number,
+): Promise<number> {
+  const rows = await db
+    .select({ id: userRefreshTokensTable.id })
+    .from(userRefreshTokensTable)
+    .where(
+      and(
+        eq(userRefreshTokensTable.userId, userId),
+        isNull(userRefreshTokensTable.revokedAt),
+      ),
+    );
+  return rows.length;
 }
 
 // a pending staff invite — one row exists only while the invite is

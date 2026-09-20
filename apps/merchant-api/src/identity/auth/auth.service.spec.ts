@@ -8,6 +8,7 @@ import { encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
 import { hashToken } from 'src/shared/common/generate-token.util';
 import {
   useTestDb,
+  lockWaiters,
   insertAccount,
   insertUser,
   insertUserPasswordReset,
@@ -44,6 +45,7 @@ import {
   callerOf,
   expectWorkingSession,
   presentAccessToken,
+  raceForRefreshRow,
 } from './sessions.spec-support';
 
 const db = useTestDb();
@@ -458,6 +460,38 @@ describe('AuthService.resetPassword (OS-469)', () => {
     await expect(sessions.refreshTokens(phone.refresh_token)).rejects.toThrow(
       'Invalid or expired token',
     );
+  });
+
+  // The reset exists to lock out whoever holds the old password's Sessions,
+  // and their browser refreshes on every navigation — so the reset can land
+  // while one of those refreshes has inserted a successor it hasn't
+  // committed. That successor must not be what survives the reset. The
+  // refresh is parked first, so it is the one in flight.
+  it("ends a Session whose refresh was already in flight — an attacker's successor does not survive the reset", async () => {
+    const user = await seedActiveUser();
+    const reset = await insertUserPasswordReset(db, { userId: user.id });
+    const { service, sessions } = await buildBoth();
+    const attacker = await sessions.start(user.id);
+
+    const [refreshed] = await raceForRefreshRow(
+      db,
+      attacker.refresh_token,
+      2,
+      async () => {
+        const refreshing = sessions.refreshTokens(attacker.refresh_token);
+        refreshing.catch(() => undefined);
+        await lockWaiters(db, 1);
+        return Promise.all([
+          refreshing,
+          service.resetPassword(reset.token, 'brand-new-password'),
+        ]);
+      },
+    );
+
+    await expect(
+      sessions.refreshTokens(refreshed.refresh_token),
+    ).rejects.toThrow('Invalid or expired token');
+    expect(await liveRefreshTokenCount(user.id)).toBe(0);
   });
 
   it('rejects an expired token', async () => {

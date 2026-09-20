@@ -7,6 +7,8 @@ import {
   insertRole,
   insertUser,
   insertUserInvite,
+  liveRefreshTokenCount,
+  lockWaiters,
   seedPermissionsCatalog,
   useTestDb,
 } from 'test-support';
@@ -21,7 +23,11 @@ import { EmailService } from 'src/shared/email/email.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { FactorStateService } from '../auth/factor-state.service';
 import { SessionsService } from '../auth/sessions.service';
-import { expectWorkingSession, testJwt } from '../auth/sessions.spec-support';
+import {
+  expectWorkingSession,
+  raceForRefreshRow,
+  testJwt,
+} from '../auth/sessions.spec-support';
 import { UsersService } from './users.service';
 import { hashToken } from 'src/shared/common/generate-token.util';
 
@@ -480,6 +486,79 @@ describe('UsersService.setDeactivated ends Sessions (OS-553)', () => {
       await sessions.start(user.id),
       user.id,
     );
+  });
+
+  // merchant-web refreshes on every navigation, so a deactivation can land
+  // while the User's refresh has inserted a successor it hasn't committed
+  // yet. That refresh was let in before the deactivation, so it is answered
+  // — but the token it is answered with must die with the rest. Left live,
+  // it is refused only while the User stays deactivated, and works again the
+  // moment they are reactivated: a Session that predates the deactivation,
+  // handed back. The refresh is parked first, so it is the one in flight.
+  it('ends a Session whose refresh was already in flight, and reactivating resurrects nothing', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const { service, sessions } = await buildBoth();
+    const laptop = await sessions.start(user.id);
+
+    const [refreshed] = await raceForRefreshRow(
+      db,
+      laptop.refresh_token,
+      2,
+      async () => {
+        const refreshing = sessions.refreshTokens(laptop.refresh_token);
+        refreshing.catch(() => undefined);
+        await lockWaiters(db, 1);
+        return Promise.all([
+          refreshing,
+          service.setDeactivated(user.id, account.id, true),
+        ]);
+      },
+    );
+
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
+
+    await service.setDeactivated(user.id, account.id, false);
+
+    await expect(
+      sessions.refreshTokens(refreshed.refresh_token),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
+  });
+
+  // The other order: the deactivation holds the User row first, and the
+  // refresh — which computed its claims while the User was still active — is
+  // let through only once "deactivated" has committed. It must be refused
+  // there, having written nothing.
+  it('refuses a refresh let through only after the deactivation committed, and writes nothing', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const { service, sessions } = await buildBoth();
+    const laptop = await sessions.start(user.id);
+
+    const [, refreshing] = await raceForRefreshRow(
+      db,
+      laptop.refresh_token,
+      2,
+      async () => {
+        const deactivating = service.setDeactivated(user.id, account.id, true);
+        deactivating.catch(() => undefined);
+        await lockWaiters(db, 1);
+        return Promise.all([
+          deactivating,
+          sessions.refreshTokens(laptop.refresh_token).then(
+            () => 'continued' as const,
+            (err: unknown) => err,
+          ),
+        ]);
+      },
+    );
+
+    expect(refreshing).toBeInstanceOf(UnauthorizedException);
+    expect(await db.select().from(userRefreshTokensTable)).toHaveLength(1);
+
+    await service.setDeactivated(user.id, account.id, false);
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
   });
 
   it('ends no Sessions when the last-Owner guard refuses the deactivation', async () => {
