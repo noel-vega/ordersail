@@ -35,6 +35,13 @@ deliberately interchangeable.
 _Avoid_: 2FA, MFA (as a countable noun), second factor — a passkey can be the
 *only* factor, not a second one.
 
+**Session**:
+One continuous sign-in by a User on one browser. It begins when they prove who
+they are and ends on sign-out, revocation, or expiry; a User can hold many at
+once. A password accepted but a Factor still owed is not yet a Session.
+_Avoid_: Login, token, family (that is how a Session is stored, not what it
+is).
+
 **Permission**:
 One key from the fixed catalog in `packages/db/src/permissions-catalog.ts`,
 granted to a User through a Role. New keys ship as a code change, never through
