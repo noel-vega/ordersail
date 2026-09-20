@@ -86,6 +86,9 @@ export type PaginatedCustomerOrders =
   components["schemas"]["PaginatedCustomerOrders"];
 export type AcceptInviteDto = components["schemas"]["AcceptInviteDto"];
 export type AuthMe = components["schemas"]["AuthMe"];
+export type UserProfile = components["schemas"]["UserProfile"];
+export type UpdateUserProfileDto =
+  components["schemas"]["UpdateUserProfileDto"];
 export type DashboardSummary = components["schemas"]["DashboardSummary"];
 export type OnboardingStatus = components["schemas"]["OnboardingStatus"];
 export type Permission = components["schemas"]["Permission"];
@@ -298,6 +301,26 @@ export class AdminClient {
   async me() {
     const { data } = await this.do(() => this.client.GET("/auth/me"));
     return data;
+  }
+
+  // the caller's own editable attributes (name + phone). Deliberately a
+  // separate call from me(): that response is cached with a staleTime and
+  // cleared on every auth mutation, which is the wrong lifecycle for the
+  // values backing a form the user edits. Unwrapped so a failed read throws
+  // rather than resolving `undefined` into a blank form.
+  async profile() {
+    return unwrap(await this.do(() => this.client.GET("/auth/me/profile")));
+  }
+
+  // writes the caller's own name/phone. There is no id: the endpoint can only
+  // ever address the signed-in user, which is why it needs no permission.
+  // Throws ApiError with the server's message on a non-2xx.
+  async updateProfile(params: components["schemas"]["UpdateUserProfileDto"]) {
+    return unwrap(
+      await this.do(() =>
+        this.client.PATCH("/auth/me/profile", { body: params }),
+      ),
+    );
   }
 
   // clears the httpOnly refresh_token cookie server-side — the client can't

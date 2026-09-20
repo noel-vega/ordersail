@@ -1,20 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ProfileView } from "../../../features/me/views/profile.view";
+import { getMyProfileQueryOptions } from "../../../features/me/me.hooks";
+import { queryClient } from "../../../lib/react-query-client";
+import { FormSkeleton } from "../../../components/skeletons";
 
-// Placeholder. The profile form (name + phone, against the self-service
-// endpoints) is OS-386; this route exists now so /app/me has somewhere to
-// redirect to and the sub-nav's Profile tab type-checks.
+// Deliberately no requirePermission(): this is the signed-in user's own
+// profile, reachable by every authenticated user including one holding zero
+// permissions. The endpoints behind it take no id, so they can only address
+// the caller.
 export const Route = createFileRoute("/app/me/profile")({
   staticData: { breadcrumb: "Profile" },
-  component: RouteComponent,
+  beforeLoad: async () => {
+    await queryClient.ensureQueryData(getMyProfileQueryOptions());
+  },
+  pendingComponent: () => <FormSkeleton fields={4} />,
+  component: ProfileView,
 });
-
-function RouteComponent() {
-  return (
-    <div className="max-w-lg space-y-4">
-      <h1 className="text-xl font-semibold">Profile</h1>
-      <p className="text-sm text-muted-foreground">
-        Editing your name and phone number is coming shortly.
-      </p>
-    </div>
-  );
-}
