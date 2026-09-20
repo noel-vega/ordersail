@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { type DbTransaction } from 'src/shared/database/database.types';
 import {
   and,
   type db as Db,
@@ -17,8 +18,6 @@ import {
   usersTable,
 } from 'db/identity';
 import { FactorStateService } from './factor-state.service';
-
-type DbTransaction = Parameters<Parameters<(typeof Db)['transaction']>[0]>[0];
 
 // a just-rotated-out refresh token, re-presented within this window, replays
 // the same replacement pair instead of revoking the family — see
@@ -607,7 +606,7 @@ export class SessionsService {
       .where(eq(userRefreshTokensTable.jti, payload.jti));
 
     if (!record) {
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new UnauthorizedException(INVALID_TOKEN);
     }
 
     // The absolute lifetime, checked before the row's own state is looked at
@@ -696,12 +695,12 @@ export class SessionsService {
       // something that records no replayable successor (a sweep, a sign-out,
       // a forced rotation) — real reuse signal
       await this.revokeFamily(record.familyId);
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new UnauthorizedException(INVALID_TOKEN);
     }
 
     // only reachable if the row vanished between the two reads above (rows
     // cascade with their User) — there is no session left to continue
-    throw new UnauthorizedException('Invalid or expired token');
+    throw new UnauthorizedException(INVALID_TOKEN);
   }
 
   // The payload of a presented refresh token, or null if it isn't one: a bad

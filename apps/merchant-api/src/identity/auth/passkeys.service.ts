@@ -31,6 +31,7 @@ import {
 } from 'db/identity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { AuthService } from './auth.service';
+import { FactorStateService } from './factor-state.service';
 import { SessionsService, type TokenPair } from './sessions.service';
 import { PasskeyDto } from './dto/passkey.dto';
 import { WEBAUTHN_CHALLENGE_TTL_MS, webauthnConfig } from './webauthn.config';
@@ -43,6 +44,7 @@ export class PasskeysService {
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private readonly authService: AuthService,
     private readonly sessionsService: SessionsService,
+    private readonly factorState: FactorStateService,
   ) {}
 
   async list(userId: number): Promise<PasskeyDto[]> {
@@ -182,7 +184,7 @@ export class PasskeysService {
         // before passkeys this only happened in confirmMfa, which would have
         // left a passkey-only user with no recovery path at all.
         const { totpConfirmed, passkeyCount } =
-          await this.authService.getFactorState(userId, tx);
+          await this.factorState.getFactorState(userId, tx);
         const isFirstFactor = !totpConfirmed && passkeyCount === 1;
 
         return {
@@ -461,10 +463,10 @@ export class PasskeysService {
       await this.authService.lockUserFactors(tx, userId);
 
       // account-wide policy or the invited-staff stamp — one rule, shared
-      // with the enrollment claim (see AuthService.getFactorRequirement)
-      if (await this.authService.getFactorRequirement(userId, tx)) {
+      // with the enrollment claim (see FactorStateService.getFactorRequirement)
+      if (await this.factorState.getFactorRequirement(userId, tx)) {
         const { totpConfirmed, passkeyCount } =
-          await this.authService.getFactorState(userId, tx);
+          await this.factorState.getFactorState(userId, tx);
         const remaining = passkeyCount - 1 + (totpConfirmed ? 1 : 0);
         if (remaining === 0) {
           throw new ConflictException(

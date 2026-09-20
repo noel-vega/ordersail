@@ -97,7 +97,7 @@ export interface AuthenticatedUser {
   // Not the same question as "does the caller hold a factor": a user on an
   // account that doesn't require MFA is satisfied with none at all. That
   // one is deliberately NOT a claim — MfaFactorGuard reads it live
-  // (AuthService.getFactorState) so a factor change takes effect on the
+  // (FactorStateService.getFactorState) so a factor change takes effect on the
   // very next request (OS-492).
   mfaEnrollmentSatisfied: boolean;
 }

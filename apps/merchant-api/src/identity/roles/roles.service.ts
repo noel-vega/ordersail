@@ -5,6 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { type DbTransaction } from 'src/shared/database/database.types';
 import {
   and,
   type db as Db,
@@ -25,16 +26,6 @@ import { groupBy } from '../shared/group-by.util';
 import { assertCanGrant } from '../shared/assert-can-grant.util';
 import { getPermissionKeysForRoles } from '../shared/get-permission-keys-for-roles.util';
 import { PermissionsService } from '../permissions/permissions.service';
-
-// callback param type of db.transaction() — lets createSystemRole join a
-// transaction started by a caller in another module (account.service.ts's
-// provision), rather than opening its own
-type DbTransaction = Parameters<(typeof Db)['transaction']>[0] extends (
-  tx: infer T,
-  ...rest: never[]
-) => unknown
-  ? T
-  : never;
 
 // narrowed to only what getPermissionsByRoleId actually calls, so both
 // this.db and a transaction handle (which lacks this.db's $client: Pool)

@@ -15,10 +15,11 @@ import { AccountService } from '../account/account.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
-import { type FactorState, FactorStateService } from './factor-state.service';
+import { FactorStateService } from './factor-state.service';
 import { SessionsService, type TokenPair } from './sessions.service';
 import { AuthMe } from './entities/auth-me.entity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { type DbTransaction } from 'src/shared/database/database.types';
 import { EmailService } from 'src/shared/email/email.service';
 import { env } from 'src/shared/env';
 import {
@@ -73,10 +74,6 @@ interface MfaChallengeResult {
 // cookie (respondWithSession).
 type SignInResult = ({ mfaRequired: false } & TokenPair) | MfaChallengeResult;
 
-// the callback param drizzle hands a `db.transaction()` caller — same
-// query-builder surface as `db` itself, scoped to one transaction
-type DbTransaction = Parameters<Parameters<(typeof Db)['transaction']>[0]>[0];
-
 @Injectable()
 export class AuthService {
   constructor(
@@ -121,7 +118,7 @@ export class AuthService {
 
     const permissions =
       await this.permissionsService.getEffectivePermissionKeys(user.sub);
-    const factors = await this.getFactorState(user.sub);
+    const factors = await this.factorState.getFactorState(user.sub);
     return {
       userId: user.sub,
       email: row.email,
@@ -150,7 +147,7 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    const factors = await this.getFactorState(user.id);
+    const factors = await this.factorState.getFactorState(user.id);
 
     // any confirmed second factor means the password alone isn't enough —
     // withhold tokens and hand back a short-lived challenge instead. An
@@ -183,17 +180,6 @@ export class AuthService {
     };
   }
 
-  // Factor reads live in FactorStateService — SessionsService needs them
-  // too, and can't reach them through this class without a dependency cycle.
-  // Kept here as pass-throughs so PasskeysService and MfaFactorGuard, which
-  // already hold an AuthService, don't grow a second dependency for one call.
-  async getFactorState(
-    userId: number,
-    tx?: DbTransaction,
-  ): Promise<FactorState> {
-    return this.factorState.getFactorState(userId, tx);
-  }
-
   // Serializes every read-then-mutate of this user's factors — registering a
   // passkey, removing one, disabling TOTP, regenerating recovery codes.
   // They live in two tables and two services, so there is no single row or
@@ -206,13 +192,6 @@ export class AuthService {
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .for('update');
-  }
-
-  async getFactorRequirement(
-    userId: number,
-    tx?: DbTransaction,
-  ): Promise<'account' | 'user' | null> {
-    return this.factorState.getFactorRequirement(userId, tx);
   }
 
   private async createMfaChallengeToken(userId: number): Promise<string> {
@@ -495,9 +474,15 @@ export class AuthService {
       // OS-485 a passkey is also a factor, so someone holding both can drop
       // TOTP and still satisfy the requirement — what must not happen is
       // going to zero.
-      const requirement = await this.getFactorRequirement(userId, tx);
+      const requirement = await this.factorState.getFactorRequirement(
+        userId,
+        tx,
+      );
       if (requirement) {
-        const { passkeyCount } = await this.getFactorState(userId, tx);
+        const { passkeyCount } = await this.factorState.getFactorState(
+          userId,
+          tx,
+        );
         if (passkeyCount === 0) {
           throw new ConflictException(
             requirement === 'account'
@@ -536,7 +521,10 @@ export class AuthService {
       // callers are shown a batch and only the second one's is live.
       await this.lockUserFactors(tx, userId);
 
-      const { hasMfaFactor } = await this.getFactorState(userId, tx);
+      const { hasMfaFactor } = await this.factorState.getFactorState(
+        userId,
+        tx,
+      );
       if (!hasMfaFactor) {
         throw new UnauthorizedException('MFA is not enabled');
       }

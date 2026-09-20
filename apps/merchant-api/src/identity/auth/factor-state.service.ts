@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { type DbTransaction } from 'src/shared/database/database.types';
 import {
   accountsTable,
   count,
@@ -21,10 +22,6 @@ export interface FactorState {
 export interface FactorClaims {
   mfaEnrollmentSatisfied: boolean;
 }
-
-// the callback param drizzle hands a `db.transaction()` caller — same
-// query-builder surface as `db` itself, scoped to one transaction
-type DbTransaction = Parameters<Parameters<(typeof Db)['transaction']>[0]>[0];
 
 // The read side of a User's Factors: what they hold, whether one is required
 // of them, and the one token claim that follows. Its own provider rather than

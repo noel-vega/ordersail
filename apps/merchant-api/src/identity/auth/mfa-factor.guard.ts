@@ -11,7 +11,7 @@ import {
   REQUIRE_MFA_FACTOR_KEY,
   type AuthenticatedRequest,
 } from 'src/shared/auth/decorators';
-import { AuthService } from './auth.service';
+import { FactorStateService } from './factor-state.service';
 
 // Allow-by-default with opt-ins, the same polarity as PermissionsGuard —
 // and deliberately NOT folded into MfaEnrollmentGuard, which is
@@ -27,7 +27,7 @@ import { AuthService } from './auth.service';
 export class MfaFactorGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
-    private readonly authService: AuthService,
+    private readonly factorState: FactorStateService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -69,7 +69,7 @@ export class MfaFactorGuard implements CanActivate {
     // for a token refresh.
     const holdsFactor =
       user != null &&
-      (await this.authService.getFactorState(user.sub)).hasMfaFactor;
+      (await this.factorState.getFactorState(user.sub)).hasMfaFactor;
 
     if (!holdsFactor) {
       // The `code` is the point: merchant-web has to tell this apart from a

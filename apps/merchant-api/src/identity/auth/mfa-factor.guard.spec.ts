@@ -7,7 +7,7 @@ import {
   type AuthenticatedRequest,
 } from 'src/shared/auth/decorators';
 import { MfaFactorGuard } from './mfa-factor.guard';
-import { AuthService } from './auth.service';
+import { FactorStateService } from './factor-state.service';
 import { AuthModule } from './auth.module';
 
 // same ctx() shape as mfa-enrollment.guard.spec.ts, plus a class-level
@@ -45,14 +45,14 @@ function ctx(opts: {
 // all (OS-505) — so this stub is "what the database currently says", and it
 // is the only thing that decides the outcome.
 function guard(holdsFactor = true) {
-  const authService = {
+  const factorState = {
     getFactorState: jest.fn().mockResolvedValue({
       totpConfirmed: holdsFactor,
       passkeyCount: 0,
       hasMfaFactor: holdsFactor,
     }),
-  } as unknown as AuthService;
-  return new MfaFactorGuard(new Reflector(), authService);
+  } as unknown as FactorStateService;
+  return new MfaFactorGuard(new Reflector(), factorState);
 }
 
 const caller = {
@@ -136,9 +136,9 @@ describe('MfaFactorGuard (OS-492)', () => {
   // the live lookup is the price of a gated route, not of every request
   it('does not query factor state for an ungated route', async () => {
     const getFactorState = jest.fn();
-    const authService = { getFactorState } as unknown as AuthService;
+    const factorState = { getFactorState } as unknown as FactorStateService;
 
-    await new MfaFactorGuard(new Reflector(), authService).canActivate(
+    await new MfaFactorGuard(new Reflector(), factorState).canActivate(
       ctx({ user: caller }),
     );
 
