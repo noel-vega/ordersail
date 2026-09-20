@@ -47,6 +47,24 @@ export function readErrorBody(body: unknown): {
   return { message, code: typeof rawCode === "string" ? rawCode : undefined };
 }
 
+// Whether a 401 is one that re-authenticating could actually fix.
+//
+// AuthGuard rejects a missing, expired or invalid token with a bare
+// `new UnauthorizedException()`, which NestJS serializes with the single-word
+// message "Unauthorized". A 401 carrying any other message came from a
+// handler that authenticated the caller perfectly well and is refusing for a
+// reason of its own — a wrong current password, say. Refreshing the token and
+// replaying that request can only ever fail again, while spending a second
+// attempt from whatever rate limit the route carries.
+//
+// Keyed on the absence of a handler message rather than on matching any
+// particular wording, so rephrasing a handler's message can't silently turn
+// its 401 back into a retried one.
+export function isStaleTokenError(body: unknown): boolean {
+  const { message } = readErrorBody(body);
+  return message === undefined || message === "Unauthorized";
+}
+
 // openapi-fetch resolves non-2xx as { error } rather than throwing. Resource
 // methods that mutate use this so callers can `try/catch` and show the API's
 // message (e.g. a 409 from an over-refund) instead of a generic string.

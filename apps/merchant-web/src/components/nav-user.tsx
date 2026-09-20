@@ -1,4 +1,4 @@
-import { ChevronsUpDownIcon, LogOutIcon, ShieldIcon } from "lucide-react";
+import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   DropdownMenu,
@@ -71,9 +71,12 @@ export function NavUser() {
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem render={<Link to="/app/settings/security" />}>
-              <ShieldIcon />
-              Security
+            {/* One personal destination: /app/me holds Profile and Security
+                as tabs. No permission gate — everything behind it only ever
+                touches the signed-in user's own data. */}
+            <DropdownMenuItem render={<Link to="/app/me" />}>
+              <UserIcon />
+              Your profile
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={handleLogout}>

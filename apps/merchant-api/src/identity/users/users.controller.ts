@@ -2,7 +2,6 @@ import {
   Controller,
   DefaultValuePipe,
   Delete,
-  ForbiddenException,
   Get,
   Post,
   Patch,
@@ -19,7 +18,6 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { PermissionsService } from '../permissions/permissions.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { AssignRolesDto } from './dto/assign-roles.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
@@ -27,7 +25,6 @@ import { User } from './entities/user.entity';
 import { PaginatedUsers } from './entities/paginated-users.entity';
 import {
   CurrentUser,
-  AuthenticatedOnly,
   GrantedPermissions,
   RequirePermissions,
   type AuthenticatedUser,
@@ -37,10 +34,7 @@ import {
 @Controller('users')
 @NoMfaFactorRequired()
 export class UsersController {
-  constructor(
-    private readonly usersService: UsersService,
-    private readonly permissionsService: PermissionsService,
-  ) {}
+  constructor(private readonly usersService: UsersService) {}
 
   @Post()
   @RequirePermissions('users:write')
@@ -86,11 +80,18 @@ export class UsersController {
     return found;
   }
 
-  // no @RequirePermissions — a user may always edit their own name/phone;
-  // editing anyone else needs users:write (checked in the handler)
-  // self-edit is always allowed; editing another user is checked in the
-  // handler (assertCanGrant-style ownership check, not a blanket permission)
-  @AuthenticatedOnly()
+  // Administrative, unconditionally: this is the Staff record aspect
+  // (ADR 0001), and a user editing their own name/phone goes through
+  // PATCH /auth/me/profile instead.
+  //
+  // Until OS-384 this route was @AuthenticatedOnly() with an in-handler
+  // "id === user.sub is always allowed" branch. That hole had to be punched
+  // into every handler and every route covering the same rows, and the one
+  // directly above — GET :id — never got it, so merchant-web admitted a
+  // permissionless user to their own Staff record and the API then refused
+  // them. Splitting the two aspects onto two routes is what makes the gate
+  // hole-free rather than merely well-commented.
+  @RequirePermissions('users:write')
   @Patch(':id')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: User })
@@ -99,17 +100,6 @@ export class UsersController {
     @Body() dto: UpdateUserProfileDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    if (id !== user.sub) {
-      const granted = await this.permissionsService.getEffectivePermissionKeys(
-        user.sub,
-      );
-      if (!granted.has('users:write')) {
-        throw new ForbiddenException(
-          'Missing required permission: users:write',
-        );
-      }
-    }
-
     const updated = await this.usersService.update(id, user.accountId, dto);
     if (!updated) throw new NotFoundException();
     return updated;

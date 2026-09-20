@@ -1,8 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Controller, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import z from "zod";
 import type { User } from "merchant-sdk";
 import { ApiError } from "merchant-sdk";
 import {
@@ -15,13 +12,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "ui/alert-dialog";
-import { Field, FieldLabel } from "ui/field";
-import { Input } from "ui/input";
 import { Badge } from "ui/badge";
 import { Button } from "ui/button";
 import { toast } from "ui/sonner";
 import { ArrowLeftIcon, LoaderCircleIcon } from "lucide-react";
 import { Can } from "../../../components/can";
+import {
+  ProfileForm,
+  type ProfileFormPayload,
+} from "../../../components/profile-form";
 import { usePermissions } from "../../auth/permission-context";
 import { useAuthMe } from "../../auth/permissions.hooks";
 import {
@@ -35,22 +34,17 @@ import {
 import { EditUserRolesSheet } from "./edit-user-roles-sheet";
 import { UserStatusBadge } from "./user-status-badge";
 
-const ProfileFormSchema = z.object({
-  firstName: z.string().min(1, "Required"),
-  lastName: z.string().min(1, "Required"),
-  phone: z.string(),
-});
-
-type ProfileForm = z.infer<typeof ProfileFormSchema>;
-
-export function UserDetailView({ id }: { id: number }) {
+export function StaffRecordView({ id }: { id: number }) {
   const navigate = useNavigate();
   const { data: user } = useUserSuspenseQuery(id);
   const me = useAuthMe();
   const perms = usePermissions();
 
+  // isSelf no longer grants edit rights — this page is the administrative view
+  // of a user, and your own data is editable at /app/me. It stays because an
+  // owner must not be able to deactivate themselves out of their own account.
   const isSelf = me.data?.userId === id;
-  const canEditProfile = isSelf || perms.has("users:write");
+  const canEditProfile = perms.has("users:write");
   const canDeactivate = perms.has("users:deactivate") && !isSelf;
 
   const [rolesOpen, setRolesOpen] = useState(false);
@@ -120,6 +114,14 @@ export function UserDetailView({ id }: { id: number }) {
             <UserStatusBadge status={user.status} />
           </h1>
           <p className="text-sm text-muted-foreground">{user.email}</p>
+          {isSelf && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              This is you —{" "}
+              <Link to="/app/me/profile" className="underline">
+                edit your profile
+              </Link>
+            </p>
+          )}
         </div>
         {canDeactivate && (
           <Button
@@ -135,7 +137,7 @@ export function UserDetailView({ id }: { id: number }) {
         )}
       </header>
 
-      <ProfileForm
+      <StaffProfileForm
         key={`${user.id}:${user.updatedAt}`}
         user={user}
         canEdit={canEditProfile}
@@ -279,107 +281,41 @@ export function UserDetailView({ id }: { id: number }) {
   );
 }
 
-function ProfileForm(props: { user: User; canEdit: boolean }) {
+// The administrative side of the shared profile fields: the same three inputs,
+// wired to `PATCH /users/:id` (unconditionally `users:write` since OS-384) and
+// gated by the caller's permission. The personal side of the same fields is
+// features/me's ProfileView, against `PATCH /auth/me/profile`. Errors stay
+// inline here, exactly as they were before the form was extracted.
+function StaffProfileForm(props: { user: User; canEdit: boolean }) {
   const update = useUpdateUserMutation();
   const [saveError, setSaveError] = useState<string | null>(null);
-  const form = useForm<ProfileForm>({
-    resolver: zodResolver(ProfileFormSchema),
-    defaultValues: {
-      firstName: props.user.firstName,
-      lastName: props.user.lastName,
-      phone: props.user.phone ?? "",
-    },
-  });
 
-  useEffect(() => {
-    form.reset({
-      firstName: props.user.firstName,
-      lastName: props.user.lastName,
-      phone: props.user.phone ?? "",
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.user]);
-
-  const handleSubmit = form.handleSubmit(async (values) => {
+  const handleSave = async (payload: ProfileFormPayload) => {
     setSaveError(null);
     try {
-      await update.mutateAsync({
-        id: props.user.id,
-        firstName: values.firstName,
-        lastName: values.lastName,
-        phone: values.phone.trim() || undefined,
-      });
-      form.reset(values);
+      await update.mutateAsync({ id: props.user.id, ...payload });
     } catch (err) {
       setSaveError(
         err instanceof ApiError
           ? err.message
           : "Couldn't save — please try again.",
       );
+      throw err;
     }
-  });
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-lg space-y-4">
-      <Controller
-        control={form.control}
-        name="firstName"
-        render={({ field, fieldState }) => (
-          <Field data-invalid={!!fieldState.error}>
-            <FieldLabel>First name</FieldLabel>
-            <Input {...field} disabled={!props.canEdit} />
-            {fieldState.error && (
-              <p className="text-sm text-destructive">
-                {fieldState.error.message}
-              </p>
-            )}
-          </Field>
-        )}
-      />
-
-      <Controller
-        control={form.control}
-        name="lastName"
-        render={({ field, fieldState }) => (
-          <Field data-invalid={!!fieldState.error}>
-            <FieldLabel>Last name</FieldLabel>
-            <Input {...field} disabled={!props.canEdit} />
-            {fieldState.error && (
-              <p className="text-sm text-destructive">
-                {fieldState.error.message}
-              </p>
-            )}
-          </Field>
-        )}
-      />
-
-      <Controller
-        control={form.control}
-        name="phone"
-        render={({ field }) => (
-          <Field>
-            <FieldLabel>Phone</FieldLabel>
-            <Input type="tel" placeholder="(555) 555-5555" {...field} disabled={!props.canEdit} />
-          </Field>
-        )}
-      />
-
+    <ProfileForm
+      values={{
+        firstName: props.user.firstName,
+        lastName: props.user.lastName,
+        phone: props.user.phone ?? "",
+      }}
+      canEdit={props.canEdit}
+      isSaving={update.isPending}
+      onSave={handleSave}
+    >
       {saveError && <p className="text-sm text-destructive">{saveError}</p>}
-
-      {props.canEdit && (
-        <Button
-          type="submit"
-          disabled={update.isPending || !form.formState.isDirty}
-        >
-          {update.isPending ? (
-            <>
-              <LoaderCircleIcon className="animate-spin" /> Saving...
-            </>
-          ) : (
-            "Save"
-          )}
-        </Button>
-      )}
-    </form>
+    </ProfileForm>
   );
 }

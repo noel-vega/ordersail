@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import {
   Controller,
   Get,
+  NotFoundException,
+  Patch,
   Post,
   Body,
   Res,
@@ -16,6 +18,7 @@ import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
 import { MfaChallengeDto } from './dto/mfa-challenge.dto';
@@ -27,6 +30,9 @@ import { MfaRecoveryCodesDto } from './dto/mfa-recovery-codes.dto';
 import { MfaRegenerateRecoveryCodesDto } from './dto/mfa-regenerate-recovery-codes.dto';
 import { MfaConfirmResponseDto } from './dto/mfa-confirm-response.dto';
 import { AuthMe } from './entities/auth-me.entity';
+import { UsersService } from '../users/users.service';
+import { UpdateUserProfileDto } from '../users/dto/update-user-profile.dto';
+import { UserProfile } from '../users/entities/user-profile.entity';
 import {
   AuthenticatedOnly,
   CurrentUser,
@@ -54,7 +60,13 @@ const REFRESH_TOKEN_COOKIE = 'refresh_token';
 @Controller('auth')
 @NoMfaFactorRequired()
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  // UsersService, not a third service of its own: the Profile routes below
+  // are a second door onto the same rows UsersController already writes, and
+  // AuthModule already imports UsersModule for the sign-in path.
+  constructor(
+    private readonly authService: AuthService,
+    private readonly usersService: UsersService,
+  ) {}
 
   private setRefreshCookie(res: FastifyReply, refreshToken: string): void {
     res.setCookie(REFRESH_TOKEN_COOKIE, refreshToken, {
@@ -333,6 +345,137 @@ export class AuthController {
   @ApiUnauthorizedResponse()
   me(@CurrentUser() user: AuthenticatedUser): Promise<AuthMe> {
     return this.authService.me(user);
+  }
+
+  // The caller's own Profile — the self-editable half of their users row
+  // (ADR 0001). Its administrative counterpart is GET/PATCH /users/:id,
+  // behind users:read / users:write; these two carry no permission key at
+  // all, and can't: a user may hold no roles whatsoever, so "can I manage
+  // myself" must never be something an Owner has to grant. That's safe
+  // because both routes address user.sub — there is no id in the path for a
+  // caller to point at someone else's row.
+  //
+  // Deliberately NOT folded into GET /auth/me above. That response is cached
+  // with a 60s staleTime and cleared on every auth mutation, which is the
+  // wrong lifecycle for a form the user edits; the passkey list stayed out
+  // of it for the same reason (OS-485).
+  //
+  // No @SkipEmailVerification()/@SkipMfaEnrollment(): unlike /auth/me and
+  // the MFA routes, nothing here helps a gated caller satisfy their gate, so
+  // the default — blocked until verified and enrolled — is right.
+  @AuthenticatedOnly()
+  @Get('me/profile')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: UserProfile })
+  @ApiUnauthorizedResponse()
+  async profile(@CurrentUser() user: AuthenticatedUser): Promise<UserProfile> {
+    const profile = await this.usersService.getProfile(
+      user.sub,
+      user.accountId,
+    );
+    // an access token outlives the row it was minted from by up to 8h, so a
+    // deleted user (a revoked invite, say) can still reach this
+    if (!profile) throw new NotFoundException();
+    return profile;
+  }
+
+  // Reuses UpdateUserProfileDto rather than declaring a parallel shape: the
+  // fields a person may change about themselves are exactly the fields an
+  // administrator may change about them, and only the gate differs.
+  @AuthenticatedOnly()
+  @Patch('me/profile')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: UserProfile })
+  @ApiUnauthorizedResponse()
+  async updateProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateUserProfileDto,
+  ): Promise<UserProfile> {
+    const updated = await this.usersService.updateProfile(
+      user.sub,
+      user.accountId,
+      dto,
+    );
+    if (!updated) throw new NotFoundException();
+    return updated;
+  }
+
+  // Under /auth/me because it can only ever touch the caller's own row —
+  // there's no user id to pass and so no way to aim it at anyone else. The
+  // signed-in counterpart to POST /auth/reset-password, which is for
+  // someone who can't sign in at all.
+  //
+  // Deliberately carries no @RequireMfaFactor, unlike the money and access
+  // actions gated that way (OS-492): it would lock out exactly the
+  // password-only users this exists for, who by definition hold no factor.
+  // The current password is the re-authentication, the same bar mfa/disable
+  // and passkey removal already apply.
+  //
+  // Every live refresh token for this user dies here, this browser's
+  // included — so the cookie is read in and a rotated replacement written
+  // back out, exactly as token/refresh does, and the re-minted access token
+  // is returned. Without that the caller would be signed out of the browser
+  // they just used to change their own password.
+  @AuthenticatedOnly()
+  // mirrors mfa/disable — this one also guesses at the current password, so
+  // it gets the same tight bucket rather than the looser credential-entry one
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('me/change-password')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiUnauthorizedResponse()
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    const { access_token, refresh_token } =
+      await this.authService.changePassword(
+        user,
+        dto.currentPassword,
+        dto.newPassword,
+        req.cookies[REFRESH_TOKEN_COOKIE],
+      );
+
+    this.setRefreshCookie(res, refresh_token);
+    return { access_token };
+  }
+
+  // Under /auth/me for the same reason change-password is: there is no user
+  // id to pass, so it can only ever address the caller's own sessions.
+  //
+  // No body and no password. Every other credential action on the Security
+  // tab re-authenticates because it *weakens* the account; this one only
+  // takes access away, so demanding a password would buy nothing and would
+  // exclude a passkey-only user who may not have one to type.
+  //
+  // `revoke-others`, not `revoke-all`: sparing the caller's own family is the
+  // whole point, so the path says so rather than promising something the
+  // handler deliberately doesn't do.
+  //
+  // The refresh cookie names the family to spare, and nothing is written
+  // back — unlike change-password, this doesn't rotate, so the cookie in the
+  // browser stays valid as-is and there's no token to return. With no usable
+  // cookie the service refuses (409) and revokes nothing, rather than guess
+  // which session is "this one" or mint one from a bare access token — see
+  // AuthService.revokeOtherSessions. Every other browser dies at its next
+  // refresh, and within at most one access-token lifetime (8h) even one that
+  // never refreshes.
+  @AuthenticatedOnly()
+  @Post('me/sessions/revoke-others')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse()
+  @ApiUnauthorizedResponse()
+  @ApiConflictResponse()
+  async revokeOtherSessions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: FastifyRequest,
+  ): Promise<void> {
+    await this.authService.revokeOtherSessions(
+      user.sub,
+      req.cookies[REFRESH_TOKEN_COOKIE],
+    );
   }
 
   @Public()

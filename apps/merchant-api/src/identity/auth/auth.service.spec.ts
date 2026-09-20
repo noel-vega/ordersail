@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { authenticator } from 'otplib';
 import * as bcrypt from 'bcryptjs';
 import { encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
@@ -21,7 +21,9 @@ import {
   PERMISSIONS_CATALOG,
   accountApiKeysTable,
   accountsTable,
+  and,
   eq,
+  isNotNull,
   permissionsTable,
   rolePermissionsTable,
   rolesTable,
@@ -35,6 +37,7 @@ import {
   usersTable,
 } from 'db/identity';
 import { locationsTable } from 'db/stock';
+import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
 import { RolesService } from '../roles/roles.service';
@@ -60,6 +63,28 @@ async function freshTotpCode(secret: string): Promise<string> {
     await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1000));
   }
   return authenticator.generate(secret);
+}
+
+// The grace window deliberately lets a just-rotated token be re-presented
+// for 10s (a second tab, a retried request) and replay its replacement, so
+// a freshly revoked row says nothing useful until that window has passed —
+// "the other browser is refused now" passes for the wrong reason inside it.
+// Backdating is how the refreshTokens specs get past it without sleeping;
+// the live replacement (revokedAt still null) is left alone.
+//
+// Module-scope so both revocation suites (changePassword, OS-385;
+// revokeOtherSessions, OS-502) use the one definition — they'd otherwise
+// each carry their own notion of "far enough past the window".
+async function elapseGraceWindow(userId: number) {
+  await db
+    .update(userRefreshTokensTable)
+    .set({ revokedAt: new Date(Date.now() - 60_000) })
+    .where(
+      and(
+        eq(userRefreshTokensTable.userId, userId),
+        isNotNull(userRefreshTokensTable.revokedAt),
+      ),
+    );
 }
 
 const emailMock = {
@@ -690,6 +715,422 @@ describe('AuthService.resetPassword (OS-469)', () => {
     await expect(
       service.resetPassword('not-a-real-token', 'brand-new-password'),
     ).rejects.toThrow('Invalid or expired token');
+  });
+});
+
+describe('AuthService.changePassword (OS-385)', () => {
+  const CURRENT_PASSWORD = 'correct-horse-battery-staple';
+  const NEW_PASSWORD = 'another-horse-another-staple';
+
+  async function seedUser() {
+    const account = await insertAccount(db, { name: 'Change Pw Co' });
+    return insertUser(db, {
+      accountId: account.id,
+      password: await bcrypt.hash(CURRENT_PASSWORD, 10),
+      emailVerifiedAt: new Date(),
+    });
+  }
+
+  function claimsFor(user: { id: number; email: string; accountId: number }) {
+    return {
+      sub: user.id,
+      email: user.email,
+      accountId: user.accountId,
+      firstName: 'Staff',
+      lastName: 'Member',
+      emailVerified: true,
+      mfaEnrollmentSatisfied: true,
+      hasMfaFactor: false,
+    };
+  }
+
+  // what @CurrentUser() hands the controller — the caller's decoded access
+  // token, which is what changePassword takes
+  function callerOf(user: {
+    id: number;
+    email: string;
+    accountId: number;
+  }): AuthenticatedUser {
+    return { ...claimsFor(user), typ: 'access' };
+  }
+
+  it('replaces the password: the old one stops verifying and the new one starts', async () => {
+    const user = await seedUser();
+    const service = await build();
+
+    await service.changePassword(
+      callerOf(user),
+      CURRENT_PASSWORD,
+      NEW_PASSWORD,
+      undefined,
+    );
+
+    await expect(
+      service.verifyPassword(user.id, CURRENT_PASSWORD),
+    ).rejects.toThrow(UnauthorizedException);
+    await expect(
+      service.verifyPassword(user.id, NEW_PASSWORD),
+    ).resolves.toBeUndefined();
+  });
+
+  it('hands the caller a replacement that keeps them signed in', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    const result = await service.changePassword(
+      callerOf(user),
+      CURRENT_PASSWORD,
+      NEW_PASSWORD,
+      callerToken,
+    );
+
+    const rotated = await service.refreshTokens(result.refresh_token);
+    expect(typeof rotated.access_token).toBe('string');
+  });
+
+  it('kills the token the caller presented along with every other session', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+    const otherBrowserToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await service.changePassword(
+      callerOf(user),
+      CURRENT_PASSWORD,
+      NEW_PASSWORD,
+      callerToken,
+    );
+    await elapseGraceWindow(user.id);
+
+    // the second browser is refused at its next rotation...
+    await expect(service.refreshTokens(otherBrowserToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+    // ...and so is the caller's own old token, which is the point: a stolen
+    // copy of it lives in the caller's family and would otherwise survive
+    await expect(service.refreshTokens(callerToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+
+  it('rotates the caller in place, leaving the replacement in the same family', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await service.changePassword(
+      callerOf(user),
+      CURRENT_PASSWORD,
+      NEW_PASSWORD,
+      callerToken,
+    );
+
+    const rows = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.userId, user.id));
+    expect(rows).toHaveLength(2);
+
+    const live = rows.filter((r) => r.revokedAt === null);
+    const retired = rows.filter((r) => r.revokedAt !== null);
+    expect(live).toHaveLength(1);
+    expect(retired).toHaveLength(1);
+    // same family, and the retired row points at what replaced it — that
+    // back-pointer is what reuse detection reads if the old token resurfaces
+    expect(live[0]?.familyId).toBe(retired[0]?.familyId);
+    expect(retired[0]?.replacedByJti).toBe(live[0]?.jti);
+  });
+
+  it('revokes every session and starts a fresh one when there is no refresh cookie', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const someToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    const result = await service.changePassword(
+      callerOf(user),
+      CURRENT_PASSWORD,
+      NEW_PASSWORD,
+      undefined,
+    );
+
+    await expect(service.refreshTokens(someToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+    const rotated = await service.refreshTokens(result.refresh_token);
+    expect(typeof rotated.access_token).toBe('string');
+  });
+
+  it("leaves another user's sessions alone", async () => {
+    const user = await seedUser();
+    const bystander = await seedUser();
+    const service = await build();
+    const bystanderToken = await service.createRefreshToken(
+      claimsFor(bystander),
+      randomUUID(),
+    );
+
+    await service.changePassword(
+      callerOf(user),
+      CURRENT_PASSWORD,
+      NEW_PASSWORD,
+      undefined,
+    );
+
+    const rotated = await service.refreshTokens(bystanderToken);
+    expect(typeof rotated.access_token).toBe('string');
+  });
+
+  it('rejects a wrong current password without touching the row or the sessions', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await expect(
+      service.changePassword(
+        callerOf(user),
+        'not-the-current-password',
+        NEW_PASSWORD,
+        callerToken,
+      ),
+    ).rejects.toThrow('Current password is incorrect');
+
+    await expect(
+      service.verifyPassword(user.id, CURRENT_PASSWORD),
+    ).resolves.toBeUndefined();
+    const rotated = await service.refreshTokens(callerToken);
+    expect(typeof rotated.access_token).toBe('string');
+  });
+
+  it('does not re-stamp a family that was already revoked', async () => {
+    const user = await seedUser();
+    const revokedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.insert(userRefreshTokensTable).values({
+      userId: user.id,
+      jti: 'already-revoked-jti',
+      familyId: 'already-revoked-family',
+      revokedAt,
+    });
+    const service = await build();
+
+    await service.changePassword(
+      callerOf(user),
+      CURRENT_PASSWORD,
+      NEW_PASSWORD,
+      undefined,
+    );
+
+    const [row] = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.jti, 'already-revoked-jti'));
+    expect(row?.revokedAt).toEqual(revokedAt);
+  });
+});
+
+describe('AuthService.revokeOtherSessions (OS-502)', () => {
+  async function seedUser() {
+    const account = await insertAccount(db, { name: 'Sign Out Co' });
+    return insertUser(db, {
+      accountId: account.id,
+      password: await bcrypt.hash('correct-horse-battery-staple', 10),
+      emailVerifiedAt: new Date(),
+    });
+  }
+
+  function claimsFor(user: { id: number; email: string; accountId: number }) {
+    return {
+      sub: user.id,
+      email: user.email,
+      accountId: user.accountId,
+      firstName: 'Staff',
+      lastName: 'Member',
+      emailVerified: true,
+      mfaEnrollmentSatisfied: true,
+      hasMfaFactor: false,
+    };
+  }
+
+  it('leaves the calling session running — unrotated, and still redeemable', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await service.revokeOtherSessions(user.id, callerToken);
+
+    // Nothing was written back to this family, so the token the browser
+    // already holds is still the live one — the whole point of not rotating
+    // here is that there's no replacement cookie to deliver. Asserted on the
+    // row rather than only on "it still refreshes", because a revoked row
+    // with a successor would refresh too (that's the grace window), and
+    // that's precisely what this endpoint must NOT have produced.
+    const rows = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.userId, user.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.revokedAt).toBeNull();
+    expect(rows[0]?.replacedByJti).toBeNull();
+
+    const rotated = await service.refreshTokens(callerToken);
+    expect(typeof rotated.access_token).toBe('string');
+  });
+
+  it('refuses every other browser at its next refresh', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+    const laptopToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+    const phoneToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await service.revokeOtherSessions(user.id, callerToken);
+    // Without this the assertions below would pass for the wrong reason: a
+    // token revoked moments ago is still inside the 10s replay window, where
+    // refreshTokens deliberately hands back the replacement instead of
+    // refusing. There is no replacement here, so it refuses either way — but
+    // only after the window is a refusal evidence of revocation.
+    await elapseGraceWindow(user.id);
+
+    await expect(service.refreshTokens(laptopToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+    await expect(service.refreshTokens(phoneToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+
+  // With no usable cookie there is no family to call "this one". The two
+  // obvious answers are both wrong: revoking everything signs out the person
+  // who asked to stay (OS-503 story 20), and starting them a fresh family
+  // would hand a 7-day refresh token to anyone holding a bare access token,
+  // from an endpoint that skips the password only because it never grants
+  // anything. So it refuses, and — asserted below — touches nothing.
+  it('refuses when no cookie reaches us, and revokes nothing', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const someToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await expect(
+      service.revokeOtherSessions(user.id, undefined),
+    ).rejects.toThrow(ConflictException);
+
+    const rows = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.userId, user.id));
+    // no family was started for the caller, and the one that existed is
+    // untouched — still redeemable, not merely present
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.revokedAt).toBeNull();
+    const rotated = await service.refreshTokens(someToken);
+    expect(typeof rotated.access_token).toBe('string');
+  });
+
+  it('refuses on a stale cookie too, rather than sparing the family it names', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const staleToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+    // this browser refreshed at some point, so the cookie it holds now is
+    // the successor; `staleToken` is the rotated-out predecessor
+    const { refresh_token: currentToken } =
+      await service.refreshTokens(staleToken);
+    const otherBrowser = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    // A stale cookie is exactly what a browser someone else is holding might
+    // present, so it must not be allowed to nominate a family to spare while
+    // everything else dies. Liveness, not just ownership, decides whether
+    // there's a "this one" — and without one the call does nothing at all.
+    await expect(
+      service.revokeOtherSessions(user.id, staleToken),
+    ).rejects.toThrow(ConflictException);
+
+    await elapseGraceWindow(user.id);
+    const stillCurrent = await service.refreshTokens(currentToken);
+    expect(typeof stillCurrent.access_token).toBe('string');
+    const stillOther = await service.refreshTokens(otherBrowser);
+    expect(typeof stillOther.access_token).toBe('string');
+  });
+
+  it("leaves another user's sessions alone", async () => {
+    const user = await seedUser();
+    const bystander = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+    const bystanderToken = await service.createRefreshToken(
+      claimsFor(bystander),
+      randomUUID(),
+    );
+
+    await service.revokeOtherSessions(user.id, callerToken);
+
+    const rotated = await service.refreshTokens(bystanderToken);
+    expect(typeof rotated.access_token).toBe('string');
+  });
+
+  it('does not re-stamp a family that was already revoked', async () => {
+    const user = await seedUser();
+    const revokedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.insert(userRefreshTokensTable).values({
+      userId: user.id,
+      jti: 'already-revoked-jti',
+      familyId: 'already-revoked-family',
+      revokedAt,
+    });
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await service.revokeOtherSessions(user.id, callerToken);
+
+    const [row] = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.jti, 'already-revoked-jti'));
+    expect(row?.revokedAt).toEqual(revokedAt);
   });
 });
 

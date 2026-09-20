@@ -8,6 +8,7 @@ import {
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { User, UserRoleSummary, type UserStatus } from './entities/user.entity';
+import { UserProfile } from './entities/user-profile.entity';
 import { PaginatedUsers } from './entities/paginated-users.entity';
 import { EmailService } from 'src/shared/email/email.service';
 import { resolvePageParams } from 'src/shared/pagination';
@@ -65,6 +66,18 @@ function toUser(
     roles,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+// Narrows a Staff record down to its Profile aspect (ADR 0001). Deriving it
+// from User rather than selecting the three columns separately is what keeps
+// "the administrator's view" and "the person's own view" from drifting into
+// two different notions of what a first name is.
+function toProfile(user: User): UserProfile {
+  return {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    phone: user.phone,
   };
 }
 
@@ -508,7 +521,14 @@ export class UsersService {
     const patch: Partial<typeof usersTable.$inferInsert> = {};
     if (dto.firstName !== undefined) patch.firstname = dto.firstName;
     if (dto.lastName !== undefined) patch.lastname = dto.lastName;
-    if (dto.phone !== undefined) patch.phone = dto.phone;
+    // Present-but-blank is a clear, not a no-op: phone is the one nullable
+    // field here, and a user who deletes the contents of the box means to
+    // remove the number. Absent (undefined) still leaves the column alone.
+    // What's stored is the trimmed value — the same one the blank test looks
+    // at — so a direct API caller can't persist the padding the forms strip.
+    if (dto.phone !== undefined) {
+      patch.phone = dto.phone?.trim() || null;
+    }
 
     if (Object.keys(patch).length === 0) {
       return this.getById(userId, accountId);
@@ -528,6 +548,37 @@ export class UsersService {
 
     const roles = await this.getRolesByUserId([user.id]);
     return toUser(user, roles.get(user.id) ?? []);
+  }
+
+  // The caller's own Profile (ADR 0001), behind GET /auth/me/profile.
+  //
+  // accountId is still part of the lookup even though userId comes from the
+  // caller's own access token, because every other read in this service is
+  // account-scoped and a self-read that quietly wasn't would be the one place
+  // a token minted before a user moved accounts could read across tenants.
+  //
+  // Goes through getById rather than its own SELECT so that "what a Profile
+  // is" has exactly one definition; the extra roles lookup it costs is the
+  // price of not maintaining a second projection of the same row.
+  async getProfile(
+    userId: number,
+    accountId: number,
+  ): Promise<UserProfile | undefined> {
+    const user = await this.getById(userId, accountId);
+    return user && toProfile(user);
+  }
+
+  // The write half, behind PATCH /auth/me/profile. Delegates to update() —
+  // the administrative PATCH /users/:id path — so the self-service and
+  // administrative writes can't develop different ideas about which columns
+  // are editable or how an empty patch behaves.
+  async updateProfile(
+    userId: number,
+    accountId: number,
+    dto: UpdateUserProfileDto,
+  ): Promise<UserProfile | undefined> {
+    const user = await this.update(userId, accountId, dto);
+    return user && toProfile(user);
   }
 
   // deactivate (set deactivatedAt) / reactivate (clear it). Deactivating the

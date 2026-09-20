@@ -87,6 +87,8 @@ export async function insertUser(
     firstname?: string;
     lastname?: string;
     email?: string;
+    // omitted → null, which is what a user who never filled one in has
+    phone?: string | null;
     // omitted → null (a still-pending invite, status 'invited'); pass any
     // string for a joined user (status 'active')
     password?: string | null;
@@ -109,6 +111,7 @@ export async function insertUser(
         firstname: opts.firstname ?? 'Staff',
         lastname: opts.lastname ?? `Member ${uniq()}`,
         email: opts.email ?? `staff-${uniq()}@store.test`,
+        phone: opts.phone ?? null,
         password: opts.password ?? null,
         deactivatedAt: opts.deactivatedAt ?? null,
         emailVerifiedAt: opts.emailVerifiedAt ?? null,

@@ -4,8 +4,9 @@ import { PERMISSIONS_KEY } from 'src/shared/auth/decorators';
 import { UsersController } from './users.controller';
 
 // OS-184 — the staff detail routes carry explicit keys; the catalog gains
-// users:deactivate. PATCH /users/:id is deliberately ungated (self-edit is
-// always allowed; editing others is checked in the handler).
+// users:deactivate. Every route here is administrative: since OS-384 the
+// self cases live at /auth/me/profile instead, so no route on this
+// controller carries an exception for the caller editing themselves.
 const reflector = new Reflector();
 const perm = (controller: object, method: string): string[] | undefined =>
   reflector.get(
@@ -38,8 +39,11 @@ describe('users RBAC (OS-184)', () => {
     ]);
   });
 
-  it('leaves PATCH /users/:id ungated (self-edit handled in the handler)', () => {
-    expect(perm(UsersController.prototype, 'update')).toBeUndefined();
+  // OS-384: this route used to be @AuthenticatedOnly() with an in-handler
+  // "id === user.sub is always allowed" branch. Asserting the key here is
+  // what stops the hole being reopened — the self path is /auth/me/profile.
+  it('gates PATCH /users/:id with users:write, with no self-exception (OS-384)', () => {
+    expect(perm(UsersController.prototype, 'update')).toEqual(['users:write']);
   });
 
   it('adds users:deactivate to the catalog', () => {

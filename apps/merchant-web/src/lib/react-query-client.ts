@@ -53,7 +53,7 @@ export const queryClient = new QueryClient({
               // away in-flight router and query state, including whatever
               // the user had typed into the form that just failed.
               void import("../main").then(({ router }) =>
-                router.navigate({ to: "/app/settings/security" }),
+                router.navigate({ to: "/app/me/security" }),
               );
             },
           },
