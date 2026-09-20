@@ -106,9 +106,6 @@ then renders and sends. Idempotency rests on `stripeCheckoutSessionId` and the
 `confirmationEmailQueuedAt` flag, so a stalled-job redelivery retries the email without duplicating
 the order. Unresolvable webhooks land in `failed_orders` for retry from the dashboard.
 
-Note: the root ARCHITECTURE.md sequence diagram still shows this webhook in `storefront-api`. That
-moved to `merchant-api` (Linear M9); the diagram is stale, the code above is current.
-
 `email` and `email-templates` are imported **only** by `worker`. The APIs only ever enqueue email
 jobs — they never touch SMTP.
 
