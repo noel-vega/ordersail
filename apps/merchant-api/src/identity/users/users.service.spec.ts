@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { ConflictException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import {
   assignRole,
   insertAccount,
@@ -9,10 +10,18 @@ import {
   seedPermissionsCatalog,
   useTestDb,
 } from 'test-support';
-import { eq, userInvitesTable, usersTable } from 'db/identity';
+import {
+  eq,
+  userInvitesTable,
+  userRefreshTokensTable,
+  usersTable,
+} from 'db/identity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { FactorStateService } from '../auth/factor-state.service';
+import { SessionsService } from '../auth/sessions.service';
+import { expectWorkingSession, testJwt } from '../auth/sessions.spec-support';
 import { UsersService } from './users.service';
 import { hashToken } from 'src/shared/common/generate-token.util';
 
@@ -21,16 +30,25 @@ const db = useTestDb();
 const emailMock = { sendInviteEmail: jest.fn() };
 beforeEach(() => emailMock.sendInviteEmail.mockClear());
 
-async function build() {
+// Sessions is real here, signing with a real JwtService: deactivation's
+// effect on a User's Sessions is only observable by redeeming their tokens.
+async function buildBoth() {
   const ref = await Test.createTestingModule({
     providers: [
       UsersService,
+      SessionsService,
+      FactorStateService,
       { provide: DRIZZLE, useValue: db },
       { provide: EmailService, useValue: emailMock },
       { provide: PermissionsService, useValue: {} },
+      { provide: JwtService, useValue: testJwt() },
     ],
   }).compile();
-  return ref.get(UsersService);
+  return { service: ref.get(UsersService), sessions: ref.get(SessionsService) };
+}
+
+async function build() {
+  return (await buildBoth()).service;
 }
 
 describe('UsersService.findAll (OS-160)', () => {
@@ -398,6 +416,90 @@ describe('UsersService.setDeactivated (OS-184)', () => {
     expect(
       await service.setDeactivated(user.id, other.id, true),
     ).toBeUndefined();
+  });
+});
+
+describe('UsersService.setDeactivated ends Sessions (OS-553)', () => {
+  const liveRows = async (userId: number) =>
+    (
+      await db
+        .select()
+        .from(userRefreshTokensTable)
+        .where(eq(userRefreshTokensTable.userId, userId))
+    ).filter((row) => row.revokedAt === null);
+
+  it("revokes every one of the User's Sessions, and nobody else's", async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const colleague = await insertUser(db, {
+      accountId: account.id,
+      password: 'x',
+    });
+    const { service, sessions } = await buildBoth();
+    const laptop = await sessions.start(user.id);
+    const phone = await sessions.start(user.id);
+    const theirs = await sessions.start(colleague.id);
+
+    await service.setDeactivated(user.id, account.id, true);
+
+    // The rows themselves are dead — "deactivated" is true in the database,
+    // not merely discovered by the claim check at the next refresh.
+    expect(await liveRows(user.id)).toHaveLength(0);
+    await expect(
+      sessions.refreshTokens(laptop.refresh_token),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(
+      sessions.refreshTokens(phone.refresh_token),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    await expectWorkingSession(sessions, theirs, colleague.id);
+  });
+
+  it('leaves the old Sessions dead on reactivation; a new sign-in works', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const { service, sessions } = await buildBoth();
+    const laptop = await sessions.start(user.id);
+    const phone = await sessions.start(user.id);
+
+    await service.setDeactivated(user.id, account.id, true);
+    await service.setDeactivated(user.id, account.id, false);
+
+    // Active again, so the claim check would pass — only the revoked rows
+    // stand between these tokens and a Session.
+    await expect(
+      sessions.refreshTokens(laptop.refresh_token),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(
+      sessions.refreshTokens(phone.refresh_token),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(await liveRows(user.id)).toHaveLength(0);
+
+    await expectWorkingSession(
+      sessions,
+      await sessions.start(user.id),
+      user.id,
+    );
+  });
+
+  it('ends no Sessions when the last-Owner guard refuses the deactivation', async () => {
+    const account = await insertAccount(db);
+    await seedPermissionsCatalog(db);
+    const owner = await insertRole(db, {
+      accountId: account.id,
+      name: 'Owner',
+      isSystem: true,
+    });
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    await assignRole(db, { userId: user.id, roleId: owner.id });
+    const { service, sessions } = await buildBoth();
+    const pair = await sessions.start(user.id);
+
+    await expect(
+      service.setDeactivated(user.id, account.id, true),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    await expectWorkingSession(sessions, pair, user.id);
   });
 });
 

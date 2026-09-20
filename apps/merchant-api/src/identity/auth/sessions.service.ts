@@ -18,6 +18,8 @@ import {
 } from 'db/identity';
 import { FactorStateService } from './factor-state.service';
 
+type DbTransaction = Parameters<Parameters<(typeof Db)['transaction']>[0]>[0];
+
 // a just-rotated-out refresh token, re-presented within this window, replays
 // the same replacement pair instead of revoking the family — see
 // packages/db/src/schema/user-refresh-tokens.ts for why this exists
@@ -231,12 +233,13 @@ export class SessionsService {
   }
 
   // Ends every Session this User holds, on every browser, the caller's
-  // included — for the moments nothing of theirs should survive. Today that
-  // is AuthService.resetPassword: whoever prompted the reset is locked out
+  // included — for the moments nothing of theirs should survive. Two today:
+  // AuthService.resetPassword (whoever prompted the reset is locked out
   // along with everyone else, and the User signs in again with the new
-  // password.
-  async revokeAll(userId: number): Promise<void> {
-    await this.revokeAllFamiliesForUser(userId);
+  // password) and UsersService.setDeactivated, which passes its transaction
+  // so that "deactivated" and "holds no live Session" commit as one fact.
+  async revokeAll(userId: number, tx?: DbTransaction): Promise<void> {
+    await this.revokeAllFamiliesForUser(userId, null, tx);
   }
 
   // The caller's own live refresh-token row, or null if the cookie never
@@ -277,8 +280,9 @@ export class SessionsService {
   private async revokeAllFamiliesForUser(
     userId: number,
     exceptFamilyId?: string | null,
+    tx?: DbTransaction,
   ): Promise<void> {
-    await this.db
+    await (tx ?? this.db)
       .update(userRefreshTokensTable)
       .set({ revokedAt: new Date() })
       .where(

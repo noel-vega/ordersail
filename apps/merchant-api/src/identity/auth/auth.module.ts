@@ -1,16 +1,13 @@
 import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { SessionsService } from './sessions.service';
-import { FactorStateService } from './factor-state.service';
+import { SessionsModule } from './sessions.module';
 import { AuthController } from './auth.controller';
 import { PasskeysController } from './passkeys.controller';
 import { PasskeysService } from './passkeys.service';
-import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { UsersModule } from '../users/users.module';
 import { AccountModule } from '../account/account.module';
 import { PermissionsModule } from '../permissions/permissions.module';
-import { jwtConstants } from './auth.constants';
 import { AUTH_APP_GUARD } from './auth.guard';
 import { EMAIL_VERIFIED_APP_GUARD } from './email-verified.guard';
 import { MFA_ENROLLMENT_APP_GUARD } from './mfa-enrollment.guard';
@@ -20,6 +17,9 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
 
 @Module({
   imports: [
+    // Sessions + FactorStateService, and the global JWT registration — a
+    // module of its own so UsersModule can import it too (see there).
+    SessionsModule,
     UsersModule,
     AccountModule,
     PermissionsModule,
@@ -29,13 +29,6 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
     // provisioned, see packages/queue's createRedisConnection) if/when
     // replica count goes above 1.
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
-    JwtModule.register({
-      global: true,
-      secret: jwtConstants.secret,
-      signOptions: {
-        expiresIn: '60s',
-      },
-    }),
   ],
   // order matters: ThrottlerGuard runs first so a brute-force burst is
   // rejected before spending a JWT-verify cycle on it; AuthGuard must then
@@ -55,8 +48,6 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
     // never perform anyway.
     MFA_FACTOR_APP_GUARD,
     AuthService,
-    SessionsService,
-    FactorStateService,
     PasskeysService,
   ],
   controllers: [AuthController, PasskeysController],

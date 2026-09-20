@@ -106,7 +106,7 @@ async function buildRef() {
       },
       {
         provide: UsersService,
-        useValue: new UsersService(db, {} as never, {} as never),
+        useValue: new UsersService(db, {} as never, {} as never, {} as never),
       },
       // signup()'s collaborator — no passkey path reaches it
       { provide: AccountService, useValue: {} },
