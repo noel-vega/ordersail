@@ -297,7 +297,7 @@ function StaffProfileForm(props: { user: User; canEdit: boolean }) {
         id: props.user.id,
         firstName: values.firstName,
         lastName: values.lastName,
-        phone: values.phone.trim() || undefined,
+        phone: values.phone.trim() || null,
       });
     } catch (err) {
       setSaveError(
