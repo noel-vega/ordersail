@@ -17,6 +17,7 @@ import { AddPasskeyDialog } from "../../passkeys/components/add-passkey-dialog";
 import { PasskeyList } from "../../passkeys/components/passkey-list";
 import { RemovePasskeyDialog } from "../../passkeys/components/remove-passkey-dialog";
 import { RenamePasskeyDialog } from "../../passkeys/components/rename-passkey-dialog";
+import { ChangePasswordCard } from "../../me/components/change-password-card";
 import { merchantApi } from "../../../lib/merchant-api-client";
 import { queryClient } from "../../../lib/react-query-client";
 
@@ -211,6 +212,11 @@ export function SecurityView(props: { required?: boolean }) {
           </Button>
         )}
       </div>
+
+      {/* A password is a credential, so it sits with the others rather than on
+          the Profile tab — "where do I change how I sign in" gets one answer.
+          Below the factors, not above: passkeys stay the primary action. */}
+      <ChangePasswordCard />
 
       {/* Recovery codes belong to the user, not to a factor — a passkey-only
           user has them too, and for them they're the whole recovery story. */}
