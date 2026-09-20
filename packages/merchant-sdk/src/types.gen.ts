@@ -228,6 +228,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AuthController_profile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["AuthController_updateProfile"];
+        trace?: never;
+    };
     "/auth/logout": {
         parameters: {
             query?: never;
@@ -1376,6 +1392,16 @@ export interface components {
             mfaEnrollmentSatisfied: boolean;
             permissions: string[];
         };
+        UserProfile: {
+            firstName: string;
+            lastName: string;
+            phone: string | null;
+        };
+        UpdateUserProfileDto: {
+            firstName?: string;
+            lastName?: string;
+            phone?: string;
+        };
         PasskeySignInVerifyDto: {
             response: {
                 [key: string]: unknown;
@@ -1448,11 +1474,6 @@ export interface components {
             total: number;
             limit: number;
             offset: number;
-        };
-        UpdateUserProfileDto: {
-            firstName?: string;
-            lastName?: string;
-            phone?: string;
         };
         AssignRolesDto: {
             roleIds: number[];
@@ -2501,6 +2522,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthMe"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuthController_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuthController_updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserProfileDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
                 };
             };
             401: {

@@ -208,6 +208,73 @@ describe('UsersService.update (OS-184)', () => {
   });
 });
 
+// OS-384 — the Profile aspect (ADR 0001). The point of these two is the
+// narrowing: a caller reading their own Profile holds no users:read, so the
+// roles, status and account the Staff record carries must not come back with
+// it, and the account scoping has to hold even though the id came from the
+// caller's own token.
+describe('UsersService profile (OS-384)', () => {
+  it('returns only the self-editable fields, not the staff record', async () => {
+    const account = await insertAccount(db);
+    await seedPermissionsCatalog(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      firstname: 'Fox',
+      lastname: 'Mulder',
+      phone: '5555550199',
+    });
+    const role = await insertRole(db, {
+      accountId: account.id,
+      name: 'Support',
+      permissionKeys: ['orders:read'],
+    });
+    await assignRole(db, { userId: user.id, roleId: role.id });
+    const service = await build();
+
+    expect(await service.getProfile(user.id, account.id)).toEqual({
+      firstName: 'Fox',
+      lastName: 'Mulder',
+      phone: '5555550199',
+    });
+  });
+
+  it('updates name and phone and returns the new Profile', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'keep@store.test',
+    });
+    const service = await build();
+
+    expect(
+      await service.updateProfile(user.id, account.id, {
+        firstName: 'Katherine',
+        phone: '5555559999',
+      }),
+    ).toMatchObject({ firstName: 'Katherine', phone: '5555559999' });
+
+    // the email column is untouched — it's the sign-in identity, and the DTO
+    // has no field for it
+    const [row] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id));
+    expect(row?.email).toBe('keep@store.test');
+  });
+
+  it('is undefined for a user outside the account', async () => {
+    const account = await insertAccount(db);
+    const other = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id });
+    const service = await build();
+
+    expect(await service.getProfile(user.id, other.id)).toBeUndefined();
+    expect(
+      await service.updateProfile(user.id, other.id, { firstName: 'x' }),
+    ).toBeUndefined();
+  });
+});
+
 describe('UsersService.setDeactivated (OS-184)', () => {
   it('deactivates then reactivates a member', async () => {
     const account = await insertAccount(db);

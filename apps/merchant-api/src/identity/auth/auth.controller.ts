@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import {
   Controller,
   Get,
+  NotFoundException,
+  Patch,
   Post,
   Body,
   Res,
@@ -27,6 +29,9 @@ import { MfaRecoveryCodesDto } from './dto/mfa-recovery-codes.dto';
 import { MfaRegenerateRecoveryCodesDto } from './dto/mfa-regenerate-recovery-codes.dto';
 import { MfaConfirmResponseDto } from './dto/mfa-confirm-response.dto';
 import { AuthMe } from './entities/auth-me.entity';
+import { UsersService } from '../users/users.service';
+import { UpdateUserProfileDto } from '../users/dto/update-user-profile.dto';
+import { UserProfile } from '../users/entities/user-profile.entity';
 import {
   AuthenticatedOnly,
   CurrentUser,
@@ -54,7 +59,13 @@ const REFRESH_TOKEN_COOKIE = 'refresh_token';
 @Controller('auth')
 @NoMfaFactorRequired()
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  // UsersService, not a third service of its own: the Profile routes below
+  // are a second door onto the same rows UsersController already writes, and
+  // AuthModule already imports UsersModule for the sign-in path.
+  constructor(
+    private readonly authService: AuthService,
+    private readonly usersService: UsersService,
+  ) {}
 
   private setRefreshCookie(res: FastifyReply, refreshToken: string): void {
     res.setCookie(REFRESH_TOKEN_COOKIE, refreshToken, {
@@ -333,6 +344,59 @@ export class AuthController {
   @ApiUnauthorizedResponse()
   me(@CurrentUser() user: AuthenticatedUser): Promise<AuthMe> {
     return this.authService.me(user);
+  }
+
+  // The caller's own Profile — the self-editable half of their users row
+  // (ADR 0001). Its administrative counterpart is GET/PATCH /users/:id,
+  // behind users:read / users:write; these two carry no permission key at
+  // all, and can't: a user may hold no roles whatsoever, so "can I manage
+  // myself" must never be something an Owner has to grant. That's safe
+  // because both routes address user.sub — there is no id in the path for a
+  // caller to point at someone else's row.
+  //
+  // Deliberately NOT folded into GET /auth/me above. That response is cached
+  // with a 60s staleTime and cleared on every auth mutation, which is the
+  // wrong lifecycle for a form the user edits; the passkey list stayed out
+  // of it for the same reason (OS-485).
+  //
+  // No @SkipEmailVerification()/@SkipMfaEnrollment(): unlike /auth/me and
+  // the MFA routes, nothing here helps a gated caller satisfy their gate, so
+  // the default — blocked until verified and enrolled — is right.
+  @AuthenticatedOnly()
+  @Get('me/profile')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: UserProfile })
+  @ApiUnauthorizedResponse()
+  async profile(@CurrentUser() user: AuthenticatedUser): Promise<UserProfile> {
+    const profile = await this.usersService.getProfile(
+      user.sub,
+      user.accountId,
+    );
+    // an access token outlives the row it was minted from by up to 8h, so a
+    // deleted user (a revoked invite, say) can still reach this
+    if (!profile) throw new NotFoundException();
+    return profile;
+  }
+
+  // Reuses UpdateUserProfileDto rather than declaring a parallel shape: the
+  // fields a person may change about themselves are exactly the fields an
+  // administrator may change about them, and only the gate differs.
+  @AuthenticatedOnly()
+  @Patch('me/profile')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: UserProfile })
+  @ApiUnauthorizedResponse()
+  async updateProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateUserProfileDto,
+  ): Promise<UserProfile> {
+    const updated = await this.usersService.updateProfile(
+      user.sub,
+      user.accountId,
+      dto,
+    );
+    if (!updated) throw new NotFoundException();
+    return updated;
   }
 
   @Public()
