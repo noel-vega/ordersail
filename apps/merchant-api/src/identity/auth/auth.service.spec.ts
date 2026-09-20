@@ -9,6 +9,8 @@ import { hashToken } from 'src/shared/common/generate-token.util';
 import {
   useTestDb,
   lockWaiters,
+  liveRefreshTokenCount,
+  deactivateUser,
   insertAccount,
   insertUser,
   insertUserPasswordReset,
@@ -133,27 +135,8 @@ async function userByEmail(email: string) {
   return user;
 }
 
-async function deactivate(userId: number) {
-  await db
-    .update(usersTable)
-    .set({ deactivatedAt: new Date() })
-    .where(eq(usersTable.id, userId));
-}
-
 async function build() {
   return (await buildBoth()).service;
-}
-
-// How many refresh tokens this User could still redeem. Rows rather than
-// behaviour, and only ever alongside a behavioural check: "the old token was
-// rotated out" isn't observable from outside inside the refresh grace window,
-// where presenting it replays its successor.
-async function liveRefreshTokenCount(userId: number): Promise<number> {
-  const rows = await db
-    .select()
-    .from(userRefreshTokensTable)
-    .where(eq(userRefreshTokensTable.userId, userId));
-  return rows.filter((r) => r.revokedAt === null).length;
 }
 
 const signupDto = {
@@ -513,7 +496,7 @@ describe('AuthService.resetPassword (OS-469)', () => {
     await expect(
       sessions.refreshTokens(refreshed.refresh_token),
     ).rejects.toThrow('Invalid or expired token');
-    expect(await liveRefreshTokenCount(user.id)).toBe(0);
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
   });
 
   it('rejects an expired token', async () => {
@@ -697,7 +680,7 @@ describe('AuthService.acceptInvite — a deactivated User', () => {
       password: null,
     });
     const invite = await insertUserInvite(db, { userId: user.id });
-    await deactivate(user.id);
+    await deactivateUser(db, user.id);
     const service = await build();
 
     const refusal = await service
@@ -960,7 +943,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
 
     it('refuses a deactivated User, and starts no Session', async () => {
       const user = await seedUserWithPassword();
-      await deactivate(user.id);
+      await deactivateUser(db, user.id);
       const service = await build();
 
       await expect(
@@ -1486,7 +1469,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         // rotated, not spared: the token the caller walked in with is retired
         // and the one handed back is the only live one the User has
         expect(replacement.refresh_token).not.toBe(caller.refresh_token);
-        expect(await liveRefreshTokenCount(user.id)).toBe(1);
+        expect(await liveRefreshTokenCount(db, user.id)).toBe(1);
         await expectWorkingSession(sessions, replacement, user.id);
       });
 
@@ -1501,7 +1484,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         await expect(
           sessions.refreshTokens(someBrowser.refresh_token),
         ).rejects.toThrow('Invalid or expired token');
-        expect(await liveRefreshTokenCount(user.id)).toBe(1);
+        expect(await liveRefreshTokenCount(db, user.id)).toBe(1);
         await expectWorkingSession(sessions, fresh, user.id);
       });
 

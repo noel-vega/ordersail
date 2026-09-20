@@ -426,14 +426,6 @@ describe('UsersService.setDeactivated (OS-184)', () => {
 });
 
 describe('UsersService.setDeactivated ends Sessions (OS-553)', () => {
-  const liveRows = async (userId: number) =>
-    (
-      await db
-        .select()
-        .from(userRefreshTokensTable)
-        .where(eq(userRefreshTokensTable.userId, userId))
-    ).filter((row) => row.revokedAt === null);
-
   it("revokes every one of the User's Sessions, and nobody else's", async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id, password: 'x' });
@@ -450,7 +442,7 @@ describe('UsersService.setDeactivated ends Sessions (OS-553)', () => {
 
     // The rows themselves are dead — "deactivated" is true in the database,
     // not merely discovered by the claim check at the next refresh.
-    expect(await liveRows(user.id)).toHaveLength(0);
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
     await expect(
       sessions.refreshTokens(laptop.refresh_token),
     ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -479,7 +471,7 @@ describe('UsersService.setDeactivated ends Sessions (OS-553)', () => {
     await expect(
       sessions.refreshTokens(phone.refresh_token),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(await liveRows(user.id)).toHaveLength(0);
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
 
     await expectWorkingSession(
       sessions,

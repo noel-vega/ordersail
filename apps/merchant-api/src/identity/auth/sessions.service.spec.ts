@@ -6,8 +6,8 @@ import {
   useTestDb,
   lockWaiters,
   liveRefreshTokenCount,
-  insertAccount,
-  insertUser,
+  deactivateUser,
+  insertAccountWithUser,
   insertUserMfa,
   insertUserPasskey,
 } from 'test-support';
@@ -94,37 +94,12 @@ async function build() {
   return ref.get(SessionsService);
 }
 
-// Seeded straight into the tables rather than through AuthService.signup —
-// nothing here is about how a User came to exist, only about their Sessions.
+// Nothing here is about how a User came to exist, only about their Sessions
+// — and only the User is ever needed, not the Account around them.
 async function seedUser(
-  opts: {
-    emailVerifiedAt?: Date | null;
-    factorRequiredAt?: Date;
-    accountRequiresMfa?: boolean;
-  } = {},
+  opts: Parameters<typeof insertAccountWithUser>[1] = {},
 ) {
-  const account = await insertAccount(db, { name: 'Sessions Co' });
-  if (opts.accountRequiresMfa) {
-    await db
-      .update(accountsTable)
-      .set({ requireMfaAt: new Date() })
-      .where(eq(accountsTable.id, account.id));
-  }
-  return insertUser(db, {
-    accountId: account.id,
-    emailVerifiedAt:
-      opts.emailVerifiedAt === undefined ? new Date() : opts.emailVerifiedAt,
-    ...(opts.factorRequiredAt
-      ? { factorRequiredAt: opts.factorRequiredAt }
-      : {}),
-  });
-}
-
-async function deactivate(userId: number) {
-  await db
-    .update(usersTable)
-    .set({ deactivatedAt: new Date() })
-    .where(eq(usersTable.id, userId));
+  return (await insertAccountWithUser(db, opts)).user;
 }
 
 const REFUSED = 'Invalid or expired token';
@@ -149,7 +124,7 @@ describe('SessionsService.start', () => {
   it('refuses a deactivated User, and leaves no Session behind', async () => {
     const service = await build();
     const user = await seedUser();
-    await deactivate(user.id);
+    await deactivateUser(db, user.id);
 
     await expect(service.start(user.id)).rejects.toBeInstanceOf(
       UnauthorizedException,
@@ -169,7 +144,7 @@ describe('SessionsService.start', () => {
   // nothing but the id, so there is no way to ask for a more generous token.
   it('computes the gate claims from the database: an unverified User is held at the email gate', async () => {
     const service = await build();
-    const user = await seedUser({ emailVerifiedAt: null });
+    const user = await seedUser({ emailVerified: false });
 
     const { access_token } = await service.start(user.id);
 
@@ -221,7 +196,7 @@ describe('SessionsService token payloads', () => {
 
   it('signs an access token carrying only what is read without a database hit', async () => {
     const service = await build();
-    const user = await seedUser({ emailVerifiedAt: null });
+    const user = await seedUser({ emailVerified: false });
 
     const payload = decode((await service.start(user.id)).access_token);
 
@@ -343,7 +318,7 @@ describe('SessionsService token payloads', () => {
     it('still redeems a refresh token carrying the extra claims — and trusts none of them', async () => {
       const service = await build();
       // unverified in the database, whatever the old token says
-      const user = await seedUser({ emailVerifiedAt: null });
+      const user = await seedUser({ emailVerified: false });
       const jti = randomUUID();
       await db
         .insert(userRefreshTokensTable)
@@ -391,7 +366,7 @@ describe('SessionsService.refreshTokens', () => {
   it('rejects the refresh token of a deactivated user', async () => {
     const { service, userId, refresh_token } = await seedSession();
 
-    await deactivate(userId);
+    await deactivateUser(db, userId);
 
     await expect(service.refreshTokens(refresh_token)).rejects.toThrow(REFUSED);
   });
@@ -618,7 +593,7 @@ describe('SessionsService.refreshTokens', () => {
   describe('picks up what changed since the last mint', () => {
     it('an email verified elsewhere (OS-470)', async () => {
       const { service, userId, refresh_token } = await seedSession({
-        emailVerifiedAt: null,
+        emailVerified: false,
       });
 
       // a device that verified elsewhere and never got the re-minted access
@@ -712,7 +687,7 @@ describe('SessionsService.refreshTokens', () => {
 describe('SessionsService.remintAccessToken', () => {
   it('reflects an email verified mid-Session, without waiting for a refresh', async () => {
     const service = await build();
-    const user = await seedUser({ emailVerifiedAt: null });
+    const user = await seedUser({ emailVerified: false });
     const session = await service.start(user.id);
     await db
       .update(usersTable)
@@ -749,7 +724,7 @@ describe('SessionsService.remintAccessToken', () => {
   it('never grants a claim the database does not back', async () => {
     const service = await build();
     const user = await seedUser({
-      emailVerifiedAt: null,
+      emailVerified: false,
       factorRequiredAt: new Date(),
     });
     await insertUserPasskey(db, { userId: user.id });
@@ -777,7 +752,7 @@ describe('SessionsService.remintAccessToken', () => {
     const service = await build();
     const user = await seedUser();
     await service.start(user.id);
-    await deactivate(user.id);
+    await deactivateUser(db, user.id);
 
     await expect(service.remintAccessToken(user.id)).rejects.toThrow(REFUSED);
   });

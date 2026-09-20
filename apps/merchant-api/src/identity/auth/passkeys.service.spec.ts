@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import {
-  accountsTable,
   eq,
   userMfaRecoveryCodesTable,
   userPasskeysTable,
@@ -17,8 +16,9 @@ import {
   webauthnChallengesTable,
 } from 'db/identity';
 import {
-  insertAccount,
-  insertUser,
+  deactivateUser,
+  insertAccountWithUser,
+  liveRefreshTokenCount,
   insertUserMfa,
   insertUserPasskey,
   insertWebauthnChallenge,
@@ -126,27 +126,15 @@ async function build() {
   return (await buildRef()).get(PasskeysService);
 }
 
+// every User here can sign in with `password` — removal and registration
+// re-verify it
 async function seedUser(
-  opts: {
-    requireMfaAt?: Date;
-    factorRequiredAt?: Date;
-    emailVerified?: boolean;
-  } = {},
+  opts: Omit<Parameters<typeof insertAccountWithUser>[1], 'password'> = {},
 ) {
-  const account = await insertAccount(db);
-  if (opts.requireMfaAt) {
-    await db
-      .update(accountsTable)
-      .set({ requireMfaAt: opts.requireMfaAt })
-      .where(eq(accountsTable.id, account.id));
-  }
-  const user = await insertUser(db, {
-    accountId: account.id,
+  return insertAccountWithUser(db, {
+    ...opts,
     password: await bcrypt.hash(password, 10),
-    emailVerifiedAt: opts.emailVerified === false ? null : new Date(),
-    factorRequiredAt: opts.factorRequiredAt ?? null,
   });
-  return { account, user };
 }
 
 // A RegistrationResponseJSON is only ever handed to the mocked verifier, so
@@ -595,7 +583,7 @@ describe('PasskeysService — management (OS-485)', () => {
 
   describe('last-factor rule', () => {
     it('refuses to remove the last factor when the account requires MFA', async () => {
-      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const { user } = await seedUser({ accountRequiresMfa: true });
       const passkey = await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
@@ -617,7 +605,7 @@ describe('PasskeysService — management (OS-485)', () => {
     });
 
     it('allows removing one of two', async () => {
-      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const { user } = await seedUser({ accountRequiresMfa: true });
       const first = await insertUserPasskey(db, { userId: user.id });
       await insertUserPasskey(db, { userId: user.id });
       const service = await build();
@@ -628,7 +616,7 @@ describe('PasskeysService — management (OS-485)', () => {
     });
 
     it('allows removing the last passkey when TOTP remains', async () => {
-      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const { user } = await seedUser({ accountRequiresMfa: true });
       const passkey = await insertUserPasskey(db, { userId: user.id });
       await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
       const service = await build();
@@ -643,7 +631,7 @@ describe('PasskeysService — management (OS-485)', () => {
     // remain, and the user lands on zero on an account that requires MFA.
     // Same shape as the concurrent recovery-code redemption test.
     it('lets only one of two concurrent removals through', async () => {
-      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const { user } = await seedUser({ accountRequiresMfa: true });
       const first = await insertUserPasskey(db, { userId: user.id });
       const second = await insertUserPasskey(db, { userId: user.id });
       const service = await build();
@@ -685,17 +673,6 @@ describe('PasskeysService — management (OS-485)', () => {
       };
     }
 
-    // Rows rather than behaviour, and only alongside a behavioural check:
-    // "the old token was rotated out" isn't observable from outside inside
-    // the refresh grace window, where presenting it replays its successor.
-    async function liveRefreshTokenCount(userId: number): Promise<number> {
-      const rows = await db
-        .select()
-        .from(userRefreshTokensTable)
-        .where(eq(userRefreshTokensTable.userId, userId));
-      return rows.filter((r) => r.revokedAt === null).length;
-    }
-
     it("ends the User's other Sessions and rotates the caller's", async () => {
       const { user } = await seedUser();
       const passkey = await insertUserPasskey(db, { userId: user.id });
@@ -716,7 +693,7 @@ describe('PasskeysService — management (OS-485)', () => {
       // rotated, not spared: the token the caller walked in with is retired
       // and the one handed back is the only live one the User has
       expect(replacement.refresh_token).not.toBe(caller.refresh_token);
-      expect(await liveRefreshTokenCount(user.id)).toBe(1);
+      expect(await liveRefreshTokenCount(db, user.id)).toBe(1);
       await expectWorkingSession(sessions, replacement, user.id);
     });
 
@@ -736,14 +713,14 @@ describe('PasskeysService — management (OS-485)', () => {
       await expect(
         sessions.refreshTokens(someBrowser.refresh_token),
       ).rejects.toThrow('Invalid or expired token');
-      expect(await liveRefreshTokenCount(user.id)).toBe(1);
+      expect(await liveRefreshTokenCount(db, user.id)).toBe(1);
       await expectWorkingSession(sessions, fresh, user.id);
     });
 
     // Order matters: a refused removal changed no credential, so it must not
     // cost anyone their Session either.
     it('touches no Session when the last-Factor rule refuses', async () => {
-      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const { user } = await seedUser({ accountRequiresMfa: true });
       const passkey = await insertUserPasskey(db, { userId: user.id });
       const { service, sessions } = await buildWithSessions();
       const caller = await sessions.start(user.id);
@@ -857,7 +834,7 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
 
   it('exchanges a valid assertion for a Session and stamps the credential', async () => {
     const { user, passkey, service, sessionsService, token } =
-      await seedChallengedUser({ requireMfaAt: new Date() });
+      await seedChallengedUser({ accountRequiresMfa: true });
     const options = await service.getChallengeAuthenticationOptions(token);
     assertionVerifies(7);
 
@@ -938,10 +915,7 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
     const options = await service.getChallengeAuthenticationOptions(token);
     assertionVerifies(7);
 
-    await db
-      .update(usersTable)
-      .set({ deactivatedAt: new Date() })
-      .where(eq(usersTable.id, user.id));
+    await deactivateUser(db, user.id);
 
     const attempt = service.verifyChallengeAssertion(
       token,
@@ -1057,14 +1031,13 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
 
 describe('PasskeysService — usernameless sign-in (OS-490)', () => {
   async function seedCredential(
-    opts: { deactivated?: boolean; requireMfaAt?: Date } = {},
+    opts: { deactivated?: boolean; accountRequiresMfa?: boolean } = {},
   ) {
-    const { user } = await seedUser({ requireMfaAt: opts.requireMfaAt });
+    const { user } = await seedUser({
+      accountRequiresMfa: opts.accountRequiresMfa,
+    });
     if (opts.deactivated) {
-      await db
-        .update(usersTable)
-        .set({ deactivatedAt: new Date() })
-        .where(eq(usersTable.id, user.id));
+      await deactivateUser(db, user.id);
     }
     const passkey = await insertUserPasskey(db, {
       userId: user.id,
@@ -1139,7 +1112,7 @@ describe('PasskeysService — usernameless sign-in (OS-490)', () => {
 
   it('resolves the user from the credential alone and signs them in', async () => {
     const { user, passkey, service, sessionsService, handle } =
-      await seedCredential({ requireMfaAt: new Date() });
+      await seedCredential({ accountRequiresMfa: true });
     const options = await service.getSignInOptions();
     assertionVerifies(3);
 

@@ -128,12 +128,63 @@ export async function insertUser(
   );
 }
 
+// An Account with one User in it, for specs about what the User can do
+// rather than how they came to exist — seeded straight into the tables, not
+// through signup. The options are the facts the sign-in and Session gates
+// turn on, named for what they mean rather than for their columns:
+//   emailVerified       omitted → verified (most specs aren't about the
+//                       email gate); false → emailVerifiedAt NULL
+//   accountRequiresMfa  the Account-wide Factor requirement (requireMfaAt)
+//   factorRequiredAt    the per-User stamp an invited staff member carries
+//   password            an already-hashed value; omitted → NULL, which is
+//                       fine wherever nothing verifies it
+export async function insertAccountWithUser(
+  db: TestDb,
+  opts: {
+    emailVerified?: boolean;
+    accountRequiresMfa?: boolean;
+    factorRequiredAt?: Date;
+    password?: string;
+  } = {},
+): Promise<{
+  account: Row<typeof accountsTable>;
+  user: Row<typeof usersTable>;
+}> {
+  let account = await insertAccount(db);
+  if (opts.accountRequiresMfa) {
+    account = await one(
+      await db
+        .update(accountsTable)
+        .set({ requireMfaAt: new Date() })
+        .where(eq(accountsTable.id, account.id))
+        .returning(),
+    );
+  }
+  const user = await insertUser(db, {
+    accountId: account.id,
+    password: opts.password ?? null,
+    emailVerifiedAt: opts.emailVerified === false ? null : new Date(),
+    factorRequiredAt: opts.factorRequiredAt ?? null,
+  });
+  return { account, user };
+}
+
+// Switches a User off the way UsersService.setDeactivated marks them — and
+// nothing more: no Session is revoked. That is the point, for the specs that
+// use it: they ask what the claim check or a sign-in path does with a
+// deactivated User on its own.
+export async function deactivateUser(db: TestDb, userId: number): Promise<void> {
+  await db
+    .update(usersTable)
+    .set({ deactivatedAt: new Date() })
+    .where(eq(usersTable.id, userId));
+}
+
 // How many refresh tokens this User could still redeem — i.e. how many
 // Sessions they hold. Rows rather than behaviour, so only ever alongside a
-// behavioural check, or for an invariant that can't be seen from outside:
-// inside the refresh grace window a rotated-out token replays its successor,
-// and a live row nobody holds the token for is invisible to every caller
-// until someone turns up with it.
+// behavioural check, and for the invariants that can't be seen from outside:
+// "exactly one live successor" after a race, or "rotated out" inside the
+// refresh grace window, where presenting the old token replays its successor.
 export async function liveRefreshTokenCount(
   db: TestDb,
   userId: number,
