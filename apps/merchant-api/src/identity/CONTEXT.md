@@ -42,6 +42,18 @@ once. A password accepted but a Factor still owed is not yet a Session.
 _Avoid_: Login, token, family (that is how a Session is stored, not what it
 is).
 
+**Emailed link**:
+A single-use, expiring link sent to a User's inbox; following it proves control
+of that inbox and nothing more. Three kinds — Invite, password reset, email
+verification — and issuing a new one replaces the last of its kind.
+_Avoid_: Magic link (it never signs anyone in by itself), token (that is how a
+link is recognised, not what it is), OTP.
+
+**Invite**:
+The Emailed link that lets a person join an Account as a User by choosing their
+password. Until it is followed, their Staff record is pending.
+_Avoid_: Invitation token, signup link.
+
 **Permission**:
 One key from the fixed catalog in `packages/db/src/permissions-catalog.ts`,
 granted to a User through a Role. New keys ship as a code change, never through
