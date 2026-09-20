@@ -61,6 +61,49 @@ async function elapseGraceWindow(userId: number) {
     );
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Ages every Session the User holds so that it began `days` ago, and hands
+// back the instant written so a spec can check it is carried forward
+// untouched. Backdating the rows rather than faking the clock, for the same
+// reason as elapseGraceWindow: jsonwebtoken reads the real clock too, and a
+// faked one would expire the very tokens these specs present.
+async function backdateSessionStart(userId: number, days: number) {
+  const startedAt = new Date(Date.now() - days * DAY_MS);
+  await db
+    .update(userRefreshTokensTable)
+    .set({ sessionStartedAt: startedAt })
+    .where(eq(userRefreshTokensTable.userId, userId));
+  return startedAt;
+}
+
+// Resolves once Postgres reports at least `count` sessions parked on a lock.
+//
+// pg_locks, not pg_stat_activity: the stats views are snapshotted on first
+// read for the rest of a transaction, so from inside one they would go on
+// reporting nobody waiting forever. pg_locks reads the lock manager live.
+// Nothing else shares this database (each jest run boots its own container,
+// maxWorkers: 1), so any ungranted lock is a contender's.
+async function lockWaiters(
+  executor: Pick<typeof db, 'execute'>,
+  count: number,
+): Promise<void> {
+  const deadline = Date.now() + 4_000;
+  for (;;) {
+    const { rows } = await executor.execute<{ waiting: number }>(
+      sql`select count(*)::int as waiting from pg_locks where not granted`,
+    );
+    const waiting = rows[0]?.waiting ?? 0;
+    if (waiting >= count) return;
+    if (Date.now() > deadline) {
+      throw new Error(
+        `lockWaiters: only ${waiting} of ${count} contenders ever blocked on the row — the race was not staged`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 // Makes "two redemptions at the same moment" a fact rather than a hope. Two
 // calls fired from one Promise.all usually interleave, but nothing promises
 // it, and a concurrency spec that passes because the scheduler happened to
@@ -93,26 +136,7 @@ async function raceForRefreshRow<T>(
     // `await racing` below, not as an unhandled rejection in the meantime
     racing.catch(() => undefined);
 
-    const deadline = Date.now() + 4_000;
-    for (;;) {
-      // pg_locks, not pg_stat_activity: the stats views are snapshotted on
-      // first read for the rest of the transaction, so from in here they
-      // would go on reporting nobody waiting forever. pg_locks reads the
-      // lock manager live. Nothing else shares this database (each jest
-      // run boots its own container, maxWorkers: 1), so any ungranted lock
-      // is a contender's.
-      const { rows } = await tx.execute<{ waiting: number }>(
-        sql`select count(*)::int as waiting from pg_locks where not granted`,
-      );
-      const waiting = rows[0]?.waiting ?? 0;
-      if (waiting >= contenders) return;
-      if (Date.now() > deadline) {
-        throw new Error(
-          `raceForRefreshRow: only ${waiting} of ${contenders} contenders ever blocked on the row — the race was not staged`,
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    await lockWaiters(tx, contenders);
   });
   if (!racing) throw new Error('raceForRefreshRow: contenders never started');
   return await racing;
@@ -524,6 +548,112 @@ describe('SessionsService.refreshTokens', () => {
     expect(jtiOf(replayed.refresh_token)).toBe(jtiOf(next.refresh_token));
   });
 
+  // Rotation alone never ends a Session: each refresh buys another 7 days,
+  // so one used weekly would live forever. The absolute lifetime is measured
+  // from when the Session started — the last time the User actually proved
+  // who they are — and nothing a refresh does may move that instant (OS-556).
+  describe('absolute Session lifetime (OS-556)', () => {
+    const sessionRows = (userId: number) =>
+      db
+        .select()
+        .from(userRefreshTokensTable)
+        .where(eq(userRefreshTokensTable.userId, userId));
+
+    it('refuses a Session that started 31 days ago, however live its refresh token, and ends it', async () => {
+      const { service, userId, refresh_token } = await seedSession();
+      await backdateSessionStart(userId, 31);
+
+      await expect(service.refreshTokens(refresh_token)).rejects.toThrow(
+        new UnauthorizedException(REFUSED),
+      );
+
+      // ended, not merely refused this once: nothing of it is left live
+      const rows = await sessionRows(userId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.revokedAt).not.toBeNull();
+      expect(rows[0]?.replacedByJti).toBeNull();
+    });
+
+    it('continues a Session that started 29 days ago, and the successor carries the same start', async () => {
+      const { service, userId, refresh_token } = await seedSession();
+      const startedAt = await backdateSessionStart(userId, 29);
+
+      const next = await service.refreshTokens(refresh_token);
+
+      const rows = await sessionRows(userId);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.sessionStartedAt)).toEqual([
+        startedAt,
+        startedAt,
+      ]);
+      // ...and again one rotation on: copied forward, never re-stamped
+      await service.refreshTokens(next.refresh_token);
+      expect(
+        (await sessionRows(userId)).map((r) => r.sessionStartedAt),
+      ).toEqual([startedAt, startedAt, startedAt]);
+    });
+
+    it('is not outrun by refreshing: a Session kept busy for 29 days still ends at 30', async () => {
+      const { service, userId, refresh_token } = await seedSession();
+      await backdateSessionStart(userId, 29);
+      const next = await service.refreshTokens(refresh_token);
+
+      // two more days pass on the successor minted a moment ago
+      await backdateSessionStart(userId, 31);
+
+      await expect(service.refreshTokens(next.refresh_token)).rejects.toThrow(
+        REFUSED,
+      );
+    });
+
+    it('neither extends nor resets the start when the grace window replays a rotation', async () => {
+      const { service, userId, refresh_token } = await seedSession();
+      const startedAt = await backdateSessionStart(userId, 29);
+
+      await service.refreshTokens(refresh_token);
+      await service.refreshTokens(refresh_token);
+
+      // the replay minted nothing, and both rows still say when it began
+      const rows = await sessionRows(userId);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.sessionStartedAt)).toEqual([
+        startedAt,
+        startedAt,
+      ]);
+    });
+
+    // The grace window replays a live successor to whoever presents the
+    // token it replaced. A Session past its lifetime has to be refused
+    // before that, or the rotated-out token becomes a way back in.
+    it('does not replay a rotated-out token of a Session past its lifetime, and ends it', async () => {
+      const { service, userId, refresh_token } = await seedSession();
+      const { refresh_token: successor } =
+        await service.refreshTokens(refresh_token);
+      await backdateSessionStart(userId, 31);
+
+      // still inside the grace window — this would otherwise replay
+      await expect(service.refreshTokens(refresh_token)).rejects.toThrow(
+        REFUSED,
+      );
+
+      await expect(service.refreshTokens(successor)).rejects.toThrow(REFUSED);
+      const rows = await sessionRows(userId);
+      expect(rows.filter((r) => r.revokedAt === null)).toHaveLength(0);
+    });
+
+    it("leaves the User's younger Sessions running when an old one ends", async () => {
+      const { service, userId, refresh_token } = await seedSession();
+      await backdateSessionStart(userId, 31);
+      const younger = await service.start(userId);
+
+      await expect(service.refreshTokens(refresh_token)).rejects.toThrow(
+        REFUSED,
+      );
+
+      await expectWorkingSession(service, younger, userId);
+    });
+  });
+
   // A refresh token must never work as an access token or vice versa — the
   // longer-lived one can't be used to call the API directly, and the one
   // that travels in a header can't be traded for a new Session.
@@ -887,6 +1017,104 @@ describe('SessionsService.revokeOthersAndRotate (OS-385)', () => {
     ]);
 
     await expectWorkingSession(service, result, user.id);
+  });
+
+  // A changed password rotates the caller's Session, it doesn't begin a new
+  // one — so the rotation carries the original start forward like any other.
+  // Only the branches that really do start a Session afresh get a new start
+  // (OS-556).
+  describe('and the absolute Session lifetime (OS-556)', () => {
+    const liveRow = async (userId: number) => {
+      const live = await db
+        .select()
+        .from(userRefreshTokensTable)
+        .where(
+          and(
+            eq(userRefreshTokensTable.userId, userId),
+            isNull(userRefreshTokensTable.revokedAt),
+          ),
+        );
+      const [row, ...others] = live;
+      if (!row || others.length > 0) {
+        throw new Error(`expected one live token, found ${live.length}`);
+      }
+      return row;
+    };
+    const expectStartedJustNow = (startedAt: Date) => {
+      expect(Date.now() - startedAt.getTime()).toBeLessThan(60_000);
+    };
+
+    it('keeps the original start when it rotates the caller in place', async () => {
+      const user = await seedUser();
+      const service = await build();
+      const caller = await service.start(user.id);
+      const startedAt = await backdateSessionStart(user.id, 29);
+
+      await service.revokeOthersAndRotate(user.id, caller.refresh_token);
+
+      expect((await liveRow(user.id)).sessionStartedAt).toEqual(startedAt);
+    });
+
+    it('begins a new one when it has to start fresh (no refresh cookie)', async () => {
+      const user = await seedUser();
+      const service = await build();
+      await service.start(user.id);
+      await backdateSessionStart(user.id, 29);
+
+      await service.revokeOthersAndRotate(user.id, undefined);
+
+      expectStartedJustNow((await liveRow(user.id)).sessionStartedAt);
+    });
+
+    // The refresh is parked on the row first, so it is first in line when
+    // the lock goes and the password change is the one that loses.
+    it('begins a new one when it loses the rotation to a concurrent refresh', async () => {
+      const user = await seedUser();
+      const service = await build();
+      const { refresh_token: callerToken } = await service.start(user.id);
+      await backdateSessionStart(user.id, 29);
+      const [original] = await db.select().from(userRefreshTokensTable);
+
+      const [, result] = await raceForRefreshRow(callerToken, 2, async () => {
+        const refreshing = service.refreshTokens(callerToken);
+        refreshing.catch(() => undefined);
+        await lockWaiters(db, 1);
+        return Promise.all([
+          refreshing,
+          service.revokeOthersAndRotate(user.id, callerToken),
+        ]);
+      });
+
+      const live = await liveRow(user.id);
+      expect(live.jti).toBe(
+        testJwt().decode<{ jti: string }>(result.refresh_token).jti,
+      );
+      // it really was the losing branch: the caller left the family behind
+      expect(live.familyId).not.toBe(original?.familyId);
+      expectStartedJustNow(live.sessionStartedAt);
+    });
+
+    // Rotating a Session already past its lifetime would hand back a refresh
+    // token that is refused the first time it's used — signing the caller out
+    // minutes after they changed their password. They have just proved they
+    // know it, which is all a new Session ever asks.
+    it('begins a new one rather than rotating a Session already past its lifetime', async () => {
+      const user = await seedUser();
+      const service = await build();
+      const caller = await service.start(user.id);
+      await backdateSessionStart(user.id, 31);
+
+      const replacement = await service.revokeOthersAndRotate(
+        user.id,
+        caller.refresh_token,
+      );
+
+      expectStartedJustNow((await liveRow(user.id)).sessionStartedAt);
+      await expectWorkingSession(service, replacement, user.id);
+      await expect(service.refreshTokens(caller.refresh_token)).rejects.toThrow(
+        REFUSED,
+      );
+    });
   });
 
   it('revokes every session and starts a fresh one when there is no refresh cookie', async () => {

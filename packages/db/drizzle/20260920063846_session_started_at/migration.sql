@@ -1,0 +1,1 @@
+ALTER TABLE "user_refresh_tokens" ADD COLUMN "session_started_at" timestamp DEFAULT now() NOT NULL;

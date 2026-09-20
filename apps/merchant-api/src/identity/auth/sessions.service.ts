@@ -45,6 +45,21 @@ export const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 // reuse. In seconds, like REFRESH_TOKEN_TTL_SECONDS.
 export const ACCESS_TOKEN_TTL_SECONDS = 60 * 15;
 
+// How long a Session survives however much it is used, counted from when it
+// started — the last time the User actually proved who they are. The idle
+// limit above can't end a Session on its own: every refresh buys another 7
+// days, so one used at least weekly would otherwise never end, and a stolen
+// refresh token kept warm would be good forever. OWASP's session guidance
+// asks for both an idle and an absolute timeout, and this is a back-office
+// that moves money. The decision is that an absolute limit exists; 30 days
+// is a knob. What the User sees is a sign-in once every 30 days if they
+// never sign out.
+//
+// Enforced where a Session is continued (refreshTokens), not baked into the
+// tokens, so the last access token minted may outlive the Session by up to
+// its own short life.
+const SESSION_ABSOLUTE_LIFETIME_SECONDS = 60 * 60 * 24 * 30;
+
 // every refusal that concerns a token reads the same, so a caller can't tell
 // a forged token from a revoked one from a deactivated User
 const INVALID_TOKEN = 'Invalid or expired token';
@@ -169,11 +184,17 @@ export class SessionsService {
     // family killed outright has nothing left to rotate.
     await this.revokeAllFamiliesForUser(userId, callersOwn?.familyId);
 
-    // No usable cookie (missing, expired, or already rotated out) leaves no
-    // family to continue, so the caller starts a fresh Session. They asked
-    // for this while holding a valid access token and just proved they know
-    // the password, so signing them out instead would be a gratuitous
-    // refusal.
+    // No usable cookie (missing, expired, already rotated out, or naming a
+    // Session past its absolute lifetime) leaves no family to continue, so
+    // the caller starts a fresh Session. They asked for this while holding a
+    // valid access token and just proved they know the password, so signing
+    // them out instead would be a gratuitous refusal.
+    //
+    // Which of the two happens decides the absolute lifetime as well. A
+    // rotation continues the Session, so the successor keeps the original
+    // sessionStartedAt — changing a password is not a way to buy another 30
+    // days for whoever else holds the family. start() is a new Session with
+    // a new start, here and on the lost race below.
     const rotated = callersOwn
       ? await this.rotateRefreshRecord(
           callersOwn,
@@ -213,14 +234,15 @@ export class SessionsService {
   // stolen access token achieves by calling it is signing the legitimate
   // user out, which is the very thing the legitimate user came here to do.
   //
-  // No usable cookie (missing, expired, or already rotated out) leaves no
-  // family to identify as "this one" — and that case is refused outright,
+  // No usable cookie (missing, expired, already rotated out, or naming a
+  // Session past its absolute lifetime) leaves no family to identify as
+  // "this one" — and that case is refused outright,
   // with nothing revoked. Both alternatives are worse. Revoking everything
   // signs out the one person who asked to stay. Revoking everything and then
   // starting the caller a fresh Session looks kind but breaks the paragraph
   // above: a bare access token, good for 15 minutes at most, would buy a
-  // 7-day refresh token that rotates indefinitely, from an endpoint that is
-  // only allowed to skip the password *because* it never grants anything.
+  // 7-day refresh token that rotates for up to 30 days, from an endpoint that
+  // is only allowed to skip the password *because* it never grants anything.
   // changePassword does start a fresh Session on its own no-cookie path, but
   // it has verified the password by then; this has verified nothing.
   //
@@ -256,8 +278,8 @@ export class SessionsService {
   }
 
   // The caller's own live refresh-token row, or null if the cookie never
-  // reached us, names a row that isn't theirs, or names one that's already
-  // revoked.
+  // reached us, names a row that isn't theirs, names one that's already
+  // revoked, or names a Session past its absolute lifetime.
   //
   // Liveness matters: a cookie that's already been rotated out names a dead
   // row, and treating that row's family as "this browser's" would spare its
@@ -266,6 +288,12 @@ export class SessionsService {
   // userId anyway, so a foreign family id can't match), kept so a token
   // belonging to somebody else can never be the one that's rotated instead
   // of revoked.
+  //
+  // A Session past its absolute lifetime is over whether or not anything has
+  // got round to revoking its rows — refreshTokens would refuse it — so it
+  // is no more "this browser's Session" than a revoked one. Not sparing it
+  // means the sweep ends it; changePassword then starts the caller afresh
+  // rather than rotating them into a token that is dead on arrival.
   private async callersLiveRefreshRecord(
     userId: number,
     callerRefreshToken: string | undefined,
@@ -274,7 +302,10 @@ export class SessionsService {
       ? await this.refreshRecordFor(callerRefreshToken)
       : null;
 
-    return presented && presented.userId === userId && !presented.revokedAt
+    return presented &&
+      presented.userId === userId &&
+      !presented.revokedAt &&
+      !this.pastAbsoluteLifetime(presented)
       ? presented
       : null;
   }
@@ -332,6 +363,12 @@ export class SessionsService {
   // for it. `familyId` is fresh (randomUUID()) for a brand-new Session
   // (start) and carried through unchanged on every rotation (refreshTokens)
   // — it's the unit reuse detection revokes as a whole.
+  //
+  // This is the first row of a Session, so it is also where the Session's
+  // start is stamped — the only place; rotateRefreshRecord copies it forward.
+  // Written from this process's clock rather than left to the column default
+  // because pastAbsoluteLifetime() measures it against the same clock, as
+  // revokedAt and the grace window already do.
   private async mintRefreshToken(
     userId: number,
     familyId: string,
@@ -339,7 +376,7 @@ export class SessionsService {
     const jti = randomUUID();
     await this.db
       .insert(userRefreshTokensTable)
-      .values({ userId, jti, familyId });
+      .values({ userId, jti, familyId, sessionStartedAt: new Date() });
     const token = await this.signRefreshToken(userId, jti);
     return { token, jti };
   }
@@ -401,11 +438,16 @@ export class SessionsService {
   // grace-window replay, which treats a missing replacement as reuse and
   // would kill the family the winner just rotated.
   //
+  // The successor takes the retired row's sessionStartedAt as it stands. A
+  // rotation continues a Session, it doesn't begin one, so this is the one
+  // value a rotation must never re-stamp: leave it to the column default and
+  // every refresh would quietly restart the 30 days.
+  //
   // Shared by the ordinary rotation (refreshTokens) and the forced one
   // (changePassword) so the two can't drift into different notions of what
   // rotating a session means.
   private async rotateRefreshRecord(
-    record: { id: number; familyId: string },
+    record: { id: number; familyId: string; sessionStartedAt: Date },
     claims: AccessTokenClaims,
   ): Promise<TokenPair | null> {
     const nextJti = randomUUID();
@@ -426,6 +468,7 @@ export class SessionsService {
         userId: claims.sub,
         jti: nextJti,
         familyId: record.familyId,
+        sessionStartedAt: record.sessionStartedAt,
       });
       return true;
     });
@@ -447,6 +490,15 @@ export class SessionsService {
           isNull(userRefreshTokensTable.revokedAt),
         ),
       );
+  }
+
+  // Every row of a family carries the same sessionStartedAt, so any of them
+  // — live, or long since rotated out — answers for the whole Session.
+  private pastAbsoluteLifetime(record: { sessionStartedAt: Date }): boolean {
+    return (
+      Date.now() - record.sessionStartedAt.getTime() >
+      SESSION_ABSOLUTE_LIFETIME_SECONDS * 1000
+    );
   }
 
   // Single-use: every call revokes the presented refresh token and issues a
@@ -479,6 +531,27 @@ export class SessionsService {
 
     if (!record) {
       throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    // The absolute lifetime, checked before the row's own state is looked at
+    // — ahead of the rotation and of the revoked/grace/reuse branch alike.
+    // Before rotating, because a rotation is what would carry the Session on.
+    // Before the grace window, because that replays a live successor to
+    // whoever presents the token it replaced: re-signed for another 7 days,
+    // so a rotated-out token would be a way back into a Session that is
+    // over. And before reuse detection, because a stale token from a Session
+    // that has simply run out is not evidence of theft and shouldn't be
+    // handled as though it were — today the two end the same way, but the
+    // reuse branch is where a theft alert would go. One check serves all
+    // three since every row of the family carries the same start (so the
+    // re-read after a lost race below needs no second look).
+    //
+    // The Session is ended, not just refused this once — its family is
+    // revoked, so no row of it is left looking live. Same 401 as any other
+    // dead token: a caller learns nothing about why.
+    if (this.pastAbsoluteLifetime(record)) {
+      await this.revokeFamily(record.familyId);
+      throw new UnauthorizedException(INVALID_TOKEN);
     }
 
     if (!record.revokedAt) {
