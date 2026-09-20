@@ -8,6 +8,7 @@ import {
 import { StripeConnectService } from './stripe-connect.service';
 import { StripeConnectStatus } from './entities/stripe-connect-status.entity';
 import { AccountSessionResponse } from './entities/account-session.entity';
+import { OnboardingLinkResponse } from './entities/onboarding-link.entity';
 import {
   CurrentUser,
   NoMfaFactorRequired,
@@ -24,29 +25,24 @@ import {
 export class StripeConnectController {
   constructor(private readonly stripeConnectService: StripeConnectService) {}
 
-  // Connecting an account for the FIRST time — the money action, and the one
-  // that needs a second factor.
-  //
-  // Split from account-session rather than gating that route in place,
-  // because account-session is dual-use: merchant-web initializes Connect.js
-  // whenever `showOnboarding || connected`, so an already-connected merchant
-  // hits it just to render account management and balances. Gating it would
-  // break their Payments page for a factor they never needed — and the
-  // failure would surface inside Connect.js's fetchClientSecret callback,
-  // where a 403 is an opaque Stripe error rather than anything actionable.
-  @Post('onboarding-session')
+  // Connecting an account — the money action, and the one that needs a
+  // second factor. Returns a Stripe-hosted onboarding URL (OS-498) rather
+  // than an embedded session, so a refusal here is an ordinary API error the
+  // dashboard can show, not something swallowed inside Connect.js.
+  @Post('onboarding-link')
   @RequirePermissions('payments:write')
   @RequireMfaFactor()
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse({ type: AccountSessionResponse })
-  createOnboardingSession(@CurrentUser() user: AuthenticatedUser) {
-    return this.stripeConnectService.createOnboardingSession(user.accountId);
+  @ApiOkResponse({ type: OnboardingLinkResponse })
+  createOnboardingLink(@CurrentUser() user: AuthenticatedUser) {
+    return this.stripeConnectService.createOnboardingLink(user.accountId);
   }
 
-  // Ungated: the embedded management and balance components call this on
-  // every Payments page load for a merchant who is already connected. It
-  // cannot create an account or serve onboarding, so it isn't a way around
-  // the gate above.
+  // Ungated, deliberately: the embedded management and balance components
+  // call this on every Payments page load for a connected merchant, from
+  // inside Connect.js's fetchClientSecret — where a 403 is an opaque Stripe
+  // error rather than anything actionable. It cannot create an account or
+  // serve onboarding, so it isn't a way around the gate above.
   @Post('account-session')
   @RequirePermissions('payments:write')
   @ApiBearerAuth('JWT-auth')

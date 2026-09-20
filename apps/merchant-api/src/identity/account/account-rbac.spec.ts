@@ -28,9 +28,11 @@ describe('account / payments / pos-devices RBAC (OS-179)', () => {
     expect(perm(StripeConnectController.prototype, 'getStatus')).toEqual([
       'payments:read',
     ]);
-    expect(
-      perm(StripeConnectController.prototype, 'createAccountSession'),
-    ).toEqual(['payments:write']);
+    for (const m of ['createOnboardingLink', 'createAccountSession']) {
+      expect(perm(StripeConnectController.prototype, m)).toEqual([
+        'payments:write',
+      ]);
+    }
   });
 
   it('gates pos-devices routes', () => {

@@ -13,13 +13,16 @@ export function createStripeConnectResource(client: Client<paths>, doRequest: Do
       return data;
     },
 
-    // First connect — the money action, and the one behind the factor gate
-    // (OS-492). Throws ApiError with code MFA_FACTOR_REQUIRED when the
-    // caller holds no passkey or authenticator.
-    createOnboardingSession: async () =>
+    // Starts (or resumes) Stripe-hosted onboarding — the money action, and
+    // the one behind the factor gate (OS-492). Throws ApiError with code
+    // MFA_FACTOR_REQUIRED when the caller holds no passkey or authenticator.
+    //
+    // The returned url is single-use and expires within minutes: navigate to
+    // it immediately, and ask again rather than reusing one.
+    createOnboardingLink: async () =>
       unwrap(
         await doRequest(() =>
-          client.POST("/stripe-connect/onboarding-session"),
+          client.POST("/stripe-connect/onboarding-link"),
         ),
       ),
 

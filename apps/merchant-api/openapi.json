@@ -3116,9 +3116,9 @@
         ]
       }
     },
-    "/stripe-connect/onboarding-session": {
+    "/stripe-connect/onboarding-link": {
       "post": {
-        "operationId": "StripeConnectController_createOnboardingSession",
+        "operationId": "StripeConnectController_createOnboardingLink",
         "parameters": [],
         "responses": {
           "200": {
@@ -3126,7 +3126,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccountSessionResponse"
+                  "$ref": "#/components/schemas/OnboardingLinkResponse"
                 }
               }
             }
@@ -3156,6 +3156,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": ""
           }
         },
         "security": [
@@ -6424,6 +6427,17 @@
           "status",
           "refundIssued",
           "refundAmountCents"
+        ]
+      },
+      "OnboardingLinkResponse": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
         ]
       },
       "AccountSessionResponse": {
