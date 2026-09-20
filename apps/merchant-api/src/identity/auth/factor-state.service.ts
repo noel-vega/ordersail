@@ -27,10 +27,10 @@ export interface FactorClaims {
 type DbTransaction = Parameters<Parameters<(typeof Db)['transaction']>[0]>[0];
 
 // The read side of a User's Factors: what they hold, whether one is required
-// of them, and the two token claims that follow. Its own provider rather than
-// part of AuthService because SessionsService recomputes those claims on
+// of them, and the one token claim that follows. Its own provider rather than
+// part of AuthService because SessionsService recomputes that claim on
 // every refresh, and AuthService in turn depends on SessionsService — reading
-// them through AuthService would be a dependency cycle.
+// it through AuthService would be a dependency cycle.
 @Injectable()
 export class FactorStateService {
   constructor(@Inject(DRIZZLE) private readonly db: typeof Db) {}

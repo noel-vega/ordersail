@@ -15,8 +15,11 @@ import { type SessionsService, type TokenPair } from './sessions.service';
 
 // Shared by the specs at the two Session seams — the sign-in operations
 // (auth.service.spec, passkeys.service.spec) and SessionsService itself
-// (sessions.service.spec). Spec-only: excluded from the build by
-// tsconfig.build.json.
+// (sessions.service.spec) — and by users/users.service.spec, where
+// deactivating a User ends their Sessions. Spec-only: excluded from the
+// build by tsconfig.build.json. App-local rather than in test-support
+// because it runs the app's real guards; the helpers that need only the
+// database (fixtures, lockWaiters) live there.
 //
 // The point of everything here is to let a spec ask whether a token WORKS —
 // the real AuthGuard accepts it, the real gates do what they should with it,

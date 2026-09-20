@@ -766,7 +766,7 @@ export class AuthService {
     // committed could not be retried with the same link (the token is
     // consumed), leaving the old password's Sessions running under the new
     // one. Writing the User row first also takes the lock revokeAll wants —
-    // see SessionsService.revokeAllFamiliesForUser for why a sweep holds it.
+    // see SessionsService.revokeAll for why a sweep holds it.
     await this.db.transaction(async (tx) => {
       await tx
         .update(usersTable)

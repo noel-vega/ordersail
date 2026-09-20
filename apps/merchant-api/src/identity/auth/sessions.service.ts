@@ -155,16 +155,19 @@ export class SessionsService {
     return this.signAccessToken(await this.claimsFor(userId, INVALID_TOKEN));
   }
 
-  // The session half of AuthService.changePassword, which calls this once
-  // the new password is saved.
+  // The session half of a credential change made by a signed-in User, called
+  // once the change is saved. Three operations end here:
+  // AuthService.changePassword, AuthService.disableMfa and
+  // PasskeysService.remove — each has verified the caller's password first.
   //
   // EVERY live refresh token for this user is invalidated, the caller's
   // included. resetPassword already revokes unconditionally, and the usual
-  // reason to change a password is believing it's compromised — leaving any
-  // of them alive would make the self-service path weaker than the emailed
-  // one. The threat this closes is a *copy* of the caller's own refresh
-  // token: it lives in the caller's family, so merely sparing that family
-  // would leave the attacker redeeming it for up to its full 7-day life.
+  // reason to change a password or drop a Factor is believing something is
+  // compromised — leaving any of them alive would make the self-service path
+  // weaker than the emailed one. The threat this closes is a *copy* of the
+  // caller's own refresh token: it lives in the caller's family, so merely
+  // sparing that family would leave the attacker redeeming it for up to its
+  // full 7-day life.
   //
   // The caller still doesn't get signed out, because their family is rotated
   // rather than killed: the presented token is revoked and replaced in place,
@@ -200,7 +203,7 @@ export class SessionsService {
     //
     // Which of the two happens decides the absolute lifetime as well. A
     // rotation continues the Session, so the successor keeps the original
-    // sessionStartedAt — changing a password is not a way to buy another 30
+    // sessionStartedAt — changing a credential is not a way to buy another 30
     // days for whoever else holds the family. start() is a new Session with
     // a new start, here and on the lost race below.
     const rotated = callersOwn
@@ -227,12 +230,12 @@ export class SessionsService {
     return this.start(userId);
   }
 
-  // "Sign out everywhere else" — the same sweep changePassword performs,
-  // exposed on its own for someone who left a browser signed in somewhere
-  // and doesn't want to rotate a password they still trust.
+  // "Sign out everywhere else" — the same sweep revokeOthersAndRotate
+  // performs, exposed on its own for someone who left a browser signed in
+  // somewhere and doesn't want to rotate a password they still trust.
   //
-  // The opposite intent to changePassword's, though: there the caller's own
-  // family is spared only so it can be rotated (the threat being a *copy* of
+  // The opposite intent to a credential change's, though: there the caller's
+  // own family is spared only so it can be rotated (the threat being a *copy* of
   // their refresh token, which lives in that same family). Here nothing
   // suggests this browser's token is compromised, so its family is spared
   // and simply left running — no rotation, and so no new refresh cookie for
@@ -252,8 +255,9 @@ export class SessionsService {
   // above: a bare access token, good for 15 minutes at most, would buy a
   // 7-day refresh token that rotates for up to 30 days, from an endpoint that
   // is only allowed to skip the password *because* it never grants anything.
-  // changePassword does start a fresh Session on its own no-cookie path, but
-  // it has verified the password by then; this has verified nothing.
+  // revokeOthersAndRotate does start a fresh Session on its own no-cookie
+  // path, but each of its callers has verified the password by then; this
+  // has verified nothing.
   //
   // A browser essentially never gets here — the cookie is httpOnly, path "/",
   // and the SDK refreshes on a 401 — so the refusal lands on callers outside
@@ -303,8 +307,8 @@ export class SessionsService {
   // A Session past its absolute lifetime is over whether or not anything has
   // got round to revoking its rows — refreshTokens would refuse it — so it
   // is no more "this browser's Session" than a revoked one. Not sparing it
-  // means the sweep ends it; changePassword then starts the caller afresh
-  // rather than rotating them into a token that is dead on arrival.
+  // means the sweep ends it; revokeOthersAndRotate then starts the caller
+  // afresh rather than rotating them into a token that is dead on arrival.
   private async callersLiveRefreshRecord(
     userId: number,
     callerRefreshToken: string | undefined,
@@ -324,9 +328,9 @@ export class SessionsService {
   // `exceptFamilyId` holds one family back from the sweep — the caller's
   // own, so that a session which asked for this revocation isn't taken down
   // by the same statement that services it. What happens to the spared
-  // family is the caller's business: changePassword rotates it (so it ends
-  // up retired anyway, but with a successor), while a plain "sign out
-  // everywhere" leaves it running as-is. A family id belonging to some other
+  // family is the caller's business: revokeOthersAndRotate rotates it (so it
+  // ends up retired anyway, but with a successor), while revokeOtherSessions
+  // — "sign out everywhere else" — leaves it running as-is. A family id belonging to some other
   // user is harmless — the userId filter means it can't match, so this can
   // never spare a session it wasn't meant to.
   //
@@ -503,8 +507,8 @@ export class SessionsService {
   // every refresh would quietly restart the 30 days.
   //
   // Shared by the ordinary rotation (refreshTokens) and the forced one
-  // (changePassword) so the two can't drift into different notions of what
-  // rotating a session means.
+  // (revokeOthersAndRotate) so the two differ in the back-pointer and in
+  // nothing else — not in what retiring, succeeding or locking means.
   private async rotateRefreshRecord(
     record: { id: number; familyId: string; sessionStartedAt: Date },
     claims: AccessTokenClaims,
@@ -588,12 +592,13 @@ export class SessionsService {
       throw new UnauthorizedException(INVALID_TOKEN);
     }
 
-    // a staff member deactivated mid-session still holds a valid 7-day
-    // refresh token — claimsFor re-checks the row here so they can't keep
-    // minting access tokens (gated routes already 403 them; this also cuts
-    // off the authenticated-but-ungated ones), and recomputes the
-    // emailVerified/factor claims so a change made since the last mint is
-    // picked up at the next rotation
+    // Every claim is recomputed from the database, so a change made since
+    // the last mint — an email verified, a Factor requirement switched on —
+    // is picked up at this rotation. It is also a second line against a
+    // deactivated User: deactivation revokes their refresh-token rows
+    // (UsersService.setDeactivated), but a User switched off by any other
+    // route is still refused here, as is one deleted outright. The rotation
+    // re-checks under a lock for the gap between this read and its write.
     const claims = await this.claimsFor(payload.sub, INVALID_TOKEN);
 
     let [record] = await this.db
@@ -726,11 +731,11 @@ export class SessionsService {
 
   // The row a presented refresh token names, or null if it names none.
   // Deliberately total rather than throwing: both callers (logout,
-  // changePassword) treat an invalid/expired/unknown token as "no session to
-  // act on" rather than a user-facing failure. It does NOT judge whether the
-  // token is still redeemable — a revoked row comes back as itself, and each
-  // caller decides what that means (logout doesn't care; changePassword only
-  // rotates a row that's still live).
+  // callersLiveRefreshRecord) treat an invalid/expired/unknown token as "no
+  // session to act on" rather than a failure of their own. It does NOT judge
+  // whether the token is still redeemable — a revoked row comes back as
+  // itself, and each caller decides what that means (logout doesn't care;
+  // callersLiveRefreshRecord only counts a row that's still live).
   private async refreshRecordFor(refreshToken: string) {
     const payload = await this.verifyRefreshToken(refreshToken);
     if (!payload) {
