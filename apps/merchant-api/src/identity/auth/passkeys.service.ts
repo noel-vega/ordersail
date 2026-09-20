@@ -195,12 +195,14 @@ export class PasskeysService {
     );
 
     // Re-mint so a caller who was being gated isn't stuck behind a stale
-    // claim for the rest of their token's 8h life — same reason confirmMfa
-    // re-mints, and for the same one claim. After the transaction, so the
-    // claim is computed from the passkey that now exists: toFactorClaims()
-    // counts passkeys (since OS-489, when sign-in became able to challenge
-    // on one), and an invited staff member choosing a passkey at the join
-    // gate (OS-494) has to come unstuck without waiting for a refresh.
+    // claim until their next refresh — up to 15 minutes off, and the gate's
+    // 403 isn't what prompts the SDK to refresh (only a 401 is) — same
+    // reason confirmMfa re-mints, and for the same one claim. After the
+    // transaction, so the claim is computed from the passkey that now
+    // exists: toFactorClaims() counts passkeys (since OS-489, when sign-in
+    // became able to challenge on one), and an invited staff member choosing
+    // a passkey at the join gate (OS-494) has to come unstuck without
+    // waiting for a refresh.
     const access_token = await this.sessionsService.remintAccessToken(userId);
 
     return {

@@ -461,11 +461,13 @@ export class AuthService {
   // shouldn't be enough to weaken an account's security. Refused outright
   // while a factor is required of this user (account-wide OS-473, or the
   // invited-staff stamp OS-494) — otherwise a caller could
-  // self-disable and keep full access for the rest of their current
-  // access token's 8h lifetime (mfaEnrollmentSatisfied is only
-  // recomputed on refresh, not per request), silently defeating the
-  // account-wide requirement. An Owner must turn the requirement off
-  // first if this user genuinely needs to stop using MFA.
+  // self-disable and keep full access with no factor at all until their
+  // access token ran out (mfaEnrollmentSatisfied is computed when a token
+  // is minted, not per request), only to be walked back to the enrollment
+  // gate at the next refresh. That window is 15 minutes at most, but a
+  // requirement with a hole in it isn't one, and allowing the removal
+  // buys the user nothing they get to keep. An Owner must turn the
+  // requirement off first if this user genuinely needs to stop using MFA.
   async disableMfa(userId: number, password: string): Promise<void> {
     await this.verifyPassword(userId, password);
 

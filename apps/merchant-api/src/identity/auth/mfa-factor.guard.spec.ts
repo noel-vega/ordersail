@@ -74,7 +74,7 @@ describe('MfaFactorGuard (OS-492)', () => {
   // The same token on both sides of these two: nothing minted into it can
   // vouch for a factor, so enrolling mid-session works straight away, and
   // someone who removes their last factor mid-session is blocked on the very
-  // next gated action rather than staying authorized for the token's 8h.
+  // next gated action rather than staying authorized until the token expires.
   it('allows a marked route when the caller holds a factor', async () => {
     await expect(
       guard(true).canActivate(ctx({ required: true, user: caller })),

@@ -63,8 +63,8 @@ describe('AuthController /auth/me/profile (OS-384)', () => {
     });
   });
 
-  // an access token lives 8h, so it outlives a user deleted mid-session
-  // (a revoked invite, say) — that has to be a 404, not a 500 from
+  // an access token outlives a user deleted mid-session (a revoked invite,
+  // say) by up to 15 minutes — that has to be a 404, not a 500 from
   // returning undefined out of a non-nullable handler
   it.each([
     ['profile', (c: AuthController) => c.profile(user)],

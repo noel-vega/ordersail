@@ -32,6 +32,19 @@ const REFRESH_GRACE_WINDOW_MS = 10_000;
 // See session-cookie.ts.
 export const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 
+// How long an access token is good for once minted — and so the longest a
+// revoked Session, a deactivated User or a stolen access token keeps working
+// on the routes that don't read the database: nothing checks an access token
+// against user_refresh_tokens, it simply runs out. 15 minutes, because being
+// short costs nothing. merchant-web's root route refreshes on every
+// navigation and the SDK refreshes on a 401, so a browser in use rarely
+// presents a token more than a minute old; the lifetime only ever bites a
+// token that ISN'T being refreshed, which is exactly the stolen or
+// deactivated case. The price is paid outside a browser: anything holding a
+// merchant access token there must be able to refresh, not mint once and
+// reuse. In seconds, like REFRESH_TOKEN_TTL_SECONDS.
+export const ACCESS_TOKEN_TTL_SECONDS = 60 * 15;
+
 // every refusal that concerns a token reads the same, so a caller can't tell
 // a forged token from a revoked one from a deactivated User
 const INVALID_TOKEN = 'Invalid or expired token';
@@ -205,9 +218,9 @@ export class SessionsService {
   // with nothing revoked. Both alternatives are worse. Revoking everything
   // signs out the one person who asked to stay. Revoking everything and then
   // starting the caller a fresh Session looks kind but breaks the paragraph
-  // above: a bare access token, good for 8h at most, would buy a 7-day
-  // refresh token that rotates indefinitely, from an endpoint that is only
-  // allowed to skip the password *because* it never grants anything.
+  // above: a bare access token, good for 15 minutes at most, would buy a
+  // 7-day refresh token that rotates indefinitely, from an endpoint that is
+  // only allowed to skip the password *because* it never grants anything.
   // changePassword does start a fresh Session on its own no-cookie path, but
   // it has verified the password by then; this has verified nothing.
   //
@@ -304,7 +317,10 @@ export class SessionsService {
   }
 
   private async signAccessToken(claims: AccessTokenClaims) {
-    return await this.sign({ ...claims, typ: 'access' }, '8h');
+    return await this.sign(
+      { ...claims, typ: 'access' },
+      ACCESS_TOKEN_TTL_SECONDS,
+    );
   }
 
   private async signRefreshToken(userId: number, jti: string) {

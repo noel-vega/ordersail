@@ -54,15 +54,17 @@ export class MfaFactorGuard implements CanActivate {
     // deliberately no hasMfaFactor claim (the dead one was removed in OS-505).
     //
     // A claim is baked in at mint time and only recomputed on refresh, so an
-    // access token would assert it for up to 8h. On an account that doesn't
-    // require MFA a user could remove their last factor and keep using that
-    // stale `true` to connect Stripe or mint an API key — with no factor at
-    // all, which is exactly what this gate exists to prevent.
+    // access token would go on asserting it for up to 15 minutes after it
+    // stopped being true. On an account that doesn't require MFA a user could
+    // remove their last factor and use that stale `true` to connect Stripe
+    // or mint an API key — with no factor at all, which is exactly what this
+    // gate exists to prevent. The short token life narrows that window but
+    // can't close it: each of these actions is a single request.
     //
     // The other guards deliberately avoid a per-request lookup because they
     // run on every route. This one is opt-in on a handful of money and
     // access actions, so one indexed read is a fair price for the claim
-    // being true at the moment it matters rather than some hours ago. It
+    // being true at the moment it matters rather than some minutes ago. It
     // also means enrolling mid-session works immediately, without waiting
     // for a token refresh.
     const holdsFactor =

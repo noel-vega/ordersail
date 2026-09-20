@@ -322,8 +322,8 @@ export class AuthController {
       user.sub,
       user.accountId,
     );
-    // an access token outlives the row it was minted from by up to 8h, so a
-    // deleted user (a revoked invite, say) can still reach this
+    // an access token outlives the row it was minted from by up to 15
+    // minutes, so a deleted user (a revoked invite, say) can still reach this
     if (!profile) throw new NotFoundException();
     return profile;
   }
@@ -408,8 +408,9 @@ export class AuthController {
   // cookie the service refuses (409) and revokes nothing, rather than guess
   // which session is "this one" or mint one from a bare access token — see
   // SessionsService.revokeOtherSessions. Every other browser dies at its next
-  // refresh, and within at most one access-token lifetime (8h) even one that
-  // never refreshes.
+  // refresh, which is never far off: the access token it already holds runs
+  // out within 15 minutes (ACCESS_TOKEN_TTL_SECONDS), and that is the most
+  // any of them has left.
   @AuthenticatedOnly()
   @Post('me/sessions/revoke-others')
   @ApiBearerAuth('JWT-auth')

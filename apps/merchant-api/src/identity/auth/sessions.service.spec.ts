@@ -22,7 +22,11 @@ import {
 } from 'db/identity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { FactorStateService } from './factor-state.service';
-import { REFRESH_TOKEN_TTL_SECONDS, SessionsService } from './sessions.service';
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  REFRESH_TOKEN_TTL_SECONDS,
+  SessionsService,
+} from './sessions.service';
 import {
   TEST_JWT_SECRET,
   UNGATED,
@@ -296,6 +300,45 @@ describe('SessionsService token payloads', () => {
     expect(payload).toMatchObject({ sub: user.id, typ: 'refresh' });
   });
 
+  // The number itself, not just the constant: this lifetime is the whole
+  // window in which a revoked Session, a deactivated User or a stolen access
+  // token keeps working on routes that don't read the database, so lengthening
+  // it should mean editing a spec that says what it costs.
+  it('gives the access token a 15-minute lifetime', async () => {
+    const service = await build();
+    const user = await seedUser();
+
+    const payload = testJwt().decode<{ iat: number; exp: number }>(
+      (await service.start(user.id)).access_token,
+    );
+
+    expect(payload.exp - payload.iat).toBe(15 * 60);
+    expect(ACCESS_TOKEN_TTL_SECONDS).toBe(15 * 60);
+  });
+
+  // remintAccessToken() and refreshTokens() sign through the same private
+  // signer as start(), but a second literal is exactly how two mints drift
+  // apart — so each public mint is held to the one lifetime.
+  it('gives a re-minted and a refreshed access token that same lifetime', async () => {
+    const service = await build();
+    const user = await seedUser();
+    const s = await service.start(user.id);
+
+    const lifetimeOf = (token: string) => {
+      const { iat, exp } = testJwt().decode<{ iat: number; exp: number }>(
+        token,
+      );
+      return exp - iat;
+    };
+
+    expect(lifetimeOf(await service.remintAccessToken(user.id))).toBe(
+      ACCESS_TOKEN_TTL_SECONDS,
+    );
+    expect(
+      lifetimeOf((await service.refreshTokens(s.refresh_token)).access_token),
+    ).toBe(ACCESS_TOKEN_TTL_SECONDS);
+  });
+
   it('gives the refresh token the lifetime the refresh cookie is written with', async () => {
     const service = await build();
     const user = await seedUser();
@@ -325,6 +368,8 @@ describe('SessionsService token payloads', () => {
       const user = await seedUser();
       const legacy = await testJwt().signAsync(
         { ...legacyClaims(user), typ: 'access' },
+        // the lifetime such a token was minted with, before OS-555 — a
+        // shorter ACCESS_TOKEN_TTL_SECONDS doesn't cut short one already out
         { expiresIn: '8h' },
       );
 
