@@ -19,27 +19,23 @@ import {
 } from 'test-support';
 import {
   PERMISSIONS_CATALOG,
-  accountApiKeysTable,
   accountsTable,
   and,
   eq,
   isNotNull,
   permissionsTable,
-  rolePermissionsTable,
-  rolesTable,
   userEmailVerificationsTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
   userPasskeysTable,
   userPasswordResetsTable,
   userRefreshTokensTable,
-  userRolesTable,
   usersTable,
 } from 'db/identity';
-import { locationsTable } from 'db/stock';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
+import { AccountService } from '../account/account.service';
 import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -113,9 +109,12 @@ async function build() {
         provide: UsersService,
         useValue: new UsersService(db, {} as never, {} as never),
       },
-      // real RolesService for createSystemRole; its PermissionsService dep is
-      // unused on that path
-      { provide: RolesService, useValue: new RolesService(db, {} as never) },
+      // real AccountService for signup's provision(), over a real RolesService
+      // for createSystemRole (whose PermissionsService dep is unused on that path)
+      {
+        provide: AccountService,
+        useValue: new AccountService(db, new RolesService(db, {} as never)),
+      },
       // real PermissionsService — signup() doesn't call it, me() does
       { provide: PermissionsService, useValue: new PermissionsService(db) },
       { provide: EmailService, useValue: emailMock },
@@ -203,9 +202,9 @@ describe('AuthService token payloads (OS-482)', () => {
   });
 });
 
-describe('AuthService.signup — first-run seed (OS-173)', () => {
-  it('seeds the account, api key, Default location, Owner user + role', async () => {
-    // permissions are normally upserted at boot by PermissionsService
+describe('AuthService.signup (OS-173)', () => {
+  // what gets seeded is AccountService.provision's suite (account.service.spec)
+  it('provisions the account and returns a token for its first Owner', async () => {
     await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
     const service = await build();
 
@@ -214,53 +213,14 @@ describe('AuthService.signup — first-run seed (OS-173)', () => {
     expect(typeof result.accountId).toBe('number');
     expect(typeof result.access_token).toBe('string');
 
-    const [account] = await db
-      .select()
-      .from(accountsTable)
-      .where(eq(accountsTable.id, result.accountId));
-    expect(account).toMatchObject({ name: 'Cactus Coffee' });
-
-    const apiKeys = await db
-      .select()
-      .from(accountApiKeysTable)
-      .where(eq(accountApiKeysTable.accountId, result.accountId));
-    expect(apiKeys).toHaveLength(1);
-    expect(apiKeys[0]).toMatchObject({ label: null, revokedAt: null });
-    expect(apiKeys[0]?.key).toMatch(/^sfk_/);
-
-    const locations = await db
-      .select()
-      .from(locationsTable)
-      .where(eq(locationsTable.accountId, result.accountId));
-    expect(locations).toHaveLength(1);
-    expect(locations[0]).toMatchObject({ name: 'Default', addressLine1: null });
-
     const [user] = await db
       .select()
       .from(usersTable)
-      .where(eq(usersTable.accountId, result.accountId));
-    if (!user) throw new Error('owner user not seeded');
-    expect(user.email).toBe(signupDto.email);
-    expect(user.password).not.toBe(signupDto.password); // hashed
-
-    const [role] = await db
-      .select()
-      .from(rolesTable)
-      .where(eq(rolesTable.accountId, result.accountId));
-    if (!role) throw new Error('Owner role not seeded');
-    expect(role).toMatchObject({ name: 'Owner', isSystem: true });
-
-    const userRoles = await db
-      .select()
-      .from(userRolesTable)
-      .where(eq(userRolesTable.userId, user.id));
-    expect(userRoles).toEqual([expect.objectContaining({ roleId: role.id })]);
-
-    const rolePerms = await db
-      .select()
-      .from(rolePermissionsTable)
-      .where(eq(rolePermissionsTable.roleId, role.id));
-    expect(rolePerms).toHaveLength(PERMISSIONS_CATALOG.length);
+      .where(eq(usersTable.id, result.userId));
+    expect(user).toMatchObject({
+      email: signupDto.email,
+      accountId: result.accountId,
+    });
   });
 
   it('leaves the account unverified and sends a verification email (OS-470)', async () => {

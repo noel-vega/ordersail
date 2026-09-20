@@ -12,7 +12,7 @@ import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { UsersService } from '../users/users.service';
-import { RolesService } from '../roles/roles.service';
+import { AccountService } from '../account/account.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
@@ -28,7 +28,6 @@ import {
 import { decryptMfaSecret, encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
 import { generateRecoveryCodes } from 'src/shared/mfa/recovery-codes.util';
 import {
-  accountApiKeysTable,
   accountsTable,
   and,
   count,
@@ -45,9 +44,7 @@ import {
   userRefreshTokensTable,
   usersTable,
 } from 'db/identity';
-import { locationsTable } from 'db/stock';
 import * as bcrypt from 'bcryptjs';
-import { generateApiKey } from '../api-keys/api-keys.util';
 
 // deliberately much shorter than the 7-day invite TTL — an existing active
 // user can always request a fresh link, so there's no cost to expiring fast
@@ -137,7 +134,7 @@ export class AuthService {
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private jwtService: JwtService,
     private usersService: UsersService,
-    private rolesService: RolesService,
+    private accountService: AccountService,
     private permissionsService: PermissionsService,
     private emailService: EmailService,
   ) {}
@@ -680,50 +677,10 @@ export class AuthService {
 
   async signup(signupDto: SignUpDto) {
     try {
-      const user = await this.db.transaction(async (tx) => {
-        const [account] = await tx
-          .insert(accountsTable)
-          .values({
-            name: signupDto.businessName,
-            phone: signupDto.phone,
-            email: signupDto.email,
-          })
-          .returning();
+      const { owner: user } = await this.accountService.provision(signupDto);
 
-        await tx.insert(accountApiKeysTable).values({
-          accountId: account.id,
-          key: generateApiKey(),
-        });
-
-        // products need somewhere to hold stock — every account starts
-        // with a single seeded location, see locationsTable
-        await tx.insert(locationsTable).values({
-          accountId: account.id,
-          name: 'Default',
-        });
-
-        const hashedPassword = await bcrypt.hash(signupDto.password, 10);
-
-        const [user] = await tx
-          .insert(usersTable)
-          .values({
-            firstname: signupDto.firstName,
-            lastname: signupDto.lastName,
-            email: signupDto.email,
-            password: hashedPassword,
-            accountId: account.id,
-          })
-          .returning();
-
-        // every account starts with a non-deletable "Owner" role holding
-        // every permission, assigned to the account's first user
-        await this.rolesService.createSystemRole(tx, account.id, user.id);
-
-        return user;
-      });
-
-      // best-effort, outside the transaction — an email that fails to send
-      // (see EmailService's own try/catch) shouldn't roll back a
+      // best-effort, outside provision()'s transaction — an email that fails
+      // to send (see EmailService's own try/catch) shouldn't roll back a
       // successful signup; the account can always resend
       await this.issueVerificationEmail(user);
 

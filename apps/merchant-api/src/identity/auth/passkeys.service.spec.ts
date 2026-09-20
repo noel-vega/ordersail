@@ -25,7 +25,7 @@ import {
 } from 'test-support';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
-import { RolesService } from '../roles/roles.service';
+import { AccountService } from '../account/account.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
@@ -99,7 +99,8 @@ async function buildRef() {
         provide: UsersService,
         useValue: new UsersService(db, {} as never, {} as never),
       },
-      { provide: RolesService, useValue: new RolesService(db, {} as never) },
+      // signup()'s collaborator — no passkey path reaches it
+      { provide: AccountService, useValue: {} },
       { provide: PermissionsService, useValue: new PermissionsService(db) },
       {
         provide: EmailService,

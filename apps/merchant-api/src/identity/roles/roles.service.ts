@@ -27,8 +27,8 @@ import { getPermissionKeysForRoles } from '../shared/get-permission-keys-for-rol
 import { PermissionsService } from '../permissions/permissions.service';
 
 // callback param type of db.transaction() — lets createSystemRole join a
-// transaction started by a caller in another module (auth.service.ts's
-// signup), rather than opening its own
+// transaction started by a caller in another module (account.service.ts's
+// provision), rather than opening its own
 type DbTransaction = Parameters<(typeof Db)['transaction']>[0] extends (
   tx: infer T,
   ...rest: never[]
@@ -251,7 +251,7 @@ export class RolesService {
   // seeds the account's non-deletable "Owner" role with every permission
   // currently in the catalog, and assigns it to the newly created owner.
   // Takes the caller's transaction handle so it's atomic with account/user
-  // creation in AuthService.signup().
+  // creation in AccountService.provision().
   async createSystemRole(
     tx: DbTransaction,
     accountId: number,

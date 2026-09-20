@@ -6,7 +6,7 @@ import { PasskeysService } from './passkeys.service';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { UsersModule } from '../users/users.module';
-import { RolesModule } from '../roles/roles.module';
+import { AccountModule } from '../account/account.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { jwtConstants } from './auth.constants';
 import { AUTH_APP_GUARD } from './auth.guard';
@@ -19,7 +19,7 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
 @Module({
   imports: [
     UsersModule,
-    RolesModule,
+    AccountModule,
     PermissionsModule,
     // single 'default' bucket, 100 req/min/IP — merchant-api runs one ECS
     // task today (desired_count=1), so the built-in in-memory storage is

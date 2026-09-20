@@ -580,6 +580,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AccountController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["AccountController_update"];
+        trace?: never;
+    };
     "/roles": {
         parameters: {
             query?: never;
@@ -642,22 +658,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/account": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["AccountController_findOne"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["AccountController_update"];
         trace?: never;
     };
     "/products": {
@@ -1523,6 +1523,23 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        Account: {
+            id: number;
+            name: string;
+            phone: string;
+            email: string;
+            /** Format: date-time */
+            requireMfaAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UpdateAccountDto: {
+            phone?: string;
+            email?: string;
+            requireMfa?: boolean;
+        };
         CreateRoleDto: {
             name: string;
             description?: string;
@@ -1565,23 +1582,6 @@ export interface components {
         };
         CreateApiKeyDto: {
             label?: string | null;
-        };
-        Account: {
-            id: number;
-            name: string;
-            phone: string;
-            email: string;
-            /** Format: date-time */
-            requireMfaAt: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        UpdateAccountDto: {
-            phone?: string;
-            email?: string;
-            requireMfa?: boolean;
         };
         CreateProductDto: {
             name: string;
@@ -3194,6 +3194,54 @@ export interface operations {
             };
         };
     };
+    AccountController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+        };
+    };
+    AccountController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAccountDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     RolesController_findAll: {
         parameters: {
             query?: never;
@@ -3363,54 +3411,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiKeyDto"];
                 };
-            };
-        };
-    };
-    AccountController_findOne: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Account"];
-                };
-            };
-        };
-    };
-    AccountController_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateAccountDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Account"];
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

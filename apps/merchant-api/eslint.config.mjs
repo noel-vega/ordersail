@@ -153,9 +153,10 @@ export default tseslint.config(
   ...(() => {
     // context → the db/* entrypoints it is NOT allowed to import
     const denied = {
-      // identity → stock: signup (auth.service) seeds the new tenant's default
-      // location in the same transaction as the account. Provisioning write —
-      // known coupling, revisit via an `account.created` event. See ARCHITECTURE.md.
+      // identity → stock: tenant provisioning (account.service `provision`) seeds
+      // the new tenant's default location in the same transaction as the account.
+      // Provisioning write — known coupling, revisit via an `account.created`
+      // event. See ARCHITECTURE.md.
       identity: ['db', 'db/schema', 'db/catalog', 'db/sales', 'db/payments'],
       catalog: ['db', 'db/schema', 'db/identity', 'db/sales', 'db/payments'],
       stock: ['db', 'db/schema', 'db/sales', 'db/payments'],
