@@ -1050,6 +1050,47 @@ export class AuthService {
         };
   }
 
+  // "Sign out everywhere else" — the same sweep changePassword performs,
+  // exposed on its own for someone who left a browser signed in somewhere
+  // and doesn't want to rotate a password they still trust.
+  //
+  // The opposite intent to changePassword's, though: there the caller's own
+  // family is spared only so it can be rotated (the threat being a *copy* of
+  // their refresh token, which lives in that same family). Here nothing
+  // suggests this browser's token is compromised, so its family is spared
+  // and simply left running — no rotation, no re-mint, and so no new cookie
+  // for the controller to write back.
+  //
+  // Deliberately requires no password. Unlike disabling MFA or removing a
+  // passkey, this only ever reduces access: the worst an attacker holding a
+  // stolen access token achieves by calling it is signing the legitimate
+  // user out, which is the very thing the legitimate user came here to do.
+  //
+  // No usable cookie (missing, expired, or already rotated out) leaves no
+  // family to identify as "this one", so every family goes — including this
+  // browser's. That's the honest reading of the request: told to end every
+  // session it can name, it ends every session it can name.
+  async revokeOtherSessions(
+    userId: number,
+    callerRefreshToken: string | undefined,
+  ): Promise<void> {
+    // Liveness matters: a cookie that's already been rotated out names a
+    // dead row, and sparing that row's family would leave its live successor
+    // running — the very session the user may be here to kill. The userId
+    // check is belt-and-braces (revokeAllFamiliesForUser filters on userId
+    // anyway, so a foreign family id can't match), kept to mirror
+    // changePassword rather than because anything observable depends on it.
+    const presented = callerRefreshToken
+      ? await this.refreshRecordFor(callerRefreshToken)
+      : null;
+    const callersOwn =
+      presented && presented.userId === userId && !presented.revokedAt
+        ? presented
+        : null;
+
+    await this.revokeAllFamiliesForUser(userId, callersOwn?.familyId);
+  }
+
   // `exceptFamilyId` holds one family back from the sweep — the caller's
   // own, so that a session which asked for this revocation isn't taken down
   // by the same statement that services it. What happens to the spared

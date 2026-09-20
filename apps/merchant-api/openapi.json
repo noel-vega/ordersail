@@ -549,6 +549,28 @@
         ]
       }
     },
+    "/auth/me/sessions/revoke-all": {
+      "post": {
+        "operationId": "AuthController_revokeOtherSessions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/auth/logout": {
       "post": {
         "operationId": "AuthController_logout",

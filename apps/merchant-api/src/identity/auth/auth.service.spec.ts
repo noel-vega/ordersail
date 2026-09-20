@@ -65,6 +65,28 @@ async function freshTotpCode(secret: string): Promise<string> {
   return authenticator.generate(secret);
 }
 
+// The grace window deliberately lets a just-rotated token be re-presented
+// for 10s (a second tab, a retried request) and replay its replacement, so
+// a freshly revoked row says nothing useful until that window has passed —
+// "the other browser is refused now" passes for the wrong reason inside it.
+// Backdating is how the refreshTokens specs get past it without sleeping;
+// the live replacement (revokedAt still null) is left alone.
+//
+// Module-scope so both revocation suites (changePassword, OS-385;
+// revokeOtherSessions, OS-502) use the one definition — they'd otherwise
+// each carry their own notion of "far enough past the window".
+async function elapseGraceWindow(userId: number) {
+  await db
+    .update(userRefreshTokensTable)
+    .set({ revokedAt: new Date(Date.now() - 60_000) })
+    .where(
+      and(
+        eq(userRefreshTokensTable.userId, userId),
+        isNotNull(userRefreshTokensTable.revokedAt),
+      ),
+    );
+}
+
 const emailMock = {
   sendInviteEmail: jest.fn(),
   sendPasswordResetEmail: jest.fn(),
@@ -732,23 +754,6 @@ describe('AuthService.changePassword (OS-385)', () => {
     return { ...claimsFor(user), typ: 'access' };
   }
 
-  // The grace window deliberately lets a just-rotated token be re-presented
-  // for 10s (a second tab, a retried request) and replay its replacement, so
-  // a freshly revoked row says nothing useful until that window has passed.
-  // Backdating is how the refreshTokens specs get past it without sleeping;
-  // the live replacement (revokedAt still null) is left alone.
-  async function elapseGraceWindow(userId: number) {
-    await db
-      .update(userRefreshTokensTable)
-      .set({ revokedAt: new Date(Date.now() - 60_000) })
-      .where(
-        and(
-          eq(userRefreshTokensTable.userId, userId),
-          isNotNull(userRefreshTokensTable.revokedAt),
-        ),
-      );
-  }
-
   it('replaces the password: the old one stops verifying and the new one starts', async () => {
     const user = await seedUser();
     const service = await build();
@@ -932,6 +937,166 @@ describe('AuthService.changePassword (OS-385)', () => {
       NEW_PASSWORD,
       undefined,
     );
+
+    const [row] = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.jti, 'already-revoked-jti'));
+    expect(row?.revokedAt).toEqual(revokedAt);
+  });
+});
+
+describe('AuthService.revokeOtherSessions (OS-502)', () => {
+  async function seedUser() {
+    const account = await insertAccount(db, { name: 'Sign Out Co' });
+    return insertUser(db, {
+      accountId: account.id,
+      password: await bcrypt.hash('correct-horse-battery-staple', 10),
+      emailVerifiedAt: new Date(),
+    });
+  }
+
+  function claimsFor(user: { id: number; email: string; accountId: number }) {
+    return {
+      sub: user.id,
+      email: user.email,
+      accountId: user.accountId,
+      firstName: 'Staff',
+      lastName: 'Member',
+      emailVerified: true,
+      mfaEnrollmentSatisfied: true,
+      hasMfaFactor: false,
+    };
+  }
+
+  it('leaves the calling session running — unrotated, and still redeemable', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await service.revokeOtherSessions(user.id, callerToken);
+
+    // Nothing was written back to this family, so the token the browser
+    // already holds is still the live one — the whole point of not rotating
+    // here is that there's no replacement cookie to deliver. Asserted on the
+    // row rather than only on "it still refreshes", because a revoked row
+    // with a successor would refresh too (that's the grace window), and
+    // that's precisely what this endpoint must NOT have produced.
+    const rows = await db
+      .select()
+      .from(userRefreshTokensTable)
+      .where(eq(userRefreshTokensTable.userId, user.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.revokedAt).toBeNull();
+    expect(rows[0]?.replacedByJti).toBeNull();
+
+    const rotated = await service.refreshTokens(callerToken);
+    expect(typeof rotated.access_token).toBe('string');
+  });
+
+  it('refuses every other browser at its next refresh', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+    const laptopToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+    const phoneToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await service.revokeOtherSessions(user.id, callerToken);
+    // Without this the assertions below would pass for the wrong reason: a
+    // token revoked moments ago is still inside the 10s replay window, where
+    // refreshTokens deliberately hands back the replacement instead of
+    // refusing. There is no replacement here, so it refuses either way — but
+    // only after the window is a refusal evidence of revocation.
+    await elapseGraceWindow(user.id);
+
+    await expect(service.refreshTokens(laptopToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+    await expect(service.refreshTokens(phoneToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+
+  it('revokes every family, this browser included, when no cookie reaches us', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const someToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    await service.revokeOtherSessions(user.id, undefined);
+    await elapseGraceWindow(user.id);
+
+    await expect(service.refreshTokens(someToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+
+  it('spares nothing when the cookie that reaches us is already stale', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const staleToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+    // this browser refreshed at some point, so the cookie it holds now is
+    // the successor; `staleToken` is the rotated-out predecessor
+    const { refresh_token: currentToken } =
+      await service.refreshTokens(staleToken);
+
+    await service.revokeOtherSessions(user.id, staleToken);
+    await elapseGraceWindow(user.id);
+
+    // The stale row names a live family, so sparing on it would leave that
+    // family's current token alive — and since a stale cookie is exactly
+    // what a browser someone else is holding might present, that would keep
+    // alive the session this call exists to end. Liveness, not just
+    // ownership, is what decides whether there's a family to spare.
+    await expect(service.refreshTokens(currentToken)).rejects.toThrow(
+      'Invalid or expired token',
+    );
+  });
+
+  it("leaves another user's sessions alone", async () => {
+    const user = await seedUser();
+    const bystander = await seedUser();
+    const service = await build();
+    const bystanderToken = await service.createRefreshToken(
+      claimsFor(bystander),
+      randomUUID(),
+    );
+
+    await service.revokeOtherSessions(user.id, undefined);
+
+    const rotated = await service.refreshTokens(bystanderToken);
+    expect(typeof rotated.access_token).toBe('string');
+  });
+
+  it('does not re-stamp a family that was already revoked', async () => {
+    const user = await seedUser();
+    const revokedAt = new Date('2020-01-01T00:00:00.000Z');
+    await db.insert(userRefreshTokensTable).values({
+      userId: user.id,
+      jti: 'already-revoked-jti',
+      familyId: 'already-revoked-family',
+      revokedAt,
+    });
+    const service = await build();
+
+    await service.revokeOtherSessions(user.id, undefined);
 
     const [row] = await db
       .select()
