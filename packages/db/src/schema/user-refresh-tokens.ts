@@ -14,7 +14,7 @@ import z from "zod";
 // theft signal.
 //
 // `replacedByJti` records which token superseded this one at rotation time.
-// It's what makes the grace window (see AuthService.refreshTokens) work:
+// It's what makes the grace window (see SessionsService.refreshTokens) work:
 // two genuinely concurrent requests presenting the same then-current token
 // (e.g. two tabs both loading the app at once, or merchant-web's
 // beforeLoad firing a refresh on every route change) would otherwise have

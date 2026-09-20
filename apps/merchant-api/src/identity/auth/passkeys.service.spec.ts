@@ -29,6 +29,8 @@ import { AccountService } from '../account/account.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
+import { FactorStateService } from './factor-state.service';
+import { SessionsService } from './sessions.service';
 import { PasskeysService } from './passkeys.service';
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
@@ -89,6 +91,8 @@ async function buildRef() {
   return Test.createTestingModule({
     providers: [
       AuthService,
+      SessionsService,
+      FactorStateService,
       PasskeysService,
       { provide: DRIZZLE, useValue: db },
       {
@@ -691,7 +695,7 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
       user,
       passkey,
       service,
-      authService,
+      sessionsService: ref.get(SessionsService),
       token: signin.challengeToken,
     };
   }
@@ -772,8 +776,8 @@ describe('PasskeysService — challenge assertion (OS-488)', () => {
   });
 
   it('rejects an access token presented as a challenge token', async () => {
-    const { user, service, authService } = await seedChallengedUser();
-    const accessToken = await authService.createAccessToken({
+    const { user, service, sessionsService } = await seedChallengedUser();
+    const accessToken = await sessionsService.createAccessToken({
       sub: user.id,
       email: user.email,
       accountId: user.accountId,

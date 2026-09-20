@@ -32,6 +32,7 @@ import {
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { type AuthenticatedUser } from 'src/shared/auth/decorators';
 import { AuthService, type SignInSuccessResult } from './auth.service';
+import { SessionsService } from './sessions.service';
 import { claimsFromUser } from './token-claims';
 import { PasskeyDto } from './dto/passkey.dto';
 import { WEBAUTHN_CHALLENGE_TTL_MS, webauthnConfig } from './webauthn.config';
@@ -43,6 +44,7 @@ export class PasskeysService {
   constructor(
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private readonly authService: AuthService,
+    private readonly sessionsService: SessionsService,
   ) {}
 
   async list(userId: number): Promise<PasskeyDto[]> {
@@ -202,7 +204,7 @@ export class PasskeysService {
     // been a bypass. It can now, toFactorClaims() counts passkeys, and an
     // invited staff member choosing a passkey at the join gate (OS-494) has
     // to come unstuck without waiting for a refresh.
-    const access_token = await this.authService.createAccessToken({
+    const access_token = await this.sessionsService.createAccessToken({
       ...claimsFromUser(user),
       mfaEnrollmentSatisfied: true,
     });

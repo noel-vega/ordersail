@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService, claimsFromSignInResult } from './auth.service';
+import { SessionsService } from './sessions.service';
 import { claimsFromUser } from './token-claims';
 import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
@@ -65,6 +66,7 @@ export class AuthController {
   // AuthModule already imports UsersModule for the sign-in path.
   constructor(
     private readonly authService: AuthService,
+    private readonly sessionsService: SessionsService,
     private readonly usersService: UsersService,
   ) {}
 
@@ -110,7 +112,7 @@ export class AuthController {
       };
     }
 
-    const refreshToken = await this.authService.createRefreshToken(
+    const refreshToken = await this.sessionsService.createRefreshToken(
       claimsFromSignInResult(result),
       randomUUID(),
     );
@@ -138,7 +140,7 @@ export class AuthController {
       dto.code,
     );
 
-    const refreshToken = await this.authService.createRefreshToken(
+    const refreshToken = await this.sessionsService.createRefreshToken(
       claimsFromSignInResult(result),
       randomUUID(),
     );
@@ -183,7 +185,7 @@ export class AuthController {
     // (mfaEnrollmentSatisfied: false baked into their current access
     // token) — re-mint immediately with the now-satisfied claim so they
     // aren't stuck until their token naturally refreshes
-    const access_token = await this.authService.createAccessToken({
+    const access_token = await this.sessionsService.createAccessToken({
       ...claimsFromUser(user),
       mfaEnrollmentSatisfied: true,
     });
@@ -230,7 +232,7 @@ export class AuthController {
   ): Promise<AccessTokenDto> {
     const result = await this.authService.signup(signupDto);
 
-    const refreshToken = await this.authService.createRefreshToken(
+    const refreshToken = await this.sessionsService.createRefreshToken(
       claimsFromSignInResult(result),
       randomUUID(),
     );
@@ -252,7 +254,7 @@ export class AuthController {
   ): Promise<AccessTokenDto> {
     const result = await this.authService.acceptInvite(acceptInviteDto);
 
-    const refreshToken = await this.authService.createRefreshToken(
+    const refreshToken = await this.sessionsService.createRefreshToken(
       claimsFromSignInResult(result),
       randomUUID(),
     );
@@ -455,7 +457,7 @@ export class AuthController {
   // browser stays valid as-is and there's no token to return. With no usable
   // cookie the service refuses (409) and revokes nothing, rather than guess
   // which session is "this one" or mint one from a bare access token — see
-  // AuthService.revokeOtherSessions. Every other browser dies at its next
+  // SessionsService.revokeOtherSessions. Every other browser dies at its next
   // refresh, and within at most one access-token lifetime (8h) even one that
   // never refreshes.
   @AuthenticatedOnly()
@@ -468,7 +470,7 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: FastifyRequest,
   ): Promise<void> {
-    await this.authService.revokeOtherSessions(
+    await this.sessionsService.revokeOtherSessions(
       user.sub,
       req.cookies[REFRESH_TOKEN_COOKIE],
     );
@@ -483,7 +485,7 @@ export class AuthController {
   ): Promise<void> {
     const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
     if (refreshToken) {
-      await this.authService.logout(refreshToken);
+      await this.sessionsService.logout(refreshToken);
     }
     // refresh_token is httpOnly, so it can only be cleared by the server —
     // the client can't just delete it itself
@@ -505,7 +507,7 @@ export class AuthController {
     }
 
     const { access_token, refresh_token } =
-      await this.authService.refreshTokens(refreshToken);
+      await this.sessionsService.refreshTokens(refreshToken);
     this.setRefreshCookie(res, refresh_token);
     return { access_token };
   }

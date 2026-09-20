@@ -40,7 +40,8 @@ import {
 } from './dto/passkey-challenge.dto';
 import { PasskeySignInVerifyDto } from './dto/passkey-signin.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
-import { AuthService, claimsFromSignInResult } from './auth.service';
+import { claimsFromSignInResult } from './auth.service';
+import { SessionsService } from './sessions.service';
 import { env } from 'src/shared/env';
 import type { FastifyReply } from 'fastify';
 import { randomUUID } from 'node:crypto';
@@ -59,7 +60,7 @@ import { randomUUID } from 'node:crypto';
 export class PasskeysController {
   constructor(
     private readonly passkeysService: PasskeysService,
-    private readonly authService: AuthService,
+    private readonly sessionsService: SessionsService,
   ) {}
 
   // Duplicated from AuthController rather than shared: the cookie's name and
@@ -102,7 +103,7 @@ export class PasskeysController {
 
     // randomUUID() here is the new session's refresh-token familyId, the
     // same as every other entry point that starts a session
-    const refreshToken = await this.authService.createRefreshToken(
+    const refreshToken = await this.sessionsService.createRefreshToken(
       claimsFromSignInResult(result),
       randomUUID(),
     );
@@ -144,7 +145,7 @@ export class PasskeysController {
       dto.response as unknown as AuthenticationResponseJSON,
     );
 
-    const refreshToken = await this.authService.createRefreshToken(
+    const refreshToken = await this.sessionsService.createRefreshToken(
       claimsFromSignInResult(result),
       randomUUID(),
     );

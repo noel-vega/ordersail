@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { SessionsService } from './sessions.service';
+import { FactorStateService } from './factor-state.service';
 import { AuthController } from './auth.controller';
 import { PasskeysController } from './passkeys.controller';
 import { PasskeysService } from './passkeys.service';
@@ -53,6 +55,8 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
     // never perform anyway.
     MFA_FACTOR_APP_GUARD,
     AuthService,
+    SessionsService,
+    FactorStateService,
     PasskeysService,
   ],
   controllers: [AuthController, PasskeysController],

@@ -7,6 +7,7 @@ import {
 } from 'src/shared/auth/decorators';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { SessionsService } from './sessions.service';
 import { UsersService } from '../users/users.service';
 
 // OS-384 — the Profile aspect of /auth/me (ADR 0001). The claim worth
@@ -37,6 +38,7 @@ function build() {
   const updateProfile = jest.fn().mockResolvedValue(profile);
   const controller = new AuthController(
     {} as AuthService,
+    {} as SessionsService,
     {
       getProfile,
       updateProfile,

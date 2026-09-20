@@ -20,9 +20,7 @@ import {
 import {
   PERMISSIONS_CATALOG,
   accountsTable,
-  and,
   eq,
-  isNotNull,
   permissionsTable,
   userEmailVerificationsTable,
   userMfaRecoveryCodesTable,
@@ -40,6 +38,8 @@ import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService, claimsFromSignInResult } from './auth.service';
+import { FactorStateService } from './factor-state.service';
+import { SessionsService } from './sessions.service';
 
 const db = useTestDb();
 
@@ -61,28 +61,6 @@ async function freshTotpCode(secret: string): Promise<string> {
   return authenticator.generate(secret);
 }
 
-// The grace window deliberately lets a just-rotated token be re-presented
-// for 10s (a second tab, a retried request) and replay its replacement, so
-// a freshly revoked row says nothing useful until that window has passed —
-// "the other browser is refused now" passes for the wrong reason inside it.
-// Backdating is how the refreshTokens specs get past it without sleeping;
-// the live replacement (revokedAt still null) is left alone.
-//
-// Module-scope so both revocation suites (changePassword, OS-385;
-// revokeOtherSessions, OS-502) use the one definition — they'd otherwise
-// each carry their own notion of "far enough past the window".
-async function elapseGraceWindow(userId: number) {
-  await db
-    .update(userRefreshTokensTable)
-    .set({ revokedAt: new Date(Date.now() - 60_000) })
-    .where(
-      and(
-        eq(userRefreshTokensTable.userId, userId),
-        isNotNull(userRefreshTokensTable.revokedAt),
-      ),
-    );
-}
-
 const emailMock = {
   sendInviteEmail: jest.fn(),
   sendPasswordResetEmail: jest.fn(),
@@ -94,10 +72,15 @@ beforeEach(() => {
   emailMock.sendVerificationEmail.mockClear();
 });
 
-async function build() {
+// Both halves of a sign-in: AuthService proves who the caller is, and
+// SessionsService mints and rotates what they're handed afterwards. Specs
+// that only exercise the first half use build().
+async function buildBoth() {
   const ref = await Test.createTestingModule({
     providers: [
       AuthService,
+      SessionsService,
+      FactorStateService,
       { provide: DRIZZLE, useValue: db },
       {
         provide: JwtService,
@@ -120,7 +103,14 @@ async function build() {
       { provide: EmailService, useValue: emailMock },
     ],
   }).compile();
-  return ref.get(AuthService);
+  return {
+    service: ref.get(AuthService),
+    sessions: ref.get(SessionsService),
+  };
+}
+
+async function build() {
+  return (await buildBoth()).service;
 }
 
 const signupDto = {
@@ -131,73 +121,6 @@ const signupDto = {
   phone: '5555550100',
   password: 'supersecret',
 };
-
-// Pins the wire format itself, not just the mappers that feed it. These
-// key-set assertions are meant to fail loudly when the claim set changes —
-// adding a claim (or, as with hasMfaFactor in OS-505, removing a dead one)
-// should be a deliberate edit here, not something that slips through.
-describe('AuthService token payloads (OS-482)', () => {
-  const decode = (token: string) =>
-    new JwtService({ secret: 'test-secret' }).decode<Record<string, unknown>>(
-      token,
-    );
-
-  const claims = {
-    sub: 0, // replaced per-test with a real user id where an FK needs one
-    email: signupDto.email,
-    accountId: 0,
-    firstName: signupDto.firstName,
-    lastName: signupDto.lastName,
-    emailVerified: false,
-    mfaEnrollmentSatisfied: true,
-  };
-
-  it('signs an access token with exactly the claim set plus typ', async () => {
-    const service = await build();
-    const payload = decode(await service.createAccessToken(claims));
-
-    expect(Object.keys(payload).sort()).toEqual([
-      'accountId',
-      'email',
-      'emailVerified',
-      'exp',
-      'firstName',
-      'iat',
-      'lastName',
-      'mfaEnrollmentSatisfied',
-      'sub',
-      'typ',
-    ]);
-    expect(payload).toMatchObject({ ...claims, typ: 'access' });
-  });
-
-  it('signs a refresh token with the same claims plus typ and jti', async () => {
-    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
-    const service = await build();
-    const { userId, accountId } = await service.signup(signupDto);
-    const payload = decode(
-      await service.createRefreshToken(
-        { ...claims, sub: userId, accountId },
-        randomUUID(),
-      ),
-    );
-
-    expect(Object.keys(payload).sort()).toEqual([
-      'accountId',
-      'email',
-      'emailVerified',
-      'exp',
-      'firstName',
-      'iat',
-      'jti',
-      'lastName',
-      'mfaEnrollmentSatisfied',
-      'sub',
-      'typ',
-    ]);
-    expect(payload).toMatchObject({ typ: 'refresh', sub: userId });
-  });
-});
 
 describe('AuthService.signup (OS-173)', () => {
   // what gets seeded is AccountService.provision's suite (account.service.spec)
@@ -328,171 +251,6 @@ describe('AuthService.me (OS-180)', () => {
     expect(me.totpEnabled).toBe(false);
     expect(me.passkeyCount).toBe(2);
     expect(me.hasMfaFactor).toBe(true);
-  });
-});
-
-describe('AuthService.refreshTokens (OS-467)', () => {
-  async function seedSession() {
-    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
-    const service = await build();
-    const { userId, accountId } = await service.signup(signupDto);
-    const refreshToken = await service.createRefreshToken(
-      {
-        sub: userId,
-        email: signupDto.email,
-        accountId,
-        firstName: signupDto.firstName,
-        lastName: signupDto.lastName,
-        emailVerified: false,
-        mfaEnrollmentSatisfied: true,
-      },
-      randomUUID(),
-    );
-    return { service, userId, accountId, refreshToken };
-  }
-
-  it('mints a new access + refresh pair for an active user', async () => {
-    const { service, refreshToken } = await seedSession();
-
-    const result = await service.refreshTokens(refreshToken);
-    expect(typeof result.access_token).toBe('string');
-    expect(typeof result.refresh_token).toBe('string');
-  });
-
-  it('picks up a verification that happened since the refresh token was minted, not the stale claim (OS-470)', async () => {
-    const { service, userId, refreshToken } = await seedSession();
-
-    // the presented refresh token still carries emailVerified: false — this
-    // simulates a device that verified elsewhere and never got the
-    // re-minted access token verify-email returns, so a rotation is the next chance to notice
-    await db
-      .update(usersTable)
-      .set({ emailVerifiedAt: new Date() })
-      .where(eq(usersTable.id, userId));
-
-    const jwt = new JwtService({ secret: 'test-secret' });
-    const result = await service.refreshTokens(refreshToken);
-    expect(
-      jwt.decode<{ emailVerified: boolean }>(result.access_token)
-        ?.emailVerified,
-    ).toBe(true);
-    expect(
-      jwt.decode<{ emailVerified: boolean }>(result.refresh_token)
-        ?.emailVerified,
-    ).toBe(true);
-  });
-
-  it('rejects the refresh token of a deactivated user', async () => {
-    const { service, userId, refreshToken } = await seedSession();
-
-    await db
-      .update(usersTable)
-      .set({ deactivatedAt: new Date() })
-      .where(eq(usersTable.id, userId));
-
-    await expect(service.refreshTokens(refreshToken)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-  });
-
-  it('is single-use: the redeemed token is revoked and cannot be reused after the grace window', async () => {
-    const { service, refreshToken } = await seedSession();
-
-    const { refresh_token: rotated } =
-      await service.refreshTokens(refreshToken);
-    expect(rotated).not.toBe(refreshToken);
-
-    // simulate the grace window having elapsed by backdating revokedAt,
-    // rather than sleeping in the test — no WHERE needed, this test's
-    // seedSession() is the only row in the (per-test, truncated) table
-    await db
-      .update(userRefreshTokensTable)
-      .set({ revokedAt: new Date(Date.now() - 60_000) });
-
-    await expect(service.refreshTokens(refreshToken)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-    // and reuse revokes the whole family — the token that *did* rotate
-    // successfully is now dead too
-    await expect(service.refreshTokens(rotated)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-  });
-
-  it('replays the same pair for a just-rotated-out token within the grace window (concurrent legitimate retry)', async () => {
-    const { service, refreshToken } = await seedSession();
-
-    const first = await service.refreshTokens(refreshToken);
-    // presenting the now-superseded token again immediately (e.g. a second
-    // concurrent tab) gets the same replacement pair back, not a rejection
-    const second = await service.refreshTokens(refreshToken);
-
-    // Compared by jti and claims rather than by the raw strings: two mints
-    // in different clock seconds produce different `iat`, so string equality
-    // was really asserting "both calls landed in the same second" and flaked
-    // on a slow runner. The invariant that matters is that the *same*
-    // replacement token is handed back instead of rotating again.
-    const jwt = new JwtService({ secret: 'test-secret' });
-    const firstRefresh = jwt.decode<{ jti: string; sub: number }>(
-      first.refresh_token,
-    );
-    const secondRefresh = jwt.decode<{ jti: string; sub: number }>(
-      second.refresh_token,
-    );
-    expect(secondRefresh.jti).toBe(firstRefresh.jti);
-    expect(secondRefresh.sub).toBe(firstRefresh.sub);
-
-    // and no extra row was minted by the replay
-    const rows = await db.select().from(userRefreshTokensTable);
-    expect(rows).toHaveLength(2);
-  });
-
-  it('rejects an access token presented to the refresh flow (typ mismatch)', async () => {
-    const { service, userId, accountId } = await seedSession();
-    const accessToken = await service.createAccessToken({
-      sub: userId,
-      email: signupDto.email,
-      accountId,
-      firstName: signupDto.firstName,
-      lastName: signupDto.lastName,
-      emailVerified: false,
-      mfaEnrollmentSatisfied: true,
-    });
-
-    await expect(service.refreshTokens(accessToken)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-  });
-});
-
-describe('AuthService.logout (OS-467)', () => {
-  it('revokes the refresh token family so it can no longer be redeemed', async () => {
-    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
-    const service = await build();
-    const { userId, accountId } = await service.signup(signupDto);
-    const refreshToken = await service.createRefreshToken(
-      {
-        sub: userId,
-        email: signupDto.email,
-        accountId,
-        firstName: signupDto.firstName,
-        lastName: signupDto.lastName,
-        emailVerified: false,
-        mfaEnrollmentSatisfied: true,
-      },
-      randomUUID(),
-    );
-
-    await service.logout(refreshToken);
-
-    await expect(service.refreshTokens(refreshToken)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-  });
-
-  it('is a no-op for an unknown/invalid token (best-effort)', async () => {
-    const service = await build();
-    await expect(service.logout('not-a-real-token')).resolves.toBeUndefined();
   });
 });
 
@@ -725,8 +483,8 @@ describe('AuthService.changePassword (OS-385)', () => {
 
   it('hands the caller a replacement that keeps them signed in', async () => {
     const user = await seedUser();
-    const service = await build();
-    const callerToken = await service.createRefreshToken(
+    const { service, sessions } = await buildBoth();
+    const callerToken = await sessions.createRefreshToken(
       claimsFor(user),
       randomUUID(),
     );
@@ -738,118 +496,14 @@ describe('AuthService.changePassword (OS-385)', () => {
       callerToken,
     );
 
-    const rotated = await service.refreshTokens(result.refresh_token);
-    expect(typeof rotated.access_token).toBe('string');
-  });
-
-  it('kills the token the caller presented along with every other session', async () => {
-    const user = await seedUser();
-    const service = await build();
-    const callerToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-    const otherBrowserToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-
-    await service.changePassword(
-      callerOf(user),
-      CURRENT_PASSWORD,
-      NEW_PASSWORD,
-      callerToken,
-    );
-    await elapseGraceWindow(user.id);
-
-    // the second browser is refused at its next rotation...
-    await expect(service.refreshTokens(otherBrowserToken)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-    // ...and so is the caller's own old token, which is the point: a stolen
-    // copy of it lives in the caller's family and would otherwise survive
-    await expect(service.refreshTokens(callerToken)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-  });
-
-  it('rotates the caller in place, leaving the replacement in the same family', async () => {
-    const user = await seedUser();
-    const service = await build();
-    const callerToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-
-    await service.changePassword(
-      callerOf(user),
-      CURRENT_PASSWORD,
-      NEW_PASSWORD,
-      callerToken,
-    );
-
-    const rows = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.userId, user.id));
-    expect(rows).toHaveLength(2);
-
-    const live = rows.filter((r) => r.revokedAt === null);
-    const retired = rows.filter((r) => r.revokedAt !== null);
-    expect(live).toHaveLength(1);
-    expect(retired).toHaveLength(1);
-    // same family, and the retired row points at what replaced it — that
-    // back-pointer is what reuse detection reads if the old token resurfaces
-    expect(live[0]?.familyId).toBe(retired[0]?.familyId);
-    expect(retired[0]?.replacedByJti).toBe(live[0]?.jti);
-  });
-
-  it('revokes every session and starts a fresh one when there is no refresh cookie', async () => {
-    const user = await seedUser();
-    const service = await build();
-    const someToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-
-    const result = await service.changePassword(
-      callerOf(user),
-      CURRENT_PASSWORD,
-      NEW_PASSWORD,
-      undefined,
-    );
-
-    await expect(service.refreshTokens(someToken)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-    const rotated = await service.refreshTokens(result.refresh_token);
-    expect(typeof rotated.access_token).toBe('string');
-  });
-
-  it("leaves another user's sessions alone", async () => {
-    const user = await seedUser();
-    const bystander = await seedUser();
-    const service = await build();
-    const bystanderToken = await service.createRefreshToken(
-      claimsFor(bystander),
-      randomUUID(),
-    );
-
-    await service.changePassword(
-      callerOf(user),
-      CURRENT_PASSWORD,
-      NEW_PASSWORD,
-      undefined,
-    );
-
-    const rotated = await service.refreshTokens(bystanderToken);
+    const rotated = await sessions.refreshTokens(result.refresh_token);
     expect(typeof rotated.access_token).toBe('string');
   });
 
   it('rejects a wrong current password without touching the row or the sessions', async () => {
     const user = await seedUser();
-    const service = await build();
-    const callerToken = await service.createRefreshToken(
+    const { service, sessions } = await buildBoth();
+    const callerToken = await sessions.createRefreshToken(
       claimsFor(user),
       randomUUID(),
     );
@@ -866,220 +520,8 @@ describe('AuthService.changePassword (OS-385)', () => {
     await expect(
       service.verifyPassword(user.id, CURRENT_PASSWORD),
     ).resolves.toBeUndefined();
-    const rotated = await service.refreshTokens(callerToken);
+    const rotated = await sessions.refreshTokens(callerToken);
     expect(typeof rotated.access_token).toBe('string');
-  });
-
-  it('does not re-stamp a family that was already revoked', async () => {
-    const user = await seedUser();
-    const revokedAt = new Date('2020-01-01T00:00:00.000Z');
-    await db.insert(userRefreshTokensTable).values({
-      userId: user.id,
-      jti: 'already-revoked-jti',
-      familyId: 'already-revoked-family',
-      revokedAt,
-    });
-    const service = await build();
-
-    await service.changePassword(
-      callerOf(user),
-      CURRENT_PASSWORD,
-      NEW_PASSWORD,
-      undefined,
-    );
-
-    const [row] = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.jti, 'already-revoked-jti'));
-    expect(row?.revokedAt).toEqual(revokedAt);
-  });
-});
-
-describe('AuthService.revokeOtherSessions (OS-502)', () => {
-  async function seedUser() {
-    const account = await insertAccount(db, { name: 'Sign Out Co' });
-    return insertUser(db, {
-      accountId: account.id,
-      password: await bcrypt.hash('correct-horse-battery-staple', 10),
-      emailVerifiedAt: new Date(),
-    });
-  }
-
-  function claimsFor(user: { id: number; email: string; accountId: number }) {
-    return {
-      sub: user.id,
-      email: user.email,
-      accountId: user.accountId,
-      firstName: 'Staff',
-      lastName: 'Member',
-      emailVerified: true,
-      mfaEnrollmentSatisfied: true,
-    };
-  }
-
-  it('leaves the calling session running — unrotated, and still redeemable', async () => {
-    const user = await seedUser();
-    const service = await build();
-    const callerToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-
-    await service.revokeOtherSessions(user.id, callerToken);
-
-    // Nothing was written back to this family, so the token the browser
-    // already holds is still the live one — the whole point of not rotating
-    // here is that there's no replacement cookie to deliver. Asserted on the
-    // row rather than only on "it still refreshes", because a revoked row
-    // with a successor would refresh too (that's the grace window), and
-    // that's precisely what this endpoint must NOT have produced.
-    const rows = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.userId, user.id));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.revokedAt).toBeNull();
-    expect(rows[0]?.replacedByJti).toBeNull();
-
-    const rotated = await service.refreshTokens(callerToken);
-    expect(typeof rotated.access_token).toBe('string');
-  });
-
-  it('refuses every other browser at its next refresh', async () => {
-    const user = await seedUser();
-    const service = await build();
-    const callerToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-    const laptopToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-    const phoneToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-
-    await service.revokeOtherSessions(user.id, callerToken);
-    // Without this the assertions below would pass for the wrong reason: a
-    // token revoked moments ago is still inside the 10s replay window, where
-    // refreshTokens deliberately hands back the replacement instead of
-    // refusing. There is no replacement here, so it refuses either way — but
-    // only after the window is a refusal evidence of revocation.
-    await elapseGraceWindow(user.id);
-
-    await expect(service.refreshTokens(laptopToken)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-    await expect(service.refreshTokens(phoneToken)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-  });
-
-  // With no usable cookie there is no family to call "this one". The two
-  // obvious answers are both wrong: revoking everything signs out the person
-  // who asked to stay (OS-503 story 20), and starting them a fresh family
-  // would hand a 7-day refresh token to anyone holding a bare access token,
-  // from an endpoint that skips the password only because it never grants
-  // anything. So it refuses, and — asserted below — touches nothing.
-  it('refuses when no cookie reaches us, and revokes nothing', async () => {
-    const user = await seedUser();
-    const service = await build();
-    const someToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-
-    await expect(
-      service.revokeOtherSessions(user.id, undefined),
-    ).rejects.toThrow(ConflictException);
-
-    const rows = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.userId, user.id));
-    // no family was started for the caller, and the one that existed is
-    // untouched — still redeemable, not merely present
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.revokedAt).toBeNull();
-    const rotated = await service.refreshTokens(someToken);
-    expect(typeof rotated.access_token).toBe('string');
-  });
-
-  it('refuses on a stale cookie too, rather than sparing the family it names', async () => {
-    const user = await seedUser();
-    const service = await build();
-    const staleToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-    // this browser refreshed at some point, so the cookie it holds now is
-    // the successor; `staleToken` is the rotated-out predecessor
-    const { refresh_token: currentToken } =
-      await service.refreshTokens(staleToken);
-    const otherBrowser = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-
-    // A stale cookie is exactly what a browser someone else is holding might
-    // present, so it must not be allowed to nominate a family to spare while
-    // everything else dies. Liveness, not just ownership, decides whether
-    // there's a "this one" — and without one the call does nothing at all.
-    await expect(
-      service.revokeOtherSessions(user.id, staleToken),
-    ).rejects.toThrow(ConflictException);
-
-    await elapseGraceWindow(user.id);
-    const stillCurrent = await service.refreshTokens(currentToken);
-    expect(typeof stillCurrent.access_token).toBe('string');
-    const stillOther = await service.refreshTokens(otherBrowser);
-    expect(typeof stillOther.access_token).toBe('string');
-  });
-
-  it("leaves another user's sessions alone", async () => {
-    const user = await seedUser();
-    const bystander = await seedUser();
-    const service = await build();
-    const callerToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-    const bystanderToken = await service.createRefreshToken(
-      claimsFor(bystander),
-      randomUUID(),
-    );
-
-    await service.revokeOtherSessions(user.id, callerToken);
-
-    const rotated = await service.refreshTokens(bystanderToken);
-    expect(typeof rotated.access_token).toBe('string');
-  });
-
-  it('does not re-stamp a family that was already revoked', async () => {
-    const user = await seedUser();
-    const revokedAt = new Date('2020-01-01T00:00:00.000Z');
-    await db.insert(userRefreshTokensTable).values({
-      userId: user.id,
-      jti: 'already-revoked-jti',
-      familyId: 'already-revoked-family',
-      revokedAt,
-    });
-    const service = await build();
-    const callerToken = await service.createRefreshToken(
-      claimsFor(user),
-      randomUUID(),
-    );
-
-    await service.revokeOtherSessions(user.id, callerToken);
-
-    const [row] = await db
-      .select()
-      .from(userRefreshTokensTable)
-      .where(eq(userRefreshTokensTable.jti, 'already-revoked-jti'));
-    expect(row?.revokedAt).toEqual(revokedAt);
   });
 });
 
@@ -1560,8 +1002,8 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
 
     it('rejects a real access token presented as a challenge token', async () => {
       const user = await seedUserWithPassword();
-      const service = await build();
-      const accessToken = await service.createAccessToken({
+      const { service, sessions } = await buildBoth();
+      const accessToken = await sessions.createAccessToken({
         sub: user.id,
         email: user.email,
         accountId: user.accountId,
@@ -1964,7 +1406,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
     }
 
     async function refreshedClaims(
-      service: AuthService,
+      { service, sessions }: Awaited<ReturnType<typeof buildBoth>>,
       user: { email: string },
     ) {
       const signInResult = await service.signin({
@@ -1973,7 +1415,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       });
       if (signInResult.mfaRequired)
         throw new Error('expected a normal sign-in');
-      const refreshToken = await service.createRefreshToken(
+      const refreshToken = await sessions.createRefreshToken(
         claimsFromSignInResult(signInResult),
         randomUUID(),
       );
@@ -1996,10 +1438,11 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
     // true here, one click after joining.
     it('stays unsatisfied across a token refresh', async () => {
       const { user } = await seedJoinedStaff();
-      const service = await build();
-      const { refreshToken } = await refreshedClaims(service, user);
+      const built = await buildBoth();
+      const { sessions } = built;
+      const { refreshToken } = await refreshedClaims(built, user);
 
-      const refreshed = await service.refreshTokens(refreshToken);
+      const refreshed = await sessions.refreshTokens(refreshToken);
       const payload = new JwtService({
         secret: 'test-secret',
       }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
@@ -2018,12 +1461,13 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       'is satisfied on refresh once %s is enrolled',
       async (_label, enroll) => {
         const { user } = await seedJoinedStaff();
-        const service = await build();
-        const { refreshToken } = await refreshedClaims(service, user);
+        const built = await buildBoth();
+        const { sessions } = built;
+        const { refreshToken } = await refreshedClaims(built, user);
 
         await enroll(user.id);
 
-        const refreshed = await service.refreshTokens(refreshToken);
+        const refreshed = await sessions.refreshTokens(refreshToken);
         const payload = new JwtService({
           secret: 'test-secret',
         }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
@@ -2037,7 +1481,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
     // start gating them either.
     it('leaves an owner who signs up ungated, across a refresh too', async () => {
       await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
-      const service = await build();
+      const { service, sessions } = await buildBoth();
 
       const result = await service.signup(signupDto);
 
@@ -2048,11 +1492,11 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
         .where(eq(usersTable.id, result.userId));
       expect(row.factorRequiredAt).toBeNull();
 
-      const refreshToken = await service.createRefreshToken(
+      const refreshToken = await sessions.createRefreshToken(
         claimsFromSignInResult(result),
         randomUUID(),
       );
-      const refreshed = await service.refreshTokens(refreshToken);
+      const refreshed = await sessions.refreshTokens(refreshToken);
       const payload = new JwtService({
         secret: 'test-secret',
       }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
@@ -2090,14 +1534,14 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
   describe('refreshTokens', () => {
     it('picks up the account toggle turning on mid-session', async () => {
       const { account, user } = await seedAccountAndUser({});
-      const service = await build();
+      const { service, sessions } = await buildBoth();
       const signInResult = await service.signin({
         email: user.email,
         password,
       });
       if (signInResult.mfaRequired)
         throw new Error('expected a normal sign-in');
-      const refreshToken = await service.createRefreshToken(
+      const refreshToken = await sessions.createRefreshToken(
         claimsFromSignInResult(signInResult),
         randomUUID(),
       );
@@ -2108,7 +1552,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
         .set({ requireMfaAt: new Date() })
         .where(eq(accountsTable.id, account.id));
 
-      const refreshed = await service.refreshTokens(refreshToken);
+      const refreshed = await sessions.refreshTokens(refreshToken);
       const payload = new JwtService({
         secret: 'test-secret',
       }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
@@ -2120,7 +1564,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       const { user } = await seedAccountAndUser({
         requireMfaAt: new Date(),
       });
-      const service = await build();
+      const { service, sessions } = await buildBoth();
       const signInResult = await service.signin({
         email: user.email,
         password,
@@ -2128,7 +1572,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       if (signInResult.mfaRequired)
         throw new Error('expected a normal sign-in');
       expect(signInResult.mfaEnrollmentSatisfied).toBe(false);
-      const refreshToken = await service.createRefreshToken(
+      const refreshToken = await sessions.createRefreshToken(
         claimsFromSignInResult(signInResult),
         randomUUID(),
       );
@@ -2136,7 +1580,7 @@ describe('AuthService — account-wide MFA enforcement (OS-473)', () => {
       // user finishes forced enrollment mid-session
       await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
 
-      const refreshed = await service.refreshTokens(refreshToken);
+      const refreshed = await sessions.refreshTokens(refreshToken);
       const payload = new JwtService({
         secret: 'test-secret',
       }).decode<{ mfaEnrollmentSatisfied: boolean }>(refreshed.access_token);
@@ -2262,7 +1706,7 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
   describe('refreshTokens', () => {
     it('picks up a passkey registered mid-session', async () => {
       const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
-      const service = await build();
+      const { service, sessions } = await buildBoth();
       const signInResult = await service.signin({
         email: user.email,
         password,
@@ -2271,14 +1715,14 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
         throw new Error('expected a normal sign-in');
       expect(signInResult.mfaEnrollmentSatisfied).toBe(false);
 
-      const refreshToken = await service.createRefreshToken(
+      const refreshToken = await sessions.createRefreshToken(
         claimsFromSignInResult(signInResult),
         randomUUID(),
       );
 
       await insertUserPasskey(db, { userId: user.id });
 
-      const refreshed = await service.refreshTokens(refreshToken);
+      const refreshed = await sessions.refreshTokens(refreshToken);
       const payload = new JwtService({ secret: 'test-secret' }).decode<{
         mfaEnrollmentSatisfied: boolean;
       }>(refreshed.access_token);
@@ -2290,7 +1734,7 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
 
     it('stops being satisfied when the last passkey is removed mid-session', async () => {
       const { user } = await seedAccountAndUser({ requireMfaAt: new Date() });
-      const service = await build();
+      const { service, sessions } = await buildBoth();
       // sign in BEFORE the passkey exists — a user holding one is now
       // challenged, and this test is about the claim, not the challenge
       const signInResult = await service.signin({
@@ -2301,7 +1745,7 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
         throw new Error('expected a normal sign-in');
       const passkey = await insertUserPasskey(db, { userId: user.id });
 
-      const refreshToken = await service.createRefreshToken(
+      const refreshToken = await sessions.createRefreshToken(
         claimsFromSignInResult(signInResult),
         randomUUID(),
       );
@@ -2309,7 +1753,7 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
       const jwt = new JwtService({ secret: 'test-secret' });
 
       // the claim first has to become true, or "drops" proves nothing
-      const withPasskey = await service.refreshTokens(refreshToken);
+      const withPasskey = await sessions.refreshTokens(refreshToken);
       expect(
         jwt.decode<{ mfaEnrollmentSatisfied: boolean }>(
           withPasskey.access_token,
@@ -2320,7 +1764,7 @@ describe('AuthService — factors across TOTP and passkeys (OS-484/OS-489)', () 
         .delete(userPasskeysTable)
         .where(eq(userPasskeysTable.id, passkey.id));
 
-      const afterRemoval = await service.refreshTokens(
+      const afterRemoval = await sessions.refreshTokens(
         withPasskey.refresh_token,
       );
       expect(
