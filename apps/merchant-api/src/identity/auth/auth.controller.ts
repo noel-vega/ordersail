@@ -450,24 +450,37 @@ export class AuthController {
   // takes access away, so demanding a password would buy nothing and would
   // exclude a passkey-only user who may not have one to type.
   //
-  // The caller's own session survives: the refresh cookie is read to
-  // identify which family to spare, but nothing is written back — unlike
+  // `revoke-others`, not `revoke-all`: sparing the caller's own family is the
+  // whole point, so the path says so rather than promising something the
+  // handler deliberately doesn't do.
+  //
+  // The caller's own session survives either way. Normally the refresh cookie
+  // names the family to spare and nothing is written back — unlike
   // change-password, this doesn't rotate, so the cookie in the browser stays
-  // valid as-is. Every other browser dies at its next refresh, and within at
-  // most one access-token lifetime (8h) even one that never refreshes.
+  // valid as-is. When no usable cookie arrives there's no family to name, so
+  // everything goes and the service starts the caller a fresh family, which
+  // is the one case a new refresh cookie is written. The re-minted access
+  // token is returned in both cases. Every other browser dies at its next
+  // refresh, and within at most one access-token lifetime (8h) even one that
+  // never refreshes.
   @AuthenticatedOnly()
-  @Post('me/sessions/revoke-all')
+  @Post('me/sessions/revoke-others')
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse()
+  @ApiOkResponse({ type: AccessTokenDto })
   @ApiUnauthorizedResponse()
   async revokeOtherSessions(
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: FastifyRequest,
-  ): Promise<void> {
-    await this.authService.revokeOtherSessions(
-      user.sub,
-      req.cookies[REFRESH_TOKEN_COOKIE],
-    );
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    const { access_token, refresh_token } =
+      await this.authService.revokeOtherSessions(
+        user,
+        req.cookies[REFRESH_TOKEN_COOKIE],
+      );
+
+    if (refresh_token) this.setRefreshCookie(res, refresh_token);
+    return { access_token };
   }
 
   @Public()

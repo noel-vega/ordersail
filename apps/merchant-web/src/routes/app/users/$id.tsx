@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { getUserQueryOptions } from "../../../features/users/users.hooks";
 import { queryClient } from "../../../lib/react-query-client";
 import { requirePermission } from "../../../lib/require-permission";
-import { UserDetailView } from "../../../features/users/views/user-detail.view";
+import { StaffRecordView } from "../../../features/users/views/staff-record.view";
 import { DetailSkeleton } from "../../../components/skeletons";
 
 export const Route = createFileRoute("/app/users/$id")({
@@ -32,5 +32,5 @@ export const Route = createFileRoute("/app/users/$id")({
 
 function RouteComponent() {
   const { id } = Route.useParams();
-  return <UserDetailView id={id} />;
+  return <StaffRecordView id={id} />;
 }

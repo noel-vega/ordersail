@@ -3,8 +3,8 @@ import { z } from "zod";
 import { SecurityView } from "../../../features/mfa/views/security.view";
 
 // deliberately no requirePermission() call — this is a personal page for
-// the signed-in user's own account, which is why it lives under /app/me
-// rather than /app/settings, where account:read/write gates everything.
+// the signed-in user themselves, which is why it lives under /app/me rather
+// than /app/settings, where account:read/write gates the merchant tenant.
 // Every authenticated user (Owner or staff) manages their own MFA the same
 // way.
 //

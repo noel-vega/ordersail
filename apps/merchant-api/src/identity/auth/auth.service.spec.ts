@@ -969,6 +969,16 @@ describe('AuthService.revokeOtherSessions (OS-502)', () => {
     };
   }
 
+  // what @CurrentUser() hands the controller — the caller's decoded access
+  // token, which is what revokeOtherSessions takes
+  function callerOf(user: {
+    id: number;
+    email: string;
+    accountId: number;
+  }): AuthenticatedUser {
+    return { ...claimsFor(user), typ: 'access' };
+  }
+
   it('leaves the calling session running — unrotated, and still redeemable', async () => {
     const user = await seedUser();
     const service = await build();
@@ -977,7 +987,7 @@ describe('AuthService.revokeOtherSessions (OS-502)', () => {
       randomUUID(),
     );
 
-    await service.revokeOtherSessions(user.id, callerToken);
+    await service.revokeOtherSessions(callerOf(user), callerToken);
 
     // Nothing was written back to this family, so the token the browser
     // already holds is still the live one — the whole point of not rotating
@@ -1013,7 +1023,7 @@ describe('AuthService.revokeOtherSessions (OS-502)', () => {
       randomUUID(),
     );
 
-    await service.revokeOtherSessions(user.id, callerToken);
+    await service.revokeOtherSessions(callerOf(user), callerToken);
     // Without this the assertions below would pass for the wrong reason: a
     // token revoked moments ago is still inside the 10s replay window, where
     // refreshTokens deliberately hands back the replacement instead of
@@ -1029,7 +1039,11 @@ describe('AuthService.revokeOtherSessions (OS-502)', () => {
     );
   });
 
-  it('revokes every family, this browser included, when no cookie reaches us', async () => {
+  // OS-503 story 20: the one thing this endpoint must never do is sign out
+  // the person who called it. With no usable cookie there's no family to
+  // spare, so every family really does go — but the caller is then started
+  // on a fresh one, exactly as changePassword's no-cookie path does.
+  it('revokes every family when no cookie reaches us, and re-mints the caller', async () => {
     const user = await seedUser();
     const service = await build();
     const someToken = await service.createRefreshToken(
@@ -1037,12 +1051,41 @@ describe('AuthService.revokeOtherSessions (OS-502)', () => {
       randomUUID(),
     );
 
-    await service.revokeOtherSessions(user.id, undefined);
+    const result = await service.revokeOtherSessions(callerOf(user), undefined);
     await elapseGraceWindow(user.id);
 
+    expect(typeof result.access_token).toBe('string');
+    // the replacement is a working session, not just a string: redeeming it
+    // is what "the caller stayed signed in" actually means
+    expect(result.refresh_token).toBeDefined();
+    const rotated = await service.refreshTokens(result.refresh_token!);
+    expect(typeof rotated.access_token).toBe('string');
+
+    // ...while the pre-existing family, the caller's own included, is dead.
+    // Asserted only after the grace window: inside it a freshly revoked row
+    // with no successor is refused for the wrong reason.
     await expect(service.refreshTokens(someToken)).rejects.toThrow(
       'Invalid or expired token',
     );
+  });
+
+  it('hands back a fresh access token without a cookie to write when the caller is spared', async () => {
+    const user = await seedUser();
+    const service = await build();
+    const callerToken = await service.createRefreshToken(
+      claimsFor(user),
+      randomUUID(),
+    );
+
+    const result = await service.revokeOtherSessions(
+      callerOf(user),
+      callerToken,
+    );
+
+    expect(typeof result.access_token).toBe('string');
+    // no rotation happened, so there is nothing for the controller to set —
+    // the cookie the browser already holds is still the live one
+    expect(result.refresh_token).toBeUndefined();
   });
 
   it('spares nothing when the cookie that reaches us is already stale', async () => {
@@ -1057,7 +1100,7 @@ describe('AuthService.revokeOtherSessions (OS-502)', () => {
     const { refresh_token: currentToken } =
       await service.refreshTokens(staleToken);
 
-    await service.revokeOtherSessions(user.id, staleToken);
+    await service.revokeOtherSessions(callerOf(user), staleToken);
     await elapseGraceWindow(user.id);
 
     // The stale row names a live family, so sparing on it would leave that
@@ -1079,7 +1122,7 @@ describe('AuthService.revokeOtherSessions (OS-502)', () => {
       randomUUID(),
     );
 
-    await service.revokeOtherSessions(user.id, undefined);
+    await service.revokeOtherSessions(callerOf(user), undefined);
 
     const rotated = await service.refreshTokens(bystanderToken);
     expect(typeof rotated.access_token).toBe('string');
@@ -1096,7 +1139,7 @@ describe('AuthService.revokeOtherSessions (OS-502)', () => {
     });
     const service = await build();
 
-    await service.revokeOtherSessions(user.id, undefined);
+    await service.revokeOtherSessions(callerOf(user), undefined);
 
     const [row] = await db
       .select()

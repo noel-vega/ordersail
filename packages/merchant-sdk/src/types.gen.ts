@@ -260,7 +260,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/me/sessions/revoke-all": {
+    "/auth/me/sessions/revoke-others": {
         parameters: {
             query?: never;
             header?: never;
@@ -1432,7 +1432,7 @@ export interface components {
         UpdateUserProfileDto: {
             firstName?: string;
             lastName?: string;
-            phone?: string;
+            phone?: string | null;
         };
         ChangePasswordDto: {
             currentPassword: string;
@@ -2664,7 +2664,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessTokenDto"];
+                };
             };
             401: {
                 headers: {

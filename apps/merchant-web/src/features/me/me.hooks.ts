@@ -2,10 +2,10 @@ import {
   queryOptions,
   useMutation,
   useSuspenseQuery,
-} from "@tanstack/react-query"
-import type { UpdateUserProfileDto } from "merchant-sdk"
-import { merchantApi } from "../../lib/merchant-api-client"
-import { queryClient } from "../../lib/react-query-client"
+} from "@tanstack/react-query";
+import type { UpdateUserProfileDto } from "merchant-sdk";
+import { merchantApi } from "../../lib/merchant-api-client";
+import { queryClient } from "../../lib/react-query-client";
 
 // The signed-in user's own editable attributes. Nested under ["auth", "me"]
 // so an auth-wide invalidation reaches it, but a separate request from
@@ -16,11 +16,11 @@ export function getMyProfileQueryOptions() {
   return queryOptions({
     queryKey: ["auth", "me", "profile"],
     queryFn: () => merchantApi.profile(),
-  })
+  });
 }
 
 export function useMyProfileSuspenseQuery() {
-  return useSuspenseQuery(getMyProfileQueryOptions())
+  return useSuspenseQuery(getMyProfileQueryOptions());
 }
 
 export function useUpdateMyProfileMutation() {
@@ -32,9 +32,9 @@ export function useUpdateMyProfileMutation() {
     onSuccess: () => {
       // ["auth", "me"] covers the profile query above and GET /auth/me, whose
       // name the sidebar account menu renders
-      queryClient.invalidateQueries({ queryKey: ["auth", "me"] })
+      queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
       // the staff list and any open staff record show this user's name too
-      queryClient.invalidateQueries({ queryKey: ["users"] })
+      queryClient.invalidateQueries({ queryKey: ["users"] });
     },
-  })
+  });
 }

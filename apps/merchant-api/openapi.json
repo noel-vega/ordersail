@@ -549,13 +549,20 @@
         ]
       }
     },
-    "/auth/me/sessions/revoke-all": {
+    "/auth/me/sessions/revoke-others": {
       "post": {
         "operationId": "AuthController_revokeOtherSessions",
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTokenDto"
+                }
+              }
+            }
           },
           "401": {
             "description": ""
@@ -4419,7 +4426,8 @@
             "type": "string"
           },
           "phone": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         }
       },

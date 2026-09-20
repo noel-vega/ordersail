@@ -187,6 +187,54 @@ describe('UsersService.update (OS-184)', () => {
     });
   });
 
+  // OS-503 story 4: blanking the phone box has to actually remove the
+  // number. The three states of the field are distinct and all three are
+  // asserted, because the bug was exactly the collapse of two of them —
+  // "cleared" arrived as "absent" and silently did nothing.
+  it('clears the phone when an explicit null is patched', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      phone: '5555559999',
+    });
+    const service = await build();
+
+    const updated = await service.update(user.id, account.id, { phone: null });
+    expect(updated?.phone).toBeNull();
+  });
+
+  it('clears the phone when a blank string is patched', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      phone: '5555559999',
+    });
+    const service = await build();
+
+    expect(
+      (await service.update(user.id, account.id, { phone: '' }))?.phone,
+    ).toBeNull();
+    // whitespace is the same intent typed less carefully
+    await service.update(user.id, account.id, { phone: '5555559999' });
+    expect(
+      (await service.update(user.id, account.id, { phone: '   ' }))?.phone,
+    ).toBeNull();
+  });
+
+  it('leaves the phone alone when the field is absent', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      phone: '5555559999',
+    });
+    const service = await build();
+
+    const updated = await service.update(user.id, account.id, {
+      firstName: 'Dana',
+    });
+    expect(updated?.phone).toBe('5555559999');
+  });
+
   it('an empty patch is a no-op read', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });

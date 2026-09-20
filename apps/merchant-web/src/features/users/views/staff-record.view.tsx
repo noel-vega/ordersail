@@ -34,7 +34,7 @@ import {
 import { EditUserRolesSheet } from "./edit-user-roles-sheet";
 import { UserStatusBadge } from "./user-status-badge";
 
-export function UserDetailView({ id }: { id: number }) {
+export function StaffRecordView({ id }: { id: number }) {
   const navigate = useNavigate();
   const { data: user } = useUserSuspenseQuery(id);
   const me = useAuthMe();

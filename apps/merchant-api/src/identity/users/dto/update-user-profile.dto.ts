@@ -16,13 +16,16 @@ export class UpdateUserProfileDto {
   @MinLength(1)
   lastName?: string;
 
-  @ApiProperty({ required: false })
+  // Nullable where the names aren't: a phone number is genuinely optional on
+  // the row, so "I no longer have one" has to be expressible. The three
+  // states stay distinct — absent leaves the column alone, null or an empty
+  // string clears it to NULL, anything else sets it.
+  @ApiProperty({ required: false, type: String, nullable: true })
   @IsOptional()
   @IsString()
-  @MinLength(1)
-  phone?: string;
+  phone?: string | null;
 
-  constructor(firstName?: string, lastName?: string, phone?: string) {
+  constructor(firstName?: string, lastName?: string, phone?: string | null) {
     this.firstName = firstName;
     this.lastName = lastName;
     this.phone = phone;

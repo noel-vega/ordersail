@@ -521,7 +521,12 @@ export class UsersService {
     const patch: Partial<typeof usersTable.$inferInsert> = {};
     if (dto.firstName !== undefined) patch.firstname = dto.firstName;
     if (dto.lastName !== undefined) patch.lastname = dto.lastName;
-    if (dto.phone !== undefined) patch.phone = dto.phone;
+    // Present-but-blank is a clear, not a no-op: phone is the one nullable
+    // field here, and a user who deletes the contents of the box means to
+    // remove the number. Absent (undefined) still leaves the column alone.
+    if (dto.phone !== undefined) {
+      patch.phone = dto.phone?.trim() ? dto.phone : null;
+    }
 
     if (Object.keys(patch).length === 0) {
       return this.getById(userId, accountId);

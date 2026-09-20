@@ -361,14 +361,22 @@ export class AdminClient {
     return result;
   }
 
-  // ends every OTHER session this user holds, leaving this browser signed
-  // in. Unlike changePassword() there's no replacement token to adopt and no
-  // password to send: the API spares the family named by this browser's
-  // refresh cookie and doesn't rotate it, so nothing here changes.
+  // ends every OTHER session this user holds, leaving this browser signed in
+  // — `revoke-others`, because sparing the caller is the point. No password
+  // to send: it only ever reduces access.
+  //
+  // The re-minted access token is adopted the way changePassword() adopts
+  // its own. Usually this browser's refresh family is spared and left
+  // unrotated, so only the access token is new; when no usable refresh
+  // cookie reached the API there was no family to spare, and it started this
+  // browser a fresh one (setting the cookie) rather than signing out the
+  // very person who asked to stay.
   async revokeOtherSessions() {
-    unwrap(
-      await this.do(() => this.client.POST("/auth/me/sessions/revoke-all")),
+    const result = unwrap(
+      await this.do(() => this.client.POST("/auth/me/sessions/revoke-others")),
     );
+    this.accessToken = result.access_token;
+    return result;
   }
 
   // clears the httpOnly refresh_token cookie server-side — the client can't

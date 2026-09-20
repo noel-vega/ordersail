@@ -1,3 +1,4 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { ApiError } from "merchant-sdk";
 import { Field, FieldLabel } from "ui/field";
 import { Input } from "ui/input";
@@ -6,7 +7,7 @@ import {
   ProfileForm,
   type ProfileFormValues,
 } from "../../../components/profile-form";
-import { useAuthMe } from "../../auth/permissions.hooks";
+import { getAuthMeQueryOptions } from "../../auth/permissions.hooks";
 import {
   useMyProfileSuspenseQuery,
   useUpdateMyProfileMutation,
@@ -21,15 +22,20 @@ export function ProfileView() {
   const update = useUpdateMyProfileMutation();
   // GET /auth/me/profile deliberately returns no email — it isn't editable, so
   // it isn't part of the profile write shape. The identity response already
-  // carries it, and it's loaded app-wide for the permission context.
-  const me = useAuthMe();
+  // carries it, and the route primes it alongside the profile. Suspense, not
+  // useAuthMe()'s plain useQuery: a cold cache should hold the skeleton
+  // rather than paint an empty box under "the address you sign in with".
+  const { data: me } = useSuspenseQuery(getAuthMeQueryOptions());
 
   const handleSave = async (values: ProfileFormValues) => {
     try {
       await update.mutateAsync({
         firstName: values.firstName,
         lastName: values.lastName,
-        phone: values.phone.trim() || undefined,
+        // null, not undefined: undefined is "field absent, leave it alone",
+        // which silently turned clearing the box into a no-op. null clears
+        // the column.
+        phone: values.phone.trim() || null,
       });
       toast.success("Profile saved.");
     } catch (err) {
@@ -58,9 +64,13 @@ export function ProfileView() {
       >
         <Field>
           <FieldLabel>Email</FieldLabel>
-          <Input type="email" value={me.data?.email ?? ""} disabled readOnly />
+          <Input type="email" value={me?.email ?? ""} disabled readOnly />
+          {/* me() resolves undefined rather than throwing on a non-2xx, so
+              say so instead of presenting a blank box as the address. */}
           <p className="text-sm text-muted-foreground">
-            This is the address you sign in with. It can't be changed here.
+            {me?.email
+              ? "This is the address you sign in with. It can't be changed here."
+              : "Couldn't load the address you sign in with. Reload to try again."}
           </p>
         </Field>
       </ProfileForm>

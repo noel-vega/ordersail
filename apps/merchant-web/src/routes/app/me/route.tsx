@@ -31,7 +31,7 @@ function RouteComponent() {
 
   return (
     <div className="space-y-6">
-      <nav aria-label="Your account" className="flex gap-1 border-b">
+      <nav aria-label="Your profile" className="flex gap-1 border-b">
         {TABS.map((tab) => {
           // startsWith as well as equality so a tab that grows children in
           // M3/M4 stays highlighted without reworking this

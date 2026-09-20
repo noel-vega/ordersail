@@ -1019,16 +1019,10 @@ export class AuthService {
       .set({ password: hashedPassword, updatedAt: new Date() })
       .where(eq(usersTable.id, caller.sub));
 
-    // Their own live session, if the cookie reached us at all. Guarded on
-    // userId as well as liveness so a token belonging to somebody else can
-    // never be the one that's rotated instead of revoked.
-    const presented = callerRefreshToken
-      ? await this.refreshRecordFor(callerRefreshToken)
-      : null;
-    const callersOwn =
-      presented && presented.userId === caller.sub && !presented.revokedAt
-        ? presented
-        : null;
+    const callersOwn = await this.callersLiveRefreshRecord(
+      caller.sub,
+      callerRefreshToken,
+    );
 
     // Spared here only so the rotation below can revoke-and-replace it; a
     // family killed outright has nothing left to rotate.
@@ -1058,8 +1052,8 @@ export class AuthService {
   // family is spared only so it can be rotated (the threat being a *copy* of
   // their refresh token, which lives in that same family). Here nothing
   // suggests this browser's token is compromised, so its family is spared
-  // and simply left running — no rotation, no re-mint, and so no new cookie
-  // for the controller to write back.
+  // and simply left running — no rotation, and so no new refresh cookie for
+  // the controller to write back.
   //
   // Deliberately requires no password. Unlike disabling MFA or removing a
   // passkey, this only ever reduces access: the worst an attacker holding a
@@ -1067,28 +1061,65 @@ export class AuthService {
   // user out, which is the very thing the legitimate user came here to do.
   //
   // No usable cookie (missing, expired, or already rotated out) leaves no
-  // family to identify as "this one", so every family goes — including this
-  // browser's. That's the honest reading of the request: told to end every
-  // session it can name, it ends every session it can name.
+  // family to identify as "this one", so every family goes — this browser's
+  // included — and the caller is then started on a brand-new one. Killing
+  // their session instead would defeat the request: "sign out everywhere"
+  // means everywhere *else*, and the person asking is explicitly the one who
+  // wants to stay. changePassword's no-cookie path does exactly the same
+  // thing, deliberately, so the two can't drift apart.
+  //
+  // Returns the caller's re-minted access token, always; `refresh_token` only
+  // when a new family had to be started, which is the only case there's a
+  // cookie for the controller to write back.
   async revokeOtherSessions(
+    caller: AuthenticatedUser,
+    callerRefreshToken: string | undefined,
+  ): Promise<{ access_token: string; refresh_token?: string }> {
+    const callersOwn = await this.callersLiveRefreshRecord(
+      caller.sub,
+      callerRefreshToken,
+    );
+
+    await this.revokeAllFamiliesForUser(caller.sub, callersOwn?.familyId);
+
+    // Recomputed from the database rather than copied off the access token
+    // the caller presented, for the same reason refreshTokens does it.
+    const claims = await this.freshClaims(caller);
+
+    // The spared family keeps running as-is: nothing here suggests this
+    // browser's refresh token is compromised, so there's no reason to rotate
+    // it and no replacement cookie to deliver. The fresh access token is
+    // handed back either way so the response has one shape.
+    return callersOwn
+      ? { access_token: await this.createAccessToken(claims) }
+      : {
+          access_token: await this.createAccessToken(claims),
+          refresh_token: await this.createRefreshToken(claims, randomUUID()),
+        };
+  }
+
+  // The caller's own live refresh-token row, or null if the cookie never
+  // reached us, names a row that isn't theirs, or names one that's already
+  // revoked.
+  //
+  // Liveness matters: a cookie that's already been rotated out names a dead
+  // row, and treating that row's family as "this browser's" would spare its
+  // live successor — the very session the caller may be here to kill. The
+  // userId check is belt-and-braces (revokeAllFamiliesForUser filters on
+  // userId anyway, so a foreign family id can't match), kept so a token
+  // belonging to somebody else can never be the one that's rotated instead
+  // of revoked.
+  private async callersLiveRefreshRecord(
     userId: number,
     callerRefreshToken: string | undefined,
-  ): Promise<void> {
-    // Liveness matters: a cookie that's already been rotated out names a
-    // dead row, and sparing that row's family would leave its live successor
-    // running — the very session the user may be here to kill. The userId
-    // check is belt-and-braces (revokeAllFamiliesForUser filters on userId
-    // anyway, so a foreign family id can't match), kept to mirror
-    // changePassword rather than because anything observable depends on it.
+  ) {
     const presented = callerRefreshToken
       ? await this.refreshRecordFor(callerRefreshToken)
       : null;
-    const callersOwn =
-      presented && presented.userId === userId && !presented.revokedAt
-        ? presented
-        : null;
 
-    await this.revokeAllFamiliesForUser(userId, callersOwn?.familyId);
+    return presented && presented.userId === userId && !presented.revokedAt
+      ? presented
+      : null;
   }
 
   // `exceptFamilyId` holds one family back from the sweep — the caller's
