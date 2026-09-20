@@ -49,8 +49,11 @@ export function UserDetailView({ id }: { id: number }) {
   const me = useAuthMe();
   const perms = usePermissions();
 
+  // isSelf no longer grants edit rights — this page is the administrative view
+  // of a user, and your own data is editable at /app/me. It stays because an
+  // owner must not be able to deactivate themselves out of their own account.
   const isSelf = me.data?.userId === id;
-  const canEditProfile = isSelf || perms.has("users:write");
+  const canEditProfile = perms.has("users:write");
   const canDeactivate = perms.has("users:deactivate") && !isSelf;
 
   const [rolesOpen, setRolesOpen] = useState(false);
@@ -120,6 +123,14 @@ export function UserDetailView({ id }: { id: number }) {
             <UserStatusBadge status={user.status} />
           </h1>
           <p className="text-sm text-muted-foreground">{user.email}</p>
+          {isSelf && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              This is you —{" "}
+              <Link to="/app/me/profile" className="underline">
+                edit your profile
+              </Link>
+            </p>
+          )}
         </div>
         {canDeactivate && (
           <Button
