@@ -555,16 +555,12 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessTokenDto"
-                }
-              }
-            }
+            "description": ""
           },
           "401": {
+            "description": ""
+          },
+          "409": {
             "description": ""
           }
         },
@@ -4427,7 +4423,8 @@
           },
           "phone": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "maxLength": 32
           }
         }
       },

@@ -19,7 +19,7 @@ import { ArrowLeftIcon, LoaderCircleIcon } from "lucide-react";
 import { Can } from "../../../components/can";
 import {
   ProfileForm,
-  type ProfileFormValues,
+  type ProfileFormPayload,
 } from "../../../components/profile-form";
 import { usePermissions } from "../../auth/permission-context";
 import { useAuthMe } from "../../auth/permissions.hooks";
@@ -290,15 +290,10 @@ function StaffProfileForm(props: { user: User; canEdit: boolean }) {
   const update = useUpdateUserMutation();
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const handleSave = async (values: ProfileFormValues) => {
+  const handleSave = async (payload: ProfileFormPayload) => {
     setSaveError(null);
     try {
-      await update.mutateAsync({
-        id: props.user.id,
-        firstName: values.firstName,
-        lastName: values.lastName,
-        phone: values.phone.trim() || null,
-      });
+      await update.mutateAsync({ id: props.user.id, ...payload });
     } catch (err) {
       setSaveError(
         err instanceof ApiError

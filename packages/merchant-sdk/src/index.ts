@@ -365,18 +365,15 @@ export class AdminClient {
   // — `revoke-others`, because sparing the caller is the point. No password
   // to send: it only ever reduces access.
   //
-  // The re-minted access token is adopted the way changePassword() adopts
-  // its own. Usually this browser's refresh family is spared and left
-  // unrotated, so only the access token is new; when no usable refresh
-  // cookie reached the API there was no family to spare, and it started this
-  // browser a fresh one (setting the cookie) rather than signing out the
-  // very person who asked to stay.
+  // Nothing comes back and no token is adopted: this browser's refresh
+  // family is spared and left unrotated, so what it already holds stays
+  // valid. If no usable refresh cookie reached the API it answers 409 and
+  // revokes nothing — it can't tell which session is "this one", and it
+  // won't start a new one off a bare access token.
   async revokeOtherSessions() {
-    const result = unwrap(
+    return unwrap(
       await this.do(() => this.client.POST("/auth/me/sessions/revoke-others")),
     );
-    this.accessToken = result.access_token;
-    return result;
   }
 
   // clears the httpOnly refresh_token cookie server-side — the client can't

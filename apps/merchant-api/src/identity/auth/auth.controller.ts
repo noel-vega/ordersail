@@ -454,33 +454,28 @@ export class AuthController {
   // whole point, so the path says so rather than promising something the
   // handler deliberately doesn't do.
   //
-  // The caller's own session survives either way. Normally the refresh cookie
-  // names the family to spare and nothing is written back — unlike
-  // change-password, this doesn't rotate, so the cookie in the browser stays
-  // valid as-is. When no usable cookie arrives there's no family to name, so
-  // everything goes and the service starts the caller a fresh family, which
-  // is the one case a new refresh cookie is written. The re-minted access
-  // token is returned in both cases. Every other browser dies at its next
+  // The refresh cookie names the family to spare, and nothing is written
+  // back — unlike change-password, this doesn't rotate, so the cookie in the
+  // browser stays valid as-is and there's no token to return. With no usable
+  // cookie the service refuses (409) and revokes nothing, rather than guess
+  // which session is "this one" or mint one from a bare access token — see
+  // AuthService.revokeOtherSessions. Every other browser dies at its next
   // refresh, and within at most one access-token lifetime (8h) even one that
   // never refreshes.
   @AuthenticatedOnly()
   @Post('me/sessions/revoke-others')
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse({ type: AccessTokenDto })
+  @ApiOkResponse()
   @ApiUnauthorizedResponse()
+  @ApiConflictResponse()
   async revokeOtherSessions(
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: FastifyRequest,
-    @Res({ passthrough: true }) res: FastifyReply,
-  ): Promise<AccessTokenDto> {
-    const { access_token, refresh_token } =
-      await this.authService.revokeOtherSessions(
-        user,
-        req.cookies[REFRESH_TOKEN_COOKIE],
-      );
-
-    if (refresh_token) this.setRefreshCookie(res, refresh_token);
-    return { access_token };
+  ): Promise<void> {
+    await this.authService.revokeOtherSessions(
+      user.sub,
+      req.cookies[REFRESH_TOKEN_COOKIE],
+    );
   }
 
   @Public()

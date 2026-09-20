@@ -524,8 +524,10 @@ export class UsersService {
     // Present-but-blank is a clear, not a no-op: phone is the one nullable
     // field here, and a user who deletes the contents of the box means to
     // remove the number. Absent (undefined) still leaves the column alone.
+    // What's stored is the trimmed value — the same one the blank test looks
+    // at — so a direct API caller can't persist the padding the forms strip.
     if (dto.phone !== undefined) {
-      patch.phone = dto.phone?.trim() ? dto.phone : null;
+      patch.phone = dto.phone?.trim() || null;
     }
 
     if (Object.keys(patch).length === 0) {

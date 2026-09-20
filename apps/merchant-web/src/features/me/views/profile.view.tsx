@@ -5,7 +5,7 @@ import { Input } from "ui/input";
 import { toast } from "ui/sonner";
 import {
   ProfileForm,
-  type ProfileFormValues,
+  type ProfileFormPayload,
 } from "../../../components/profile-form";
 import { getAuthMeQueryOptions } from "../../auth/permissions.hooks";
 import {
@@ -25,18 +25,16 @@ export function ProfileView() {
   // carries it, and the route primes it alongside the profile. Suspense, not
   // useAuthMe()'s plain useQuery: a cold cache should hold the skeleton
   // rather than paint an empty box under "the address you sign in with".
+  //
+  // A failed /auth/me never reaches the render below either. me() resolves
+  // undefined on a non-2xx, react-query rejects a queryFn that resolves
+  // undefined, and a suspense query throws that to the route's error
+  // boundary. The type can't express it, hence the `?.` on the value.
   const { data: me } = useSuspenseQuery(getAuthMeQueryOptions());
 
-  const handleSave = async (values: ProfileFormValues) => {
+  const handleSave = async (payload: ProfileFormPayload) => {
     try {
-      await update.mutateAsync({
-        firstName: values.firstName,
-        lastName: values.lastName,
-        // null, not undefined: undefined is "field absent, leave it alone",
-        // which silently turned clearing the box into a no-op. null clears
-        // the column.
-        phone: values.phone.trim() || null,
-      });
+      await update.mutateAsync(payload);
       toast.success("Profile saved.");
     } catch (err) {
       // MutationCache.onError has already toasted the ApiError message; this
@@ -65,12 +63,8 @@ export function ProfileView() {
         <Field>
           <FieldLabel>Email</FieldLabel>
           <Input type="email" value={me?.email ?? ""} disabled readOnly />
-          {/* me() resolves undefined rather than throwing on a non-2xx, so
-              say so instead of presenting a blank box as the address. */}
           <p className="text-sm text-muted-foreground">
-            {me?.email
-              ? "This is the address you sign in with. It can't be changed here."
-              : "Couldn't load the address you sign in with. Reload to try again."}
+            This is the address you sign in with. It can&apos;t be changed here.
           </p>
         </Field>
       </ProfileForm>

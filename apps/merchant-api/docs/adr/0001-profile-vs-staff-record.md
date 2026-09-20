@@ -20,8 +20,9 @@ A permission gate with a hole in it invites exactly this — the hole has to be
 punched in every handler and every route, and the one that gets missed is a
 silent 403 rather than a build error.
 
-**Reuse the admin page for self.** Tempting, because `user-detail.view.tsx`
-already branched on `isSelf`. Rejected because the page is admin-shaped: a
+**Reuse the admin page for self.** Tempting, because the Staff record view
+(`staff-record.view.tsx`; `user-detail.view.tsx` at the time) already branched
+on `isSelf`. Rejected because the page is admin-shaped: a
 back-link to a staff list the viewer can't read, a breadcrumb reading *Users ›
 Their Own Name*, and roles they can't change. It also has nowhere coherent to
 put credentials — a password card belongs next to passkeys, not next to a

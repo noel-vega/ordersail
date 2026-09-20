@@ -221,6 +221,18 @@ describe('UsersService.update (OS-184)', () => {
     ).toBeNull();
   });
 
+  it('stores the phone trimmed', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id });
+    const service = await build();
+
+    // the forms trim before sending; a direct API caller doesn't have to
+    const updated = await service.update(user.id, account.id, {
+      phone: '  5555559999  ',
+    });
+    expect(updated?.phone).toBe('5555559999');
+  });
+
   it('leaves the phone alone when the field is absent', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, {

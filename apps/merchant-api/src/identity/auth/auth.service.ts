@@ -1061,41 +1061,35 @@ export class AuthService {
   // user out, which is the very thing the legitimate user came here to do.
   //
   // No usable cookie (missing, expired, or already rotated out) leaves no
-  // family to identify as "this one", so every family goes — this browser's
-  // included — and the caller is then started on a brand-new one. Killing
-  // their session instead would defeat the request: "sign out everywhere"
-  // means everywhere *else*, and the person asking is explicitly the one who
-  // wants to stay. changePassword's no-cookie path does exactly the same
-  // thing, deliberately, so the two can't drift apart.
+  // family to identify as "this one" — and that case is refused outright,
+  // with nothing revoked. Both alternatives are worse. Revoking everything
+  // signs out the one person who asked to stay. Revoking everything and then
+  // starting the caller a fresh family looks kind but breaks the paragraph
+  // above: a bare access token, good for 8h at most, would buy a 7-day
+  // refresh token that rotates indefinitely, from an endpoint that is only
+  // allowed to skip the password *because* it never grants anything.
+  // changePassword does start a fresh family on its own no-cookie path, but
+  // it has verified the password by then; this has verified nothing.
   //
-  // Returns the caller's re-minted access token, always; `refresh_token` only
-  // when a new family had to be started, which is the only case there's a
-  // cookie for the controller to write back.
+  // A browser essentially never gets here — the cookie is httpOnly, path "/",
+  // and the SDK refreshes on a 401 — so the refusal lands on callers outside
+  // one, which is exactly who shouldn't be handed a session.
   async revokeOtherSessions(
-    caller: AuthenticatedUser,
+    userId: number,
     callerRefreshToken: string | undefined,
-  ): Promise<{ access_token: string; refresh_token?: string }> {
+  ): Promise<void> {
     const callersOwn = await this.callersLiveRefreshRecord(
-      caller.sub,
+      userId,
       callerRefreshToken,
     );
 
-    await this.revokeAllFamiliesForUser(caller.sub, callersOwn?.familyId);
+    if (!callersOwn) {
+      throw new ConflictException(
+        "Couldn't tell which session is this one — sign in again, then retry",
+      );
+    }
 
-    // Recomputed from the database rather than copied off the access token
-    // the caller presented, for the same reason refreshTokens does it.
-    const claims = await this.freshClaims(caller);
-
-    // The spared family keeps running as-is: nothing here suggests this
-    // browser's refresh token is compromised, so there's no reason to rotate
-    // it and no replacement cookie to deliver. The fresh access token is
-    // handed back either way so the response has one shape.
-    return callersOwn
-      ? { access_token: await this.createAccessToken(claims) }
-      : {
-          access_token: await this.createAccessToken(claims),
-          refresh_token: await this.createRefreshToken(claims, randomUUID()),
-        };
+    await this.revokeAllFamiliesForUser(userId, callersOwn.familyId);
   }
 
   // The caller's own live refresh-token row, or null if the cookie never
