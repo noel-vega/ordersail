@@ -202,7 +202,7 @@ export class AuthService {
 
     return this.buildSignInSuccess(
       user,
-      await this.toFactorClaims(user.accountId, factors),
+      await this.toFactorClaims(user.id, factors),
     );
   }
 
@@ -263,12 +263,35 @@ export class AuthService {
       .for('update');
   }
 
-  private async getFactorClaims(
-    accountId: number,
-    userId: number,
-  ): Promise<FactorClaims> {
+  private async getFactorClaims(userId: number): Promise<FactorClaims> {
     const factors = await this.getFactorState(userId);
-    return this.toFactorClaims(accountId, factors);
+    return this.toFactorClaims(userId, factors);
+  }
+
+  // Whether this user must hold a factor, and on whose say-so. Two sources,
+  // either is enough: the account-wide policy an Owner switches on
+  // (accounts.requireMfaAt, OS-473) and the per-user stamp an invited staff
+  // member gets when they join (users.factorRequiredAt, OS-494). The one
+  // place the rule lives — the enrollment claim and both last-factor checks
+  // read it, so they can't drift apart. Returns which source applies only so
+  // a refusal can say something true about how to lift it; 'account' wins
+  // when both are set because that's the one an Owner can act on.
+  async getFactorRequirement(
+    userId: number,
+    tx?: DbTransaction,
+  ): Promise<'account' | 'user' | null> {
+    const [row] = await (tx ?? this.db)
+      .select({
+        requireMfaAt: accountsTable.requireMfaAt,
+        factorRequiredAt: usersTable.factorRequiredAt,
+      })
+      .from(usersTable)
+      .innerJoin(accountsTable, eq(usersTable.accountId, accountsTable.id))
+      .where(eq(usersTable.id, userId));
+
+    if (row?.requireMfaAt) return 'account';
+    if (row?.factorRequiredAt) return 'user';
+    return null;
   }
 
   // The two token claims that depend on factor state.
@@ -276,9 +299,10 @@ export class AuthService {
   // hasMfaFactor: does the user hold any factor at all — read by the
   // per-route gate (OS-492) for money/access-sensitive actions.
   //
-  // mfaEnrollmentSatisfied: is anything *blocking* this user — the account
-  // requires MFA and they haven't enrolled. Account doesn't require it ->
-  // trivially satisfied, even with no factor.
+  // mfaEnrollmentSatisfied: is anything *blocking* this user — a factor is
+  // required of them (account-wide policy, or the stamp an invited staff
+  // member carries — see getFactorRequirement) and they haven't enrolled.
+  // Nothing requires it -> trivially satisfied, even with no factor.
   //
   // These two are now the same question, and were deliberately not always
   // so: a factor satisfies an account-wide MFA requirement exactly when
@@ -289,17 +313,14 @@ export class AuthService {
   // asked them to present. Keep them moving together if a third factor type
   // is ever added.
   private async toFactorClaims(
-    accountId: number,
+    userId: number,
     factors: FactorState,
   ): Promise<FactorClaims> {
-    const [account] = await this.db
-      .select({ requireMfaAt: accountsTable.requireMfaAt })
-      .from(accountsTable)
-      .where(eq(accountsTable.id, accountId));
+    const requirement = await this.getFactorRequirement(userId);
 
     return {
       hasMfaFactor: factors.hasMfaFactor,
-      mfaEnrollmentSatisfied: !account?.requireMfaAt || factors.hasMfaFactor,
+      mfaEnrollmentSatisfied: !requirement || factors.hasMfaFactor,
     };
   }
 
@@ -567,23 +588,15 @@ export class AuthService {
   // Requires current-password re-entry — standard practice for removing a
   // second factor, since the whole point of MFA is that a password alone
   // shouldn't be enough to weaken an account's security. Refused outright
-  // while the account requires MFA (OS-473) — otherwise a caller could
+  // while a factor is required of this user (account-wide OS-473, or the
+  // invited-staff stamp OS-494) — otherwise a caller could
   // self-disable and keep full access for the rest of their current
   // access token's 8h lifetime (mfaEnrollmentSatisfied is only
   // recomputed on refresh, not per request), silently defeating the
   // account-wide requirement. An Owner must turn the requirement off
   // first if this user genuinely needs to stop using MFA.
-  async disableMfa(
-    userId: number,
-    accountId: number,
-    password: string,
-  ): Promise<void> {
+  async disableMfa(userId: number, password: string): Promise<void> {
     await this.verifyPassword(userId, password);
-
-    const [account] = await this.db
-      .select({ requireMfaAt: accountsTable.requireMfaAt })
-      .from(accountsTable)
-      .where(eq(accountsTable.id, accountId));
 
     // One locked transaction for the whole check-and-delete: otherwise this
     // races PasskeysService.remove (different table, different service) and
@@ -596,11 +609,14 @@ export class AuthService {
       // OS-485 a passkey is also a factor, so someone holding both can drop
       // TOTP and still satisfy the requirement — what must not happen is
       // going to zero.
-      if (account?.requireMfaAt) {
+      const requirement = await this.getFactorRequirement(userId, tx);
+      if (requirement) {
         const { passkeyCount } = await this.getFactorState(userId, tx);
         if (passkeyCount === 0) {
           throw new ConflictException(
-            'Your account requires MFA — add a passkey first, or ask an Owner to turn off the requirement',
+            requirement === 'account'
+              ? 'Your account requires MFA — add a passkey first, or ask an Owner to turn off the requirement'
+              : 'Your sign-in needs a second factor — add a passkey first, then you can remove the authenticator',
           );
         }
       }
@@ -763,10 +779,12 @@ export class AuthService {
     // address — UsersService.activate() sets emailVerifiedAt alongside the
     // password, so this is always true here, not read back from `user`
     //
-    // unlike signup(), this account may already exist with requireMfaAt
-    // set by the time a new staff member joins — check for real, don't
-    // assume unsatisfied like a brand-new account
-    const factorClaims = await this.getFactorClaims(user.accountId, user.id);
+    // activate() also stamped factorRequiredAt (OS-494), so a joining staff
+    // member is never satisfied here — they can't hold a factor before they
+    // have a password. Computed rather than hardcoded false so this stays
+    // one rule with refreshTokens(), which is what keeps the gate standing
+    // after the first navigation.
+    const factorClaims = await this.getFactorClaims(user.id);
     const access_token = await this.createAccessToken({
       sub: user.id,
       email: user.email,
@@ -829,7 +847,7 @@ export class AuthService {
     // this user could never have a confirmed MFA factor yet (enrollMfa()
     // requires emailVerifiedAt already set), so this only ever depends on
     // whether the account requires MFA at all
-    const factorClaims = await this.getFactorClaims(user.accountId, user.id);
+    const factorClaims = await this.getFactorClaims(user.id);
     const access_token = await this.createAccessToken({
       sub: user.id,
       email: user.email,
@@ -1059,10 +1077,7 @@ export class AuthService {
     // same rationale as emailVerified above — recomputed fresh so an
     // account turning "require MFA" on, or a user finishing enrollment,
     // is picked up by the next rotation rather than carrying a stale claim
-    const factorClaims = await this.getFactorClaims(
-      payload.accountId,
-      payload.sub,
-    );
+    const factorClaims = await this.getFactorClaims(payload.sub);
 
     // identity fields ride along from the presented token; the two
     // recomputed above deliberately override whatever it carried

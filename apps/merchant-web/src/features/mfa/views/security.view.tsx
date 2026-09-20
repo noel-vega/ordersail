@@ -42,12 +42,12 @@ export function SecurityView(props: { required?: boolean }) {
   const hasMfaFactor = me.data?.hasMfaFactor ?? false;
   const supportsPasskeys = browserSupportsWebAuthn();
 
-  // What the app gate in routes/app/route.tsx actually redirects on. It is
-  // NOT the same as hasMfaFactor: until sign-in can challenge on a passkey
-  // (OS-489), a passkey doesn't clear an account-wide MFA requirement, so a
-  // user can hold a factor and still be blocked. Keying this page's
-  // instructions off the wrong one told them to add a passkey and then
-  // bounced them straight back here.
+  // What the app gate in routes/app/route.tsx actually redirects on. Either
+  // factor lifts it — a passkey or an authenticator (OS-489) — and both
+  // enrollment paths re-mint the token and invalidate /auth/me, so this goes
+  // false as soon as one exists. The requirement can come from the account's
+  // policy (OS-473) or from having joined via an invite (OS-494); /auth/me
+  // doesn't say which, so the copy below doesn't claim either.
   const blockedByRequirement =
     props.required && !(me.data?.mfaEnrollmentSatisfied ?? true);
 
@@ -92,11 +92,11 @@ export function SecurityView(props: { required?: boolean }) {
       {blockedByRequirement && (
         <Alert>
           <InfoIcon />
-          <AlertTitle>Your account requires a second factor</AlertTitle>
+          <AlertTitle>Add a second factor to continue</AlertTitle>
           <AlertDescription>
-            Set up an authenticator app below to continue. Passkeys don&apos;t
-            satisfy this requirement yet — you can still add one, but it
-            won&apos;t unblock you.
+            Your sign-in needs more than a password before you can use the
+            dashboard. Add a passkey or set up an authenticator app below —
+            either one works.
           </AlertDescription>
         </Alert>
       )}
@@ -116,13 +116,6 @@ export function SecurityView(props: { required?: boolean }) {
             <ShieldCheckIcon className="size-5 shrink-0 text-primary" />
           )}
         </div>
-
-        {blockedByRequirement && (
-          <p className="text-sm text-muted-foreground">
-            Adding a passkey here won&apos;t lift your account&apos;s
-            requirement yet — set up an authenticator app below for that.
-          </p>
-        )}
 
         {/* A failed load must not be drawn as "you have none". This is a
             security inventory: reading it as empty invites adding a
@@ -168,7 +161,6 @@ export function SecurityView(props: { required?: boolean }) {
 
         {supportsPasskeys ? (
           <Button
-            variant={blockedByRequirement ? "outline" : "default"}
             onClick={handleAddPasskey}
             disabled={addPending}
           >
@@ -211,7 +203,7 @@ export function SecurityView(props: { required?: boolean }) {
           </div>
         ) : (
           <Button
-            variant={blockedByRequirement ? "default" : "outline"}
+            variant="outline"
             onClick={handleEnable}
             disabled={enroll.isPending}
           >

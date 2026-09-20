@@ -105,7 +105,9 @@ export class UsersService {
   // call) rather than assuming the update always finds a row. Also marks
   // the account email-verified (OS-470) — clicking the emailed invite link
   // already proves ownership of the address, so there's no separate
-  // verification step for staff who join this way.
+  // verification step for staff who join this way. And stamps
+  // factorRequiredAt (OS-494) in the same UPDATE, so there is no window in
+  // which a joined staff member exists without the factor requirement.
   async activate(
     id: number,
     hashedPassword: string,
@@ -115,6 +117,7 @@ export class UsersService {
       .set({
         password: hashedPassword,
         emailVerifiedAt: new Date(),
+        factorRequiredAt: new Date(),
         updatedAt: new Date(),
       })
       .where(eq(usersTable.id, id))

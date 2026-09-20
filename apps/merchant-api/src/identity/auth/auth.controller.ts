@@ -194,7 +194,7 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: MfaDisableDto,
   ): Promise<void> {
-    await this.authService.disableMfa(user.sub, user.accountId, dto.password);
+    await this.authService.disableMfa(user.sub, dto.password);
   }
 
   @AuthenticatedOnly()

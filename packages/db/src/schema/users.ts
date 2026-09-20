@@ -28,6 +28,16 @@ export const usersTable = pgTable("users", {
   // blocked on this (OS-470) — an unverified account is gated post-login
   // instead, by EmailVerifiedGuard reading the JWT's emailVerified claim.
   emailVerifiedAt: timestamp("email_verified_at"),
+  // set → this user must hold a sign-in factor (passkey or authenticator)
+  // before they reach the app. Stamped when a staff member accepts their
+  // invite (OS-494); owners who sign up stay null and are gated at the money
+  // actions instead. It has to be persisted: the JWT's
+  // mfaEnrollmentSatisfied claim is recomputed on every token refresh, so an
+  // unstored "not satisfied" would evaporate on the first navigation. Never
+  // cleared — it's simply moot once the user has a factor, and it keeps
+  // their last one from being removed. Composes with the account-wide
+  // accounts.requireMfaAt: either one set means a factor is required.
+  factorRequiredAt: timestamp("factor_required_at"),
   // The WebAuthn user handle — the opaque id handed to the authenticator at
   // registration, which then lives in the user's password manager or synced
   // keychain for as long as the passkey does. Deliberately not the primary

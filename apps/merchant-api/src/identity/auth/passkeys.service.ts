@@ -18,7 +18,6 @@ import {
 } from '@simplewebauthn/server';
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
 import {
-  accountsTable,
   and,
   type db as Db,
   eq,
@@ -197,13 +196,16 @@ export class PasskeysService {
 
     // Re-mint so a caller who was being gated isn't stuck behind a stale
     // claim for the rest of their token's 8h life — same reason confirmMfa
-    // re-mints. Note mfaEnrollmentSatisfied is deliberately carried over
-    // unchanged rather than forced true: a passkey doesn't satisfy an
-    // account-wide MFA requirement until sign-in can challenge on it
-    // (OS-489). Forcing it here would be the bypass OS-484 closed.
+    // re-mints, and with the same two claims. mfaEnrollmentSatisfied used to
+    // be carried over unchanged here, because between OS-484 and OS-489
+    // sign-in couldn't challenge on a passkey and counting one would have
+    // been a bypass. It can now, toFactorClaims() counts passkeys, and an
+    // invited staff member choosing a passkey at the join gate (OS-494) has
+    // to come unstuck without waiting for a refresh.
     const access_token = await this.authService.createAccessToken({
       ...claimsFromUser(user),
       hasMfaFactor: true,
+      mfaEnrollmentSatisfied: true,
     });
 
     return {
@@ -433,7 +435,6 @@ export class PasskeysService {
   // weaken an account.
   async remove(
     userId: number,
-    accountId: number,
     passkeyId: number,
     password: string,
   ): Promise<void> {
@@ -450,11 +451,6 @@ export class PasskeysService {
       );
     if (!passkey) throw new NotFoundException('Passkey not found');
 
-    const [account] = await this.db
-      .select({ requireMfaAt: accountsTable.requireMfaAt })
-      .from(accountsTable)
-      .where(eq(accountsTable.id, accountId));
-
     // Counting and deleting in one locked transaction. Apart, two concurrent
     // removals of different credentials each see two factors, each conclude
     // one will remain, and the user lands on zero — as does a removal racing
@@ -462,13 +458,15 @@ export class PasskeysService {
     await this.db.transaction(async (tx) => {
       await this.authService.lockUserFactors(tx, userId);
 
-      if (account?.requireMfaAt) {
+      // account-wide policy or the invited-staff stamp — one rule, shared
+      // with the enrollment claim (see AuthService.getFactorRequirement)
+      if (await this.authService.getFactorRequirement(userId, tx)) {
         const { totpConfirmed, passkeyCount } =
           await this.authService.getFactorState(userId, tx);
         const remaining = passkeyCount - 1 + (totpConfirmed ? 1 : 0);
         if (remaining === 0) {
           throw new ConflictException(
-            'Your account requires MFA — this is your last factor, add another before removing it',
+            'A second factor is required on your sign-in — this is your last one, add another before removing it',
           );
         }
       }

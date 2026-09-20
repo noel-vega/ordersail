@@ -117,7 +117,11 @@ async function build() {
 }
 
 async function seedUser(
-  opts: { requireMfaAt?: Date; emailVerified?: boolean } = {},
+  opts: {
+    requireMfaAt?: Date;
+    factorRequiredAt?: Date;
+    emailVerified?: boolean;
+  } = {},
 ) {
   const account = await insertAccount(db);
   if (opts.requireMfaAt) {
@@ -130,6 +134,7 @@ async function seedUser(
     accountId: account.id,
     password: await bcrypt.hash(password, 10),
     emailVerifiedAt: opts.emailVerified === false ? null : new Date(),
+    factorRequiredAt: opts.factorRequiredAt ?? null,
   });
   return { account, user };
 }
@@ -223,14 +228,16 @@ describe('PasskeysService — registration (OS-485)', () => {
     ]);
   });
 
-  it('stores the credential and re-mints with hasMfaFactor', async () => {
-    const { user } = await seedUser();
+  it('stores the credential and re-mints with both factor claims set', async () => {
+    const { user } = await seedUser({ factorRequiredAt: new Date() });
     const service = await build();
     const challenge = await optionsChallengeFor(service, user.id);
     verifierReturns('new-credential');
 
     const result = await service.verifyRegistration(
-      principal(user),
+      // a staff member at the join gate (OS-494): the token they registered
+      // with says unsatisfied, and the one they get back must not
+      { ...principal(user), mfaEnrollmentSatisfied: false },
       responseFor(challenge) as never,
       'MacBook',
     );
@@ -244,8 +251,9 @@ describe('PasskeysService — registration (OS-485)', () => {
       mfaEnrollmentSatisfied: boolean;
     }>(result.access_token);
     expect(payload.hasMfaFactor).toBe(true);
-    // deliberately carried over, NOT forced true — a passkey doesn't satisfy
-    // an account-wide requirement until sign-in can challenge on it (OS-489)
+    // forced true, the same as confirmMfa — carrying the stale claim over
+    // would leave them gated until the next refresh. Safe since OS-489:
+    // sign-in challenges on a passkey, so holding one really is enrollment.
     expect(payload.mfaEnrollmentSatisfied).toBe(true);
   });
 
@@ -540,7 +548,7 @@ describe('PasskeysService — management (OS-485)', () => {
     const passkey = await insertUserPasskey(db, { userId: user.id });
     const service = await build();
 
-    await service.remove(user.id, user.accountId, passkey.id, password);
+    await service.remove(user.id, passkey.id, password);
 
     expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
   });
@@ -551,7 +559,7 @@ describe('PasskeysService — management (OS-485)', () => {
     const service = await build();
 
     await expect(
-      service.remove(user.id, user.accountId, passkey.id, 'wrong'),
+      service.remove(user.id, passkey.id, 'wrong'),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(await db.select().from(userPasskeysTable)).toHaveLength(1);
   });
@@ -563,7 +571,7 @@ describe('PasskeysService — management (OS-485)', () => {
     const service = await build();
 
     await expect(
-      service.remove(user.id, user.accountId, theirs.id, password),
+      service.remove(user.id, theirs.id, password),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -574,7 +582,19 @@ describe('PasskeysService — management (OS-485)', () => {
       const service = await build();
 
       await expect(
-        service.remove(user.id, user.accountId, passkey.id, password),
+        service.remove(user.id, passkey.id, password),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    // the invited-staff stamp (OS-494) holds the last factor in place on its
+    // own, with no account-wide policy set
+    it('refuses to remove the last factor when factor_required_at is set', async () => {
+      const { user } = await seedUser({ factorRequiredAt: new Date() });
+      const passkey = await insertUserPasskey(db, { userId: user.id });
+      const service = await build();
+
+      await expect(
+        service.remove(user.id, passkey.id, password),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -584,7 +604,7 @@ describe('PasskeysService — management (OS-485)', () => {
       await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
-      await service.remove(user.id, user.accountId, first.id, password);
+      await service.remove(user.id, first.id, password);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(1);
     });
@@ -595,7 +615,7 @@ describe('PasskeysService — management (OS-485)', () => {
       await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
       const service = await build();
 
-      await service.remove(user.id, user.accountId, passkey.id, password);
+      await service.remove(user.id, passkey.id, password);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
     });
@@ -611,8 +631,8 @@ describe('PasskeysService — management (OS-485)', () => {
       const service = await build();
 
       const results = await Promise.allSettled([
-        service.remove(user.id, user.accountId, first.id, password),
-        service.remove(user.id, user.accountId, second.id, password),
+        service.remove(user.id, first.id, password),
+        service.remove(user.id, second.id, password),
       ]);
 
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
@@ -627,7 +647,7 @@ describe('PasskeysService — management (OS-485)', () => {
       const passkey = await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
-      await service.remove(user.id, user.accountId, passkey.id, password);
+      await service.remove(user.id, passkey.id, password);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
     });

@@ -7,9 +7,14 @@ import { Alert, AlertDescription, AlertTitle } from "ui/alert";
 import { Button } from "ui/button";
 import { useAcceptInviteMutation } from "../auth.hooks";
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { InfoIcon } from "lucide-react";
 import { appConfig } from "../../../config";
+import {
+  FactorSetupDialogs,
+  FactorSetupOptions,
+  useFactorSetup,
+} from "../../passkeys/components/factor-setup";
 
 const JoinFormSchema = z.object({
   password: z.string().min(8),
@@ -21,6 +26,21 @@ export function JoinView(props: { token: string }) {
   const acceptInvite = useAcceptInviteMutation();
   const navigate = useNavigate();
   const [errorMessage, setErrorMessage] = useState("");
+  // non-null once the invite is accepted — the view then shows the factor
+  // step in place of the password form (same view, no route change, like
+  // signin's challenge step). Holds the password they just chose so the
+  // authenticator flow doesn't immediately ask for it again; it lives only
+  // as long as this view does.
+  const [joinedPassword, setJoinedPassword] = useState<string | null>(null);
+
+  // This step is a convenience, not the enforcement: accepting the invite
+  // stamped users.factor_required_at, so leaving now lands on
+  // /app/settings/security?required=true and every gated API call 403s
+  // until a factor exists. Hence no "Not now".
+  const factorSetup = useFactorSetup({
+    onEnrolled: () => navigate({ to: appConfig.homeRoute }),
+    knownPassword: joinedPassword ?? undefined,
+  });
 
   const form = useForm<JoinForm>({
     resolver: zodResolver(JoinFormSchema),
@@ -36,9 +56,7 @@ export function JoinView(props: { token: string }) {
             "This invite link is invalid or has expired. Ask the account owner to resend it.",
           );
         },
-        onSuccess: () => {
-          navigate({ to: appConfig.homeRoute });
-        },
+        onSuccess: () => setJoinedPassword(formData.password),
       },
     );
   }
@@ -49,8 +67,36 @@ export function JoinView(props: { token: string }) {
       <Alert variant="destructive">
         <InfoIcon />
         <AlertTitle>Couldn't join</AlertTitle>
-        <AlertDescription>{errorMessage}</AlertDescription>
+        <AlertDescription>
+          <p>{errorMessage}</p>
+          {/* an invite is spent the moment it's accepted, so reloading this
+              page mid-way through the factor step (OS-494) lands here too —
+              that person has an account and just needs the way back in */}
+          <p>
+            Already set your password?{" "}
+            <Link to="/signin">Sign in</Link>
+          </p>
+        </AlertDescription>
       </Alert>
+    );
+  }
+
+  if (joinedPassword !== null) {
+    return (
+      <div className="h-full flex items-center">
+        <div className="max-w-sm mx-auto w-full space-y-6">
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold">Secure your account</h1>
+            <p className="text-sm text-muted-foreground">
+              Password set. One more step before you reach the dashboard: add
+              a passkey or an authenticator app so a password alone can&apos;t
+              get into your team&apos;s store.
+            </p>
+          </div>
+          <FactorSetupOptions setup={factorSetup} />
+        </div>
+        <FactorSetupDialogs setup={factorSetup} />
+      </div>
     );
   }
 
@@ -80,7 +126,7 @@ export function JoinView(props: { token: string }) {
           />
 
           <Button type="submit" className="w-full" disabled={acceptInvite.isPending}>
-            {acceptInvite.isPending ? "Joining..." : "Set password & sign in"}
+            {acceptInvite.isPending ? "Joining..." : "Set password & continue"}
           </Button>
         </form>
       </div>
