@@ -427,11 +427,19 @@ export class PasskeysService {
   // Requires current-password re-entry, the same bar as disabling TOTP: the
   // point of a second factor is that a password alone shouldn't be enough to
   // weaken an account.
+  //
+  // And it ends the way AuthService.disableMfa does, for the same reason:
+  // once the passkey is gone every other Session is revoked and the caller's
+  // own is rotated in place (SessionsService.revokeOthersAndRotate) — if
+  // someone else registered that passkey, their Session must not outlive it.
+  // Nothing is touched when the removal is refused. Returns the replacement
+  // pair for the caller to set as the new refresh cookie.
   async remove(
     userId: number,
     passkeyId: number,
     password: string,
-  ): Promise<void> {
+    callerRefreshToken: string | undefined,
+  ): Promise<TokenPair> {
     await this.authService.verifyPassword(userId, password);
 
     const [passkey] = await this.db
@@ -469,6 +477,11 @@ export class PasskeysService {
         .delete(userPasskeysTable)
         .where(eq(userPasskeysTable.id, passkey.id));
     });
+
+    return this.sessionsService.revokeOthersAndRotate(
+      userId,
+      callerRefreshToken,
+    );
   }
 
   // Clone detection plus the last-used stamp, shared by both assertion paths

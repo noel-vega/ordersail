@@ -159,18 +159,33 @@ export class AuthController {
     return this.authService.confirmMfa(user.sub, dto.code, dto.password);
   }
 
+  // Removing a Factor ends every other Session this User holds and rotates
+  // this browser's — the same ending as me/change-password, and the same
+  // response for it: the cookie is read in, a rotated replacement written
+  // back out, and the re-minted access token returned (OS-554). A refusal
+  // (wrong password, last Factor while one is required) touches no Session
+  // and writes no cookie.
   @AuthenticatedOnly()
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @Post('mfa/disable')
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse()
+  @ApiOkResponse({ type: AccessTokenDto })
   @ApiUnauthorizedResponse()
   @ApiConflictResponse()
   async disableMfa(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: MfaDisableDto,
-  ): Promise<void> {
-    await this.authService.disableMfa(user.sub, dto.password);
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    return respondWithSession(
+      res,
+      await this.authService.disableMfa(
+        user.sub,
+        dto.password,
+        readSessionCookie(req),
+      ),
+    );
   }
 
   @AuthenticatedOnly()

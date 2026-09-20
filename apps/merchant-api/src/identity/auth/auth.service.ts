@@ -461,14 +461,28 @@ export class AuthService {
   // shouldn't be enough to weaken an account's security. Refused outright
   // while a factor is required of this user (account-wide OS-473, or the
   // invited-staff stamp OS-494) — otherwise a caller could
-  // self-disable and keep full access with no factor at all until their
-  // access token ran out (mfaEnrollmentSatisfied is computed when a token
-  // is minted, not per request), only to be walked back to the enrollment
-  // gate at the next refresh. That window is 15 minutes at most, but a
-  // requirement with a hole in it isn't one, and allowing the removal
-  // buys the user nothing they get to keep. An Owner must turn the
-  // requirement off first if this user genuinely needs to stop using MFA.
-  async disableMfa(userId: number, password: string): Promise<void> {
+  // drop the one Factor the requirement exists to guarantee. They wouldn't
+  // even get to keep the access: the rotation below re-mints their claims,
+  // so they'd be walked straight back to the enrollment gate — but a
+  // requirement with a hole in it isn't one, and allowing the removal buys
+  // the user nothing they get to keep. An Owner must turn the requirement
+  // off first if this user genuinely needs to stop using MFA.
+  //
+  // Removing a Factor is a credential change, the same kind of event as
+  // changing the password, so it ends the same way: every other Session is
+  // revoked and the caller's own is rotated in place (see
+  // SessionsService.revokeOthersAndRotate). If someone else is signed in as
+  // this User, they may well be why the Factor is being removed. Only once
+  // the Factor is actually gone, though — a refusal above changed no
+  // credential, so it must not cost anyone their Session. Returns the
+  // replacement pair for the caller to set as the new refresh cookie, the
+  // same contract changePassword has. (Adding a Factor does none of this: it
+  // only strengthens sign-in.)
+  async disableMfa(
+    userId: number,
+    password: string,
+    callerRefreshToken: string | undefined,
+  ): Promise<TokenPair> {
     await this.verifyPassword(userId, password);
 
     // One locked transaction for the whole check-and-delete: otherwise this
@@ -499,6 +513,11 @@ export class AuthService {
         .where(eq(userMfaRecoveryCodesTable.userId, userId));
       await tx.delete(userMfaTable).where(eq(userMfaTable.userId, userId));
     });
+
+    return this.sessionsService.revokeOthersAndRotate(
+      userId,
+      callerRefreshToken,
+    );
   }
 
   // Requires current-password re-entry (see confirmMfa) — a stolen bearer

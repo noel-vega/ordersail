@@ -2326,7 +2326,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessTokenDto"];
+                };
             };
             401: {
                 headers: {
@@ -2957,7 +2959,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AccessTokenDto"];
+                };
             };
             401: {
                 headers: {

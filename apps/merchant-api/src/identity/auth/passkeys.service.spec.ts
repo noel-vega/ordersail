@@ -255,6 +255,26 @@ describe('PasskeysService — registration (OS-485)', () => {
     expect(await db.select().from(userRefreshTokensTable)).toHaveLength(1);
   });
 
+  // Adding a Factor only strengthens sign-in, so nobody is signed out for it
+  // — the opposite of remove() (see "the Sessions it ends" below).
+  it("leaves the User's other Sessions alive (OS-554)", async () => {
+    const { user } = await seedUser();
+    const ref = await buildRef();
+    const service = ref.get(PasskeysService);
+    const sessions = ref.get(SessionsService);
+    const otherBrowser = await sessions.start(user.id);
+    const challenge = await optionsChallengeFor(service, user.id);
+    verifierReturns('new-credential');
+
+    await service.verifyRegistration(
+      user.id,
+      responseFor(challenge) as never,
+      undefined,
+    );
+
+    await expectWorkingSession(sessions, otherBrowser, user.id);
+  });
+
   it('never returns the credential id or public key', async () => {
     const { user } = await seedUser();
     const service = await build();
@@ -546,7 +566,7 @@ describe('PasskeysService — management (OS-485)', () => {
     const passkey = await insertUserPasskey(db, { userId: user.id });
     const service = await build();
 
-    await service.remove(user.id, passkey.id, password);
+    await service.remove(user.id, passkey.id, password, undefined);
 
     expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
   });
@@ -557,7 +577,7 @@ describe('PasskeysService — management (OS-485)', () => {
     const service = await build();
 
     await expect(
-      service.remove(user.id, passkey.id, 'wrong'),
+      service.remove(user.id, passkey.id, 'wrong', undefined),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(await db.select().from(userPasskeysTable)).toHaveLength(1);
   });
@@ -569,7 +589,7 @@ describe('PasskeysService — management (OS-485)', () => {
     const service = await build();
 
     await expect(
-      service.remove(user.id, theirs.id, password),
+      service.remove(user.id, theirs.id, password, undefined),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -580,7 +600,7 @@ describe('PasskeysService — management (OS-485)', () => {
       const service = await build();
 
       await expect(
-        service.remove(user.id, passkey.id, password),
+        service.remove(user.id, passkey.id, password, undefined),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -592,7 +612,7 @@ describe('PasskeysService — management (OS-485)', () => {
       const service = await build();
 
       await expect(
-        service.remove(user.id, passkey.id, password),
+        service.remove(user.id, passkey.id, password, undefined),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -602,7 +622,7 @@ describe('PasskeysService — management (OS-485)', () => {
       await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
-      await service.remove(user.id, first.id, password);
+      await service.remove(user.id, first.id, password, undefined);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(1);
     });
@@ -613,7 +633,7 @@ describe('PasskeysService — management (OS-485)', () => {
       await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
       const service = await build();
 
-      await service.remove(user.id, passkey.id, password);
+      await service.remove(user.id, passkey.id, password, undefined);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
     });
@@ -629,8 +649,8 @@ describe('PasskeysService — management (OS-485)', () => {
       const service = await build();
 
       const results = await Promise.allSettled([
-        service.remove(user.id, first.id, password),
-        service.remove(user.id, second.id, password),
+        service.remove(user.id, first.id, password, undefined),
+        service.remove(user.id, second.id, password, undefined),
       ]);
 
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
@@ -645,9 +665,116 @@ describe('PasskeysService — management (OS-485)', () => {
       const passkey = await insertUserPasskey(db, { userId: user.id });
       const service = await build();
 
-      await service.remove(user.id, passkey.id, password);
+      await service.remove(user.id, passkey.id, password, undefined);
 
       expect(await db.select().from(userPasskeysTable)).toHaveLength(0);
+    });
+  });
+
+  // Removing a Factor is a credential change, the same kind of event as
+  // changing the password — if someone else added that passkey, their Session
+  // must not outlive it. The sweep itself is
+  // SessionsService.revokeOthersAndRotate's suite (sessions.service.spec);
+  // these pin that remove() reaches it, and when.
+  describe('the Sessions it ends (OS-554)', () => {
+    async function buildWithSessions() {
+      const ref = await buildRef();
+      return {
+        service: ref.get(PasskeysService),
+        sessions: ref.get(SessionsService),
+      };
+    }
+
+    // Rows rather than behaviour, and only alongside a behavioural check:
+    // "the old token was rotated out" isn't observable from outside inside
+    // the refresh grace window, where presenting it replays its successor.
+    async function liveRefreshTokenCount(userId: number): Promise<number> {
+      const rows = await db
+        .select()
+        .from(userRefreshTokensTable)
+        .where(eq(userRefreshTokensTable.userId, userId));
+      return rows.filter((r) => r.revokedAt === null).length;
+    }
+
+    it("ends the User's other Sessions and rotates the caller's", async () => {
+      const { user } = await seedUser();
+      const passkey = await insertUserPasskey(db, { userId: user.id });
+      const { service, sessions } = await buildWithSessions();
+      const caller = await sessions.start(user.id);
+      const otherBrowser = await sessions.start(user.id);
+
+      const replacement = await service.remove(
+        user.id,
+        passkey.id,
+        password,
+        caller.refresh_token,
+      );
+
+      await expect(
+        sessions.refreshTokens(otherBrowser.refresh_token),
+      ).rejects.toThrow('Invalid or expired token');
+      // rotated, not spared: the token the caller walked in with is retired
+      // and the one handed back is the only live one the User has
+      expect(replacement.refresh_token).not.toBe(caller.refresh_token);
+      expect(await liveRefreshTokenCount(user.id)).toBe(1);
+      await expectWorkingSession(sessions, replacement, user.id);
+    });
+
+    it('starts a fresh Session when no cookie is presented, and nothing else survives', async () => {
+      const { user } = await seedUser();
+      const passkey = await insertUserPasskey(db, { userId: user.id });
+      const { service, sessions } = await buildWithSessions();
+      const someBrowser = await sessions.start(user.id);
+
+      const fresh = await service.remove(
+        user.id,
+        passkey.id,
+        password,
+        undefined,
+      );
+
+      await expect(
+        sessions.refreshTokens(someBrowser.refresh_token),
+      ).rejects.toThrow('Invalid or expired token');
+      expect(await liveRefreshTokenCount(user.id)).toBe(1);
+      await expectWorkingSession(sessions, fresh, user.id);
+    });
+
+    // Order matters: a refused removal changed no credential, so it must not
+    // cost anyone their Session either.
+    it('touches no Session when the last-Factor rule refuses', async () => {
+      const { user } = await seedUser({ requireMfaAt: new Date() });
+      const passkey = await insertUserPasskey(db, { userId: user.id });
+      const { service, sessions } = await buildWithSessions();
+      const caller = await sessions.start(user.id);
+      const otherBrowser = await sessions.start(user.id);
+
+      await expect(
+        service.remove(user.id, passkey.id, password, caller.refresh_token),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      await expectWorkingSession(sessions, caller, user.id);
+      await expectWorkingSession(sessions, otherBrowser, user.id);
+    });
+
+    it("touches no Session on a wrong password or someone else's passkey", async () => {
+      const { user } = await seedUser();
+      const { user: other } = await seedUser();
+      const mine = await insertUserPasskey(db, { userId: user.id });
+      const theirs = await insertUserPasskey(db, { userId: other.id });
+      const { service, sessions } = await buildWithSessions();
+      const caller = await sessions.start(user.id);
+      const otherBrowser = await sessions.start(user.id);
+
+      await expect(
+        service.remove(user.id, mine.id, 'wrong', caller.refresh_token),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(
+        service.remove(user.id, theirs.id, password, caller.refresh_token),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      await expectWorkingSession(sessions, caller, user.id);
+      await expectWorkingSession(sessions, otherBrowser, user.id);
     });
   });
 

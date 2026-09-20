@@ -141,6 +141,18 @@ async function build() {
   return (await buildBoth()).service;
 }
 
+// How many refresh tokens this User could still redeem. Rows rather than
+// behaviour, and only ever alongside a behavioural check: "the old token was
+// rotated out" isn't observable from outside inside the refresh grace window,
+// where presenting it replays its successor.
+async function liveRefreshTokenCount(userId: number): Promise<number> {
+  const rows = await db
+    .select()
+    .from(userRefreshTokensTable)
+    .where(eq(userRefreshTokensTable.userId, userId));
+  return rows.filter((r) => r.revokedAt === null).length;
+}
+
 const signupDto = {
   businessName: 'Cactus Coffee',
   firstName: 'Dana',
@@ -1035,6 +1047,23 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         user: { sub: user.id },
       });
     });
+
+    // Adding a Factor only strengthens sign-in, so nobody is signed out for
+    // it — the opposite of disableMfa below.
+    it("leaves the User's other Sessions alive (OS-554)", async () => {
+      const user = await seedUserWithPassword();
+      const { service, sessions } = await buildBoth();
+      const otherBrowser = await sessions.start(user.id);
+      const { otpauthUrl } = await service.enrollMfa(user.id);
+
+      await service.confirmMfa(
+        user.id,
+        await freshTotpCode(extractSecret(otpauthUrl)),
+        password,
+      );
+
+      await expectWorkingSession(sessions, otherBrowser, user.id);
+    });
   });
 
   describe('verifyMfaChallenge', () => {
@@ -1242,7 +1271,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       const service = await build();
 
       await expect(
-        service.disableMfa(user.id, 'wrong-password'),
+        service.disableMfa(user.id, 'wrong-password', undefined),
       ).rejects.toThrow();
     });
 
@@ -1252,7 +1281,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       await insertUserMfaRecoveryCode(db, { userId: user.id });
       const service = await build();
 
-      await service.disableMfa(user.id, password);
+      await service.disableMfa(user.id, password, undefined);
 
       const mfaRows = await db
         .select()
@@ -1276,9 +1305,9 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .where(eq(accountsTable.id, user.accountId));
       const service = await build();
 
-      await expect(service.disableMfa(user.id, password)).rejects.toThrow(
-        'Your account requires MFA',
-      );
+      await expect(
+        service.disableMfa(user.id, password, undefined),
+      ).rejects.toThrow('Your account requires MFA');
 
       const mfaRows = await db
         .select()
@@ -1300,9 +1329,9 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
       await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
       const service = await build();
 
-      await expect(service.disableMfa(user.id, password)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.disableMfa(user.id, password, undefined),
+      ).rejects.toThrow(ConflictException);
 
       const mfaRows = await db
         .select()
@@ -1324,13 +1353,94 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
         .where(eq(accountsTable.id, user.accountId));
       const service = await build();
 
-      await service.disableMfa(user.id, password);
+      await service.disableMfa(user.id, password, undefined);
 
       const mfaRows = await db
         .select()
         .from(userMfaTable)
         .where(eq(userMfaTable.userId, user.id));
       expect(mfaRows).toHaveLength(0);
+    });
+
+    // Removing a Factor is a credential change, the same kind of event as
+    // changing the password: whoever else is signed in may be the reason it's
+    // being removed. The sweep itself is SessionsService.revokeOthersAndRotate's
+    // suite (sessions.service.spec); these pin that disableMfa reaches it, and
+    // when.
+    describe('the Sessions it ends (OS-554)', () => {
+      it("ends the User's other Sessions and rotates the caller's", async () => {
+        const user = await seedUserWithPassword();
+        await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+        const { service, sessions } = await buildBoth();
+        const caller = await sessions.start(user.id);
+        const otherBrowser = await sessions.start(user.id);
+
+        const replacement = await service.disableMfa(
+          user.id,
+          password,
+          caller.refresh_token,
+        );
+
+        await expect(
+          sessions.refreshTokens(otherBrowser.refresh_token),
+        ).rejects.toThrow('Invalid or expired token');
+        // rotated, not spared: the token the caller walked in with is retired
+        // and the one handed back is the only live one the User has
+        expect(replacement.refresh_token).not.toBe(caller.refresh_token);
+        expect(await liveRefreshTokenCount(user.id)).toBe(1);
+        await expectWorkingSession(sessions, replacement, user.id);
+      });
+
+      it('starts a fresh Session when no cookie is presented, and nothing else survives', async () => {
+        const user = await seedUserWithPassword();
+        await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+        const { service, sessions } = await buildBoth();
+        const someBrowser = await sessions.start(user.id);
+
+        const fresh = await service.disableMfa(user.id, password, undefined);
+
+        await expect(
+          sessions.refreshTokens(someBrowser.refresh_token),
+        ).rejects.toThrow('Invalid or expired token');
+        expect(await liveRefreshTokenCount(user.id)).toBe(1);
+        await expectWorkingSession(sessions, fresh, user.id);
+      });
+
+      // Order matters: a refused removal changed no credential, so it must
+      // not cost anyone their Session either.
+      it('touches no Session when the last-Factor rule refuses', async () => {
+        const user = await seedUserWithPassword();
+        await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+        await db
+          .update(accountsTable)
+          .set({ requireMfaAt: new Date() })
+          .where(eq(accountsTable.id, user.accountId));
+        const { service, sessions } = await buildBoth();
+        const caller = await sessions.start(user.id);
+        const otherBrowser = await sessions.start(user.id);
+
+        await expect(
+          service.disableMfa(user.id, password, caller.refresh_token),
+        ).rejects.toThrow(ConflictException);
+
+        await expectWorkingSession(sessions, caller, user.id);
+        await expectWorkingSession(sessions, otherBrowser, user.id);
+      });
+
+      it('touches no Session on a wrong password', async () => {
+        const user = await seedUserWithPassword();
+        await insertUserMfa(db, { userId: user.id, confirmedAt: new Date() });
+        const { service, sessions } = await buildBoth();
+        const caller = await sessions.start(user.id);
+        const otherBrowser = await sessions.start(user.id);
+
+        await expect(
+          service.disableMfa(user.id, 'wrong-password', caller.refresh_token),
+        ).rejects.toThrow(UnauthorizedException);
+
+        await expectWorkingSession(sessions, caller, user.id);
+        await expectWorkingSession(sessions, otherBrowser, user.id);
+      });
     });
   });
 

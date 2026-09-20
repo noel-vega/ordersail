@@ -6,6 +6,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -40,8 +41,8 @@ import {
 } from './dto/passkey-challenge.dto';
 import { PasskeySignInVerifyDto } from './dto/passkey-signin.dto';
 import { AccessTokenDto } from './dto/access-token.dto';
-import { respondWithSession } from './session-cookie';
-import type { FastifyReply } from 'fastify';
+import { readSessionCookie, respondWithSession } from './session-cookie';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 // A separate controller rather than more routes on the 391-line
 // auth.controller.ts — route-guard-coverage.spec.ts filesystem-scans for
@@ -185,19 +186,34 @@ export class PasskeysController {
   // POST rather than DELETE: removal takes a password in the body, and
   // bodies on DELETE are legal but flaky through proxies. Matches the
   // existing precedent at pos-devices.controller.ts's :id/revoke.
+  //
+  // Ends like auth/mfa/disable and me/change-password: removing a Factor
+  // revokes the User's other Sessions and rotates this browser's, so the
+  // cookie is read in, its replacement written back out, and the re-minted
+  // access token returned (OS-554).
   @AuthenticatedOnly()
   @SkipMfaEnrollment()
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @Post(':id/remove')
   @ApiBearerAuth('JWT-auth')
-  @ApiOkResponse()
+  @ApiOkResponse({ type: AccessTokenDto })
   @ApiUnauthorizedResponse()
   @ApiConflictResponse()
   async remove(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: PasskeyRemoveDto,
-  ): Promise<void> {
-    await this.passkeysService.remove(user.sub, id, dto.password);
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AccessTokenDto> {
+    return respondWithSession(
+      res,
+      await this.passkeysService.remove(
+        user.sub,
+        id,
+        dto.password,
+        readSessionCookie(req),
+      ),
+    );
   }
 }

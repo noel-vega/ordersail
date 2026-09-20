@@ -25,12 +25,20 @@ export function createMfaResource(
       return result;
     },
 
-    disable: async (params: components["schemas"]["MfaDisableDto"]) =>
-      unwrap(
+    // Removing a factor is a credential change (OS-554): the API revokes
+    // every other session and rotates this browser's refresh cookie in place,
+    // exactly as changePassword() does, so the caller stays signed in here.
+    // The re-minted access token it hands back is adopted for the same
+    // reason — its claims were recomputed from the database.
+    disable: async (params: components["schemas"]["MfaDisableDto"]) => {
+      const result = unwrap(
         await doRequest(() =>
           client.POST("/auth/mfa/disable", { body: params }),
         ),
-      ),
+      );
+      if (result.access_token) setAccessToken(result.access_token);
+      return result;
+    },
 
     regenerateRecoveryCodes: async (
       params: components["schemas"]["MfaRegenerateRecoveryCodesDto"],

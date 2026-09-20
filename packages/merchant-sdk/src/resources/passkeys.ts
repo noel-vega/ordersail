@@ -103,17 +103,23 @@ export function createPasskeysResource(
         ),
       ),
 
+    // Same ending as mfa.disable: removing a factor revokes every other
+    // session and rotates this browser's refresh cookie (OS-554), and the
+    // re-minted access token that comes back is adopted.
     remove: async (
       id: number,
       params: components["schemas"]["PasskeyRemoveDto"],
-    ) =>
-      unwrap(
+    ) => {
+      const result = unwrap(
         await doRequest(() =>
           client.POST("/auth/passkeys/{id}/remove", {
             params: { path: { id } },
             body: params,
           }),
         ),
-      ),
+      );
+      if (result.access_token) setAccessToken(result.access_token);
+      return result;
+    },
   };
 }
