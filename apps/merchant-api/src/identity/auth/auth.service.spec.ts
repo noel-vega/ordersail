@@ -464,6 +464,11 @@ describe('AuthService.resetPassword — a new password ends every Session', () =
     );
   });
 
+  // Beyond the module suite: it proves nothing about links at all. The
+  // module's races are two redemptions against each other; this is a
+  // redemption against a Session refresh, and what it asserts is the
+  // effect's reach — no refresh token left alive on either side.
+  //
   // The reset exists to lock out whoever holds the old password's Sessions,
   // and their browser refreshes on every navigation — so the reset can land
   // while one of those refreshes has inserted a successor it hasn't
@@ -701,6 +706,11 @@ describe('AuthService.acceptInvite — a deactivated User', () => {
 // lookup and both activate — two Sessions out of one Invite, and whichever
 // password landed second is the one they have. Staged on the User's row so
 // it is a race on every run, not on the runs the scheduler obliges.
+//
+// Beyond the module suite, which proves the effect runs once: what this
+// flow makes of that — one Session rather than two, one of the two
+// passwords rather than a mix, and the loser answered as an invalid Invite
+// rather than a 500.
 describe('AuthService.acceptInvite — the same Invite followed twice at once', () => {
   it('joins once and starts one Session; the other attempt is refused like an invalid invite', async () => {
     const account = await insertAccount(db);

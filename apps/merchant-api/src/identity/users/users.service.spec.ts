@@ -702,6 +702,11 @@ describe('UsersService.setDeactivated withdraws Emailed links (OS-559)', () => {
     ).toEqual({ redeemed: true, result: user.id });
   });
 
+  // Beyond the module suite, whose deactivation race is a bare UPDATE
+  // standing in for this one: here the real setDeactivated runs, so what is
+  // asserted is that its own second write — the withdrawal — queues rather
+  // than deadlocks, and still sweeps the link the redemption didn't take.
+  //
   // The cycle this ticket closes. Until now a deactivation touched no link
   // table, so however either side was written the two could not deadlock;
   // now both transactions want the User's row and rows that hang off it,
@@ -742,7 +747,11 @@ describe('UsersService.setDeactivated withdraws Emailed links (OS-559)', () => {
     ).toEqual({ redeemed: false });
   });
 
-  // The other order: the deactivation holds the User's row first, so the
+  // Beyond the module suite: the losing order, which only the real
+  // deactivation can produce — a link withdrawn by another service's
+  // transaction, not used up by a rival redemption.
+  //
+  // The deactivation holds the User's row first, so the
   // redemption — which read a live link row before parking — is let through
   // only once the withdrawal has committed. It must find nothing to claim
   // and write nothing, rather than act on the row it read.

@@ -18,11 +18,17 @@ type EmailedLinkTable =
   | typeof userPasswordResetsTable
   | typeof userEmailVerificationsTable;
 
-// The table an Emailed link's subject lives in. One today; a storefront
-// Customer's links would name theirs, which is the reason this is declared
-// per kind rather than assumed. Declaring it is what lets *redeem* take the
-// subject-row lock itself instead of trusting each caller to remember —
-// see EmailedLinksService for why that lock comes first.
+// The table an Emailed link's subject lives in. One member wide today, and
+// the reason it is a field at all is a present one: it is what lets issue,
+// redeem and revokeAllForSubject take the subject-row lock themselves
+// rather than trusting each caller to remember it — see
+// EmailedLinksService for why that lock comes first. The alternative isn't
+// "drop the field", it is "assume usersTable here and hope", which is the
+// same bet with nowhere to write it down.
+//
+// It is also the seam a second subject table would turn on — a storefront
+// Customer's links would name theirs, which is part of what makes this
+// module liftable (OS-546) — but nothing here is built for that yet.
 type EmailedLinkSubjectTable = typeof usersTable;
 
 export interface EmailedLinkKind {
