@@ -181,7 +181,7 @@ export class UsersService {
     }
 
     try {
-      const { user, token } = await this.db.transaction(async (tx) => {
+      const { user, secret } = await this.db.transaction(async (tx) => {
         const [user] = await tx
           .insert(usersTable)
           .values({
@@ -234,16 +234,16 @@ export class UsersService {
             );
         }
 
-        const token = await this.emailedLinksService.issue(
+        const secret = await this.emailedLinksService.issue(
           'invite',
           user.id,
           tx,
         );
 
-        return { user, token };
+        return { user, secret };
       });
 
-      const inviteUrl = `${env.MERCHANT_WEB_URL}/join?token=${token}`;
+      const inviteUrl = `${env.MERCHANT_WEB_URL}/join?token=${secret}`;
       await this.emailService.sendInviteEmail(user.email, {
         firstName: user.firstname,
         inviteUrl,
@@ -742,9 +742,9 @@ export class UsersService {
 
     if (!user || user.password) return undefined;
 
-    const token = await this.emailedLinksService.issue('invite', userId);
+    const secret = await this.emailedLinksService.issue('invite', userId);
 
-    const inviteUrl = `${env.MERCHANT_WEB_URL}/join?token=${token}`;
+    const inviteUrl = `${env.MERCHANT_WEB_URL}/join?token=${secret}`;
     await this.emailService.sendInviteEmail(user.email, {
       firstName: user.firstname,
       inviteUrl,

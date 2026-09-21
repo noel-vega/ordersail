@@ -642,10 +642,10 @@ export class AuthService {
   //    403. Throwing from inside the effect is what makes it a refusal
   //    that does not use the link up: the claim rolls back with it, so the
   //    link still works for whoever it was actually sent to.
-  async verifyEmail(userId: number, token: string) {
+  async verifyEmail(userId: number, secret: string) {
     const outcome = await this.emailedLinks.redeem(
       'emailVerification',
-      token,
+      secret,
       async (tx, subjectId) => {
         if (subjectId !== userId) {
           throw new ForbiddenException(
@@ -698,9 +698,9 @@ export class AuthService {
     // the earlier email useless without this flow doing anything about it.
     // What's left here is the part that is about email verification: the
     // URL merchant-web serves, and the email that carries it.
-    const token = await this.emailedLinks.issue('emailVerification', user.id);
+    const secret = await this.emailedLinks.issue('emailVerification', user.id);
 
-    const verifyUrl = `${env.MERCHANT_WEB_URL}/verify-email?token=${token}`;
+    const verifyUrl = `${env.MERCHANT_WEB_URL}/verify-email?token=${secret}`;
     await this.emailService.sendVerificationEmail(user.email, {
       firstName: user.firstname,
       verifyUrl,
@@ -720,9 +720,9 @@ export class AuthService {
     // the replacement of any link still outstanding; what's left here is the
     // part that is about password reset — who gets one, and what the email
     // says.
-    const token = await this.emailedLinks.issue('passwordReset', user.id);
+    const secret = await this.emailedLinks.issue('passwordReset', user.id);
 
-    const resetUrl = `${env.MERCHANT_WEB_URL}/reset-password?token=${token}`;
+    const resetUrl = `${env.MERCHANT_WEB_URL}/reset-password?token=${secret}`;
     await this.emailService.sendPasswordResetEmail(user.email, {
       firstName: user.firstname,
       resetUrl,
@@ -746,7 +746,7 @@ export class AuthService {
   //
   // The refusal is one answer for unknown, expired and already-used, so a
   // link tells whoever presents it nothing.
-  async resetPassword(token: string, newPassword: string): Promise<void> {
+  async resetPassword(secret: string, newPassword: string): Promise<void> {
     // Hashed before the transaction opens, not inside the effect: bcrypt
     // takes ~100ms and the effect runs holding this User's row locked, with
     // every concurrent operation on them queued behind it. The cost is a
@@ -757,7 +757,7 @@ export class AuthService {
 
     const outcome = await this.emailedLinks.redeem(
       'passwordReset',
-      token,
+      secret,
       async (tx, userId) => {
         await tx
           .update(usersTable)

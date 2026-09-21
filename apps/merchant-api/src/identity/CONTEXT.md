@@ -47,7 +47,9 @@ A single-use, expiring link sent to a User's inbox; following it proves control
 of that inbox and nothing more. Three kinds — Invite, password reset, email
 verification — and issuing a new one replaces the last of its kind.
 _Avoid_: Magic link (it never signs anyone in by itself), token (that is how a
-link is recognised, not what it is), OTP.
+link is recognised, not what it is), OTP. In code the value a link carries is a
+_secret_; `?token=` in the URL and the `token` column keep the old word because
+each is a contract — with merchant-web and with the schema.
 
 **Invite**:
 The Emailed link that lets a person join an Account as a User by choosing their
