@@ -1,12 +1,12 @@
-import { eq, usersTable } from 'db/identity';
+import { eq } from 'db/identity';
 import {
   deactivateUser,
+  firstnameOf,
   insertAccountWithUser,
   lockWaiters,
   raceForUserRow,
   useTestDb,
 } from 'test-support';
-import { type DbTransaction } from 'src/shared/database/database.types';
 import { emailedLinkDigest } from './emailed-link-digest';
 import {
   EMAILED_LINK_KINDS,
@@ -17,6 +17,7 @@ import { EmailedLinksService } from './emailed-links.service';
 import {
   expireEmailedLink,
   outstandingLinkCount,
+  renameTo,
 } from './emailed-links.spec-support';
 
 // The Emailed links seam. Every question here is one a person could ask of
@@ -37,28 +38,6 @@ async function seedSubject() {
   return (await insertAccountWithUser(db)).user;
 }
 
-// The effects in this suite write the subject's row, because all three real
-// ones do (set the password, verify the email, activate the Staff record) —
-// and because a race that is staged on that row needs its contenders to
-// want it. The column is arbitrary: nothing else in this suite reads it.
-function renameTo(name: string) {
-  return async (tx: DbTransaction, subjectId: number) => {
-    await tx
-      .update(usersTable)
-      .set({ firstname: name })
-      .where(eq(usersTable.id, subjectId));
-    return subjectId;
-  };
-}
-
-async function firstnameOf(userId: number): Promise<string | undefined> {
-  const [row] = await db
-    .select({ firstname: usersTable.firstname })
-    .from(usersTable)
-    .where(eq(usersTable.id, userId));
-  return row?.firstname;
-}
-
 describe.each(EMAILED_LINK_KIND_NAMES)('Emailed link: %s', (kind) => {
   it('runs the effect for the subject the link was issued to, and uses the link up', async () => {
     const subject = await seedSubject();
@@ -68,7 +47,7 @@ describe.each(EMAILED_LINK_KIND_NAMES)('Emailed link: %s', (kind) => {
     const outcome = await links.redeem(kind, secret, renameTo('Redeemed'));
 
     expect(outcome).toEqual({ redeemed: true, result: subject.id });
-    expect(await firstnameOf(subject.id)).toBe('Redeemed');
+    expect(await firstnameOf(db, subject.id)).toBe('Redeemed');
     expect(await outstandingLinkCount(db, kind, subject.id)).toBe(0);
   });
 
@@ -81,7 +60,7 @@ describe.each(EMAILED_LINK_KIND_NAMES)('Emailed link: %s', (kind) => {
     const second = await links.redeem(kind, secret, renameTo('Second'));
 
     expect(second).toEqual({ redeemed: false });
-    expect(await firstnameOf(subject.id)).toBe('First');
+    expect(await firstnameOf(db, subject.id)).toBe('First');
   });
 
   it('refuses a secret nobody was ever sent', async () => {
@@ -123,14 +102,14 @@ describe.each(EMAILED_LINK_KIND_NAMES)('Emailed link: %s', (kind) => {
     });
     // ...and the replacement happened in place, rather than leaving the
     // subject holding two outstanding links of one kind
-    expect(await firstnameOf(subject.id)).toBe('New');
+    expect(await firstnameOf(db, subject.id)).toBe('New');
   });
 
   it('leaves the link redeemable when the effect throws — nothing it wrote survives either', async () => {
     const subject = await seedSubject();
     const links = service();
     const secret = await links.issue(kind, subject.id);
-    const before = await firstnameOf(subject.id);
+    const before = await firstnameOf(db, subject.id);
 
     await expect(
       links.redeem(kind, secret, async (tx, subjectId) => {
@@ -139,12 +118,12 @@ describe.each(EMAILED_LINK_KIND_NAMES)('Emailed link: %s', (kind) => {
       }),
     ).rejects.toThrow('the effect refused');
 
-    expect(await firstnameOf(subject.id)).toBe(before);
+    expect(await firstnameOf(db, subject.id)).toBe(before);
     expect(await links.redeem(kind, secret, renameTo('Retried'))).toEqual({
       redeemed: true,
       result: subject.id,
     });
-    expect(await firstnameOf(subject.id)).toBe('Retried');
+    expect(await firstnameOf(db, subject.id)).toBe('Retried');
   });
 
   // The case a link is single-use *for*. Lookup, act and delete as separate
@@ -168,7 +147,7 @@ describe.each(EMAILED_LINK_KIND_NAMES)('Emailed link: %s', (kind) => {
     expect(effect).toHaveBeenCalledTimes(1);
     expect(outcomes).toContainEqual({ redeemed: true, result: subject.id });
     expect(outcomes).toContainEqual({ redeemed: false });
-    expect(await firstnameOf(subject.id)).toBe('Winner');
+    expect(await firstnameOf(db, subject.id)).toBe('Winner');
     expect(await outstandingLinkCount(db, kind, subject.id)).toBe(0);
   });
 
@@ -319,7 +298,7 @@ describe('lock order', () => {
     // the redemption queued first, so it did its job; the link issued
     // behind it is what is outstanding afterwards, and it works.
     expect(outcome).toEqual({ redeemed: true, result: subject.id });
-    expect(await firstnameOf(subject.id)).toBe('Redeemed');
+    expect(await firstnameOf(db, subject.id)).toBe('Redeemed');
     expect(
       await links.redeem('passwordReset', replacement, renameTo('Second')),
     ).toEqual({ redeemed: true, result: subject.id });
@@ -350,7 +329,7 @@ describe('lock order', () => {
     // both transactions completed — neither was aborted as a deadlock
     // victim — and the redemption, which queued first, did its job
     expect(outcome).toEqual({ redeemed: true, result: subject.id });
-    expect(await firstnameOf(subject.id)).toBe('Redeemed');
+    expect(await firstnameOf(db, subject.id)).toBe('Redeemed');
     expect(await outstandingLinkCount(db, 'passwordReset', subject.id)).toBe(0);
   });
 });

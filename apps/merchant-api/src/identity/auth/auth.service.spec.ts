@@ -42,7 +42,10 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
 import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
 import { EmailedLinksService } from '../emailed-links/emailed-links.service';
-import { outstandingLinkCount } from '../emailed-links/emailed-links.spec-support';
+import {
+  emailedLinkSecret,
+  outstandingLinkCount,
+} from '../emailed-links/emailed-links.spec-support';
 import { FactorStateService } from './factor-state.service';
 import { SessionsService } from './sessions.service';
 import {
@@ -359,11 +362,10 @@ describe('AuthService.requestPasswordReset — an emailed link, and no account e
       user.email,
       expect.objectContaining({ firstName: user.firstname }),
     );
-    const [, params] = emailMock.sendPasswordResetEmail.mock.calls[0] as [
-      string,
-      { resetUrl: string },
-    ];
-    const emailed = new URL(params.resetUrl).searchParams.get('token')!;
+    const emailed = emailedLinkSecret(
+      emailMock.sendPasswordResetEmail,
+      (params: { resetUrl: string }) => params.resetUrl,
+    );
 
     // OS-476: the link carries the secret, the row only its digest. The one
     // assertion here about storage, because a database read that could be
@@ -869,16 +871,13 @@ describe('AuthService.verifyEmail (OS-470)', () => {
   });
 });
 
-// The secret as the person receives it: out of the URL in the nth
-// verification email, which is the only place it is ever readable.
+// The secret out of the nth verification email this spec's flow sent.
 function emailedVerificationSecret(call: number): string {
-  const [, params] = emailMock.sendVerificationEmail.mock.calls[call] as [
-    string,
-    { verifyUrl: string },
-  ];
-  const secret = new URL(params.verifyUrl).searchParams.get('token');
-  if (!secret) throw new Error('no token in the emailed verify URL');
-  return secret;
+  return emailedLinkSecret(
+    emailMock.sendVerificationEmail,
+    (params: { verifyUrl: string }) => params.verifyUrl,
+    call,
+  );
 }
 
 describe('AuthService.resendVerification (OS-470)', () => {

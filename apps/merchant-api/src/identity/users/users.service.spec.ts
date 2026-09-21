@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import {
   assignRole,
+  firstnameOf,
   insertAccount,
   insertRole,
   insertUser,
@@ -26,8 +27,11 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { EmailedLinksService } from '../emailed-links/emailed-links.service';
-import { outstandingLinkCount } from '../emailed-links/emailed-links.spec-support';
-import { type DbTransaction } from 'src/shared/database/database.types';
+import {
+  emailedLinkSecret,
+  outstandingLinkCount,
+  renameTo,
+} from '../emailed-links/emailed-links.spec-support';
 
 const db = useTestDb();
 
@@ -73,14 +77,13 @@ async function inviteIsLive(
   return outcome.redeemed;
 }
 
-// The token out of the most recent invite email — the secret only ever
-// exists there and in the invitee's URL.
+// The secret out of the invite email this spec's flow just sent.
 function emailedInviteSecret(call = 0): string {
-  const [, params] = emailMock.sendInviteEmail.mock.calls[call] as [
-    string,
-    { inviteUrl: string },
-  ];
-  return new URL(params.inviteUrl).searchParams.get('token')!;
+  return emailedLinkSecret(
+    emailMock.sendInviteEmail,
+    (params: { inviteUrl: string }) => params.inviteUrl,
+    call,
+  );
 }
 
 async function build() {
@@ -605,27 +608,6 @@ describe('UsersService.setDeactivated ends Sessions (OS-553)', () => {
 });
 
 describe('UsersService.setDeactivated withdraws Emailed links (OS-559)', () => {
-  // Stands in for the real effects — set the password, mark the email
-  // verified — in the one respect that matters here: it writes the
-  // subject's row, which is what puts a redemption and a deactivation of
-  // the same User after the same rows. The column is arbitrary.
-  const renameTo =
-    (name: string) => async (tx: DbTransaction, subjectId: number) => {
-      await tx
-        .update(usersTable)
-        .set({ firstname: name })
-        .where(eq(usersTable.id, subjectId));
-      return subjectId;
-    };
-
-  async function firstnameOf(userId: number): Promise<string | undefined> {
-    const [row] = await db
-      .select({ firstname: usersTable.firstname })
-      .from(usersTable)
-      .where(eq(usersTable.id, userId));
-    return row?.firstname;
-  }
-
   it('leaves no working reset or verification link, and reactivating brings neither back', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id, password: 'x' });
@@ -753,7 +735,7 @@ describe('UsersService.setDeactivated withdraws Emailed links (OS-559)', () => {
     // let in and did its job; the deactivation behind it found that link
     // already used up and took the other one with it.
     expect(outcome).toEqual({ redeemed: true, result: user.id });
-    expect(await firstnameOf(user.id)).toBe('Redeemed');
+    expect(await firstnameOf(db, user.id)).toBe('Redeemed');
     expect(await outstandingLinkCount(db, 'passwordReset', user.id)).toBe(0);
     expect(
       await links.redeem('emailVerification', verification, renameTo('Late')),
@@ -769,7 +751,7 @@ describe('UsersService.setDeactivated withdraws Emailed links (OS-559)', () => {
     const user = await insertUser(db, { accountId: account.id, password: 'x' });
     const { service, links } = await buildBoth();
     const reset = await links.issue('passwordReset', user.id);
-    const before = await firstnameOf(user.id);
+    const before = await firstnameOf(db, user.id);
 
     const [, outcome] = await raceForUserRow(db, user.id, 2, async () => {
       const deactivating = service.setDeactivated(user.id, account.id, true);
@@ -782,7 +764,7 @@ describe('UsersService.setDeactivated withdraws Emailed links (OS-559)', () => {
     });
 
     expect(outcome).toEqual({ redeemed: false });
-    expect(await firstnameOf(user.id)).toBe(before);
+    expect(await firstnameOf(db, user.id)).toBe(before);
   });
 });
 

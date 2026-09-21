@@ -178,6 +178,21 @@ export async function deactivateUser(db: TestDb, userId: number): Promise<void> 
     .where(eq(usersTable.id, userId));
 }
 
+// A User's first name, straight off the row. The observable half of the
+// specs whose effect renames someone: the column is arbitrary and nothing
+// reads it in anger, which is exactly what makes it a safe place for a
+// spec to watch a write land — or not land, after a rollback.
+export async function firstnameOf(
+  db: TestDb,
+  userId: number,
+): Promise<string | undefined> {
+  const [row] = await db
+    .select({ firstname: usersTable.firstname })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+  return row?.firstname;
+}
+
 // How many refresh tokens this User could still redeem — i.e. how many
 // Sessions they hold. Rows rather than behaviour, so only ever alongside a
 // behavioural check, and for the invariants that can't be seen from outside:
