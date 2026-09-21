@@ -7,6 +7,7 @@ import { PasskeysService } from './passkeys.service';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { UsersModule } from '../users/users.module';
 import { AccountModule } from '../account/account.module';
+import { EmailedLinksModule } from '../emailed-links/emailed-links.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AUTH_APP_GUARD } from './auth.guard';
 import { EMAIL_VERIFIED_APP_GUARD } from './email-verified.guard';
@@ -23,6 +24,10 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
     UsersModule,
     AccountModule,
     PermissionsModule,
+    // Every link this module sends or redeems goes through it: password
+    // reset, email verification, and the Invite's redemption. Issuing an
+    // Invite is UsersModule's, which imports it too.
+    EmailedLinksModule,
     // single 'default' bucket, 100 req/min/IP — merchant-api runs one ECS
     // task today (desired_count=1), so the built-in in-memory storage is
     // enough; revisit with a shared Redis store (ElastiCache is already

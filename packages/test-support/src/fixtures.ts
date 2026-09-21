@@ -1,7 +1,6 @@
 // Row builders for the Testcontainers Postgres — every spec that needs real
 // data composes these instead of hand-writing inserts. Each returns the
 // inserted row (ids included). Shapes mirror packages/seed/scripts/seed.ts.
-import { createHash } from 'node:crypto';
 import {
   accountApiKeysTable,
   accountsTable,
@@ -34,12 +33,9 @@ import {
   rolePermissionsTable,
   rolesTable,
   stripeAccountsTable,
-  userEmailVerificationsTable,
-  userInvitesTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
   userPasskeysTable,
-  userPasswordResetsTable,
   userRefreshTokensTable,
   userRolesTable,
   usersTable,
@@ -48,11 +44,13 @@ import {
 } from 'db';
 import type { TestDb } from './test-db/db.js';
 
-// mirrors merchant-api's hashToken() (shared/common/generate-token.util.ts):
-// emailed invite/reset/verification tokens are only ever stored as this digest
-function hashToken(token: string): string {
-  return createHash('sha256').update(token, 'utf8').digest('hex');
-}
+// Emailed links (Invite, password reset, email verification) are NOT seeded
+// from here — nor anywhere else. Their digest has one definition, in
+// merchant-api's Emailed links module, and a hand-copied second one lived
+// at this spot until OS-509 — a fixture in the wrong encoding is a green
+// suite that agrees with the bug. A spec that wants a live link now asks
+// EmailedLinksService.issue() for one; the helpers around that live next to
+// the module, in apps/merchant-api/src/identity/emailed-links/.
 
 // TRUNCATE ... RESTART IDENTITY resets sequences per test, so a bare counter
 // is enough to keep unique columns (emails, connected-account ids, SKUs,
@@ -180,6 +178,21 @@ export async function deactivateUser(db: TestDb, userId: number): Promise<void> 
     .where(eq(usersTable.id, userId));
 }
 
+// A User's first name, straight off the row. The observable half of the
+// specs whose effect renames someone: the column is arbitrary and nothing
+// reads it in anger, which is exactly what makes it a safe place for a
+// spec to watch a write land — or not land, after a rollback.
+export async function firstnameOf(
+  db: TestDb,
+  userId: number,
+): Promise<string | undefined> {
+  const [row] = await db
+    .select({ firstname: usersTable.firstname })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+  return row?.firstname;
+}
+
 // How many refresh tokens this User could still redeem — i.e. how many
 // Sessions they hold. Rows rather than behaviour, so only ever alongside a
 // behavioural check, and for the invariants that can't be seen from outside:
@@ -199,77 +212,6 @@ export async function liveRefreshTokenCount(
       ),
     );
   return rows.length;
-}
-
-// a pending staff invite — one row exists only while the invite is
-// outstanding (consumed on join). `expiresAt` defaults 7 days out; pass a
-// past Date to simulate an expired link.
-export async function insertUserInvite(
-  db: TestDb,
-  opts: { userId: number; token?: string; expiresAt?: Date },
-): Promise<Row<typeof userInvitesTable>> {
-  const token = opts.token ?? `invite-${uniq()}`;
-  const row = await one(
-    await db
-      .insert(userInvitesTable)
-      .values({
-        userId: opts.userId,
-        token: hashToken(token),
-        expiresAt:
-          opts.expiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      })
-      .returning(),
-  );
-  // stored hashed like the real code path; hand back the raw token a real
-  // emailed link would carry, so callers can pass it straight to the service
-  return { ...row, token };
-}
-
-// a pending password-reset request — one row exists only while the reset is
-// outstanding (consumed on use). `expiresAt` defaults 1h out; pass a past
-// Date to simulate an expired link.
-export async function insertUserPasswordReset(
-  db: TestDb,
-  opts: { userId: number; token?: string; expiresAt?: Date },
-): Promise<Row<typeof userPasswordResetsTable>> {
-  const token = opts.token ?? `reset-${uniq()}`;
-  const row = await one(
-    await db
-      .insert(userPasswordResetsTable)
-      .values({
-        userId: opts.userId,
-        token: hashToken(token),
-        expiresAt: opts.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000),
-      })
-      .returning(),
-  );
-  // stored hashed like the real code path; hand back the raw token a real
-  // emailed link would carry, so callers can pass it straight to the service
-  return { ...row, token };
-}
-
-// a pending email-verification request — one row exists only while
-// verification is outstanding (consumed on use). `expiresAt` defaults 24h
-// out; pass a past Date to simulate an expired link.
-export async function insertUserEmailVerification(
-  db: TestDb,
-  opts: { userId: number; token?: string; expiresAt?: Date },
-): Promise<Row<typeof userEmailVerificationsTable>> {
-  const token = opts.token ?? `verify-${uniq()}`;
-  const row = await one(
-    await db
-      .insert(userEmailVerificationsTable)
-      .values({
-        userId: opts.userId,
-        token: hashToken(token),
-        expiresAt:
-          opts.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000),
-      })
-      .returning(),
-  );
-  // stored hashed like the real code path; hand back the raw token a real
-  // emailed link would carry, so callers can pass it straight to the service
-  return { ...row, token };
 }
 
 // `secret` is stored pre-encrypted, same as the real table — this package

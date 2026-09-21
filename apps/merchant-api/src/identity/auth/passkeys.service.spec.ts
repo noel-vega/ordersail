@@ -30,6 +30,7 @@ import { AccountService } from '../account/account.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
+import { EmailedLinksService } from '../emailed-links/emailed-links.service';
 import { FactorStateService } from './factor-state.service';
 import { SessionsService } from './sessions.service';
 import { PasskeysService } from './passkeys.service';
@@ -99,6 +100,8 @@ async function buildRef() {
       SessionsService,
       FactorStateService,
       PasskeysService,
+      // AuthService's Emailed links collaborator — no passkey path reaches it
+      EmailedLinksService,
       { provide: DRIZZLE, useValue: db },
       {
         provide: JwtService,
@@ -106,7 +109,13 @@ async function buildRef() {
       },
       {
         provide: UsersService,
-        useValue: new UsersService(db, {} as never, {} as never, {} as never),
+        useValue: new UsersService(
+          db,
+          {} as never,
+          {} as never,
+          {} as never,
+          {} as never,
+        ),
       },
       // signup()'s collaborator — no passkey path reaches it
       { provide: AccountService, useValue: {} },

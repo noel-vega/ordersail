@@ -3,21 +3,17 @@ import { JwtService } from '@nestjs/jwt';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import {
   assignRole,
+  firstnameOf,
   insertAccount,
   insertRole,
   insertUser,
-  insertUserInvite,
   liveRefreshTokenCount,
   lockWaiters,
+  raceForUserRow,
   seedPermissionsCatalog,
   useTestDb,
 } from 'test-support';
-import {
-  eq,
-  userInvitesTable,
-  userRefreshTokensTable,
-  usersTable,
-} from 'db/identity';
+import { eq, userRefreshTokensTable, usersTable } from 'db/identity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -29,7 +25,13 @@ import {
   testJwt,
 } from '../auth/sessions.spec-support';
 import { UsersService } from './users.service';
-import { hashToken } from 'src/shared/common/generate-token.util';
+import { CreateUserDto } from './dto/create-user.dto';
+import { EmailedLinksService } from '../emailed-links/emailed-links.service';
+import {
+  emailedLinkSecret,
+  outstandingLinkCount,
+  renameTo,
+} from '../emailed-links/emailed-links.spec-support';
 
 const db = useTestDb();
 
@@ -38,19 +40,50 @@ beforeEach(() => emailMock.sendInviteEmail.mockClear());
 
 // Sessions is real here, signing with a real JwtService: deactivation's
 // effect on a User's Sessions is only observable by redeeming their tokens.
+// Emailed links is real for the same reason — an Invite is one, and what a
+// deactivation does to a User's outstanding links, or a resend to the link
+// in the earlier email, is only observable by presenting one.
 async function buildBoth() {
   const ref = await Test.createTestingModule({
     providers: [
       UsersService,
       SessionsService,
       FactorStateService,
+      EmailedLinksService,
       { provide: DRIZZLE, useValue: db },
       { provide: EmailService, useValue: emailMock },
       { provide: PermissionsService, useValue: {} },
       { provide: JwtService, useValue: testJwt() },
     ],
   }).compile();
-  return { service: ref.get(UsersService), sessions: ref.get(SessionsService) };
+  return {
+    service: ref.get(UsersService),
+    sessions: ref.get(SessionsService),
+    links: ref.get(EmailedLinksService),
+  };
+}
+
+// Whether the link in an invite email is still live, asked the way the
+// invitee's browser asks it — by presenting it. The effect is a no-op:
+// what joining actually does to the Staff record is acceptInvite's, in
+// auth.service.spec.
+async function inviteIsLive(
+  links: EmailedLinksService,
+  secret: string,
+): Promise<boolean> {
+  const outcome = await links.redeem('invite', secret, () =>
+    Promise.resolve(true),
+  );
+  return outcome.redeemed;
+}
+
+// The secret out of the invite email this spec's flow just sent.
+function emailedInviteSecret(call = 0): string {
+  return emailedLinkSecret(
+    emailMock.sendInviteEmail,
+    (params: { inviteUrl: string }) => params.inviteUrl,
+    call,
+  );
 }
 
 async function build() {
@@ -574,6 +607,176 @@ describe('UsersService.setDeactivated ends Sessions (OS-553)', () => {
   });
 });
 
+describe('UsersService.setDeactivated withdraws Emailed links (OS-559)', () => {
+  it('leaves no working reset or verification link, and reactivating brings neither back', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const { service, links } = await buildBoth();
+    const reset = await links.issue('passwordReset', user.id);
+    const verification = await links.issue('emailVerification', user.id);
+
+    await service.setDeactivated(user.id, account.id, true);
+
+    expect(
+      await links.redeem('passwordReset', reset, renameTo('Reset')),
+    ).toEqual({ redeemed: false });
+    expect(
+      await links.redeem(
+        'emailVerification',
+        verification,
+        renameTo('Verified'),
+      ),
+    ).toEqual({ redeemed: false });
+
+    // Not merely refused while they're switched off: the links are gone, so
+    // a reactivation can't hand back a password chosen from an email sent
+    // before the deactivation.
+    await service.setDeactivated(user.id, account.id, false);
+
+    expect(
+      await links.redeem('passwordReset', reset, renameTo('Reset')),
+    ).toEqual({ redeemed: false });
+    expect(
+      await links.redeem(
+        'emailVerification',
+        verification,
+        renameTo('Verified'),
+      ),
+    ).toEqual({ redeemed: false });
+  });
+
+  // Deliberate: there is no credential to protect on a User who has never
+  // set one, and an Owner who switched someone off by mistake shouldn't
+  // have to re-invite them. Making an Invite go away is revokeInvite's job.
+  it('leaves a pending Invite alone — it still works after a reactivation', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id });
+    const { service, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
+
+    await service.setDeactivated(user.id, account.id, true);
+    await service.setDeactivated(user.id, account.id, false);
+
+    expect(await links.redeem('invite', invite, renameTo('Joined'))).toEqual({
+      redeemed: true,
+      result: user.id,
+    });
+  });
+
+  it("leaves a colleague's links of the same kinds alone", async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const colleague = await insertUser(db, {
+      accountId: account.id,
+      password: 'x',
+    });
+    const { service, links } = await buildBoth();
+    const theirs = await links.issue('passwordReset', colleague.id);
+
+    await service.setDeactivated(user.id, account.id, true);
+
+    expect(
+      await links.redeem('passwordReset', theirs, renameTo('Theirs')),
+    ).toEqual({ redeemed: true, result: colleague.id });
+  });
+
+  it('withdraws nothing when the last-Owner guard refuses the deactivation', async () => {
+    const account = await insertAccount(db);
+    await seedPermissionsCatalog(db);
+    const owner = await insertRole(db, {
+      accountId: account.id,
+      name: 'Owner',
+      isSystem: true,
+    });
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    await assignRole(db, { userId: user.id, roleId: owner.id });
+    const { service, links } = await buildBoth();
+    const reset = await links.issue('passwordReset', user.id);
+
+    await expect(
+      service.setDeactivated(user.id, account.id, true),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(
+      await links.redeem('passwordReset', reset, renameTo('Still')),
+    ).toEqual({ redeemed: true, result: user.id });
+  });
+
+  // Beyond the module suite, whose deactivation race is a bare UPDATE
+  // standing in for this one: here the real setDeactivated runs, so what is
+  // asserted is that its own second write — the withdrawal — queues rather
+  // than deadlocks, and still sweeps the link the redemption didn't take.
+  //
+  // The cycle this ticket closes. Until now a deactivation touched no link
+  // table, so however either side was written the two could not deadlock;
+  // now both transactions want the User's row and rows that hang off it,
+  // and the only thing keeping Postgres from aborting one of them as a
+  // deadlock victim is that both take the User's row first. Staged on that
+  // row so it is a race on every run rather than when the scheduler
+  // obliges, in both orders because which of the two arrives first is not
+  // ours to choose.
+  it('lets a redemption already in flight finish, then withdraws what is left', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const { service, links } = await buildBoth();
+    const reset = await links.issue('passwordReset', user.id);
+    const verification = await links.issue('emailVerification', user.id);
+
+    const [outcome] = await raceForUserRow(db, user.id, 2, async () => {
+      const redeeming = links.redeem(
+        'passwordReset',
+        reset,
+        renameTo('Redeemed'),
+      );
+      redeeming.catch(() => undefined);
+      await lockWaiters(db, 1);
+      return Promise.all([
+        redeeming,
+        service.setDeactivated(user.id, account.id, true),
+      ]);
+    });
+
+    // Both transactions completed. The redemption queued first, so it was
+    // let in and did its job; the deactivation behind it found that link
+    // already used up and took the other one with it.
+    expect(outcome).toEqual({ redeemed: true, result: user.id });
+    expect(await firstnameOf(db, user.id)).toBe('Redeemed');
+    expect(await outstandingLinkCount(db, 'passwordReset', user.id)).toBe(0);
+    expect(
+      await links.redeem('emailVerification', verification, renameTo('Late')),
+    ).toEqual({ redeemed: false });
+  });
+
+  // Beyond the module suite: the losing order, which only the real
+  // deactivation can produce — a link withdrawn by another service's
+  // transaction, not used up by a rival redemption.
+  //
+  // The deactivation holds the User's row first, so the
+  // redemption — which read a live link row before parking — is let through
+  // only once the withdrawal has committed. It must find nothing to claim
+  // and write nothing, rather than act on the row it read.
+  it('refuses a redemption let through only after the deactivation committed', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const { service, links } = await buildBoth();
+    const reset = await links.issue('passwordReset', user.id);
+    const before = await firstnameOf(db, user.id);
+
+    const [, outcome] = await raceForUserRow(db, user.id, 2, async () => {
+      const deactivating = service.setDeactivated(user.id, account.id, true);
+      deactivating.catch(() => undefined);
+      await lockWaiters(db, 1);
+      return Promise.all([
+        deactivating,
+        links.redeem('passwordReset', reset, renameTo('Redeemed')),
+      ]);
+    });
+
+    expect(outcome).toEqual({ redeemed: false });
+    expect(await firstnameOf(db, user.id)).toBe(before);
+  });
+});
+
 describe('UsersService.getByEmail (OS-184)', () => {
   it('excludes a deactivated user so sign-in is refused', async () => {
     const account = await insertAccount(db);
@@ -592,41 +795,71 @@ describe('UsersService.getByEmail (OS-184)', () => {
   });
 });
 
+describe('UsersService.create — the pending Staff record and its Invite', () => {
+  it('emails the new staff member a link that is live', async () => {
+    const account = await insertAccount(db);
+    const { service, links } = await buildBoth();
+
+    const created = await service.create(
+      new CreateUserDto('Fox', 'Mulder', '5555550111', 'fox@store.test'),
+      account.id,
+      1,
+    );
+
+    expect(created.status).toBe('invited');
+    expect(emailMock.sendInviteEmail).toHaveBeenCalledWith(
+      'fox@store.test',
+      expect.objectContaining({ firstName: 'Fox' }),
+    );
+    expect(await inviteIsLive(links, emailedInviteSecret())).toBe(true);
+  });
+
+  // The Staff record and its Invite are one write: a create that fails
+  // after the User row would otherwise leave someone who can never join and
+  // can't be re-invited (resendInvite needs the account's own id).
+  it('leaves no Staff record behind when the create rolls back', async () => {
+    const account = await insertAccount(db);
+    const { service } = await buildBoth();
+
+    await expect(
+      service.create(
+        new CreateUserDto(
+          'Dana',
+          'Scully',
+          '5555550112',
+          'dana@store.test',
+          [404],
+        ),
+        account.id,
+        1,
+        new Set(['users:manage_roles']),
+      ),
+    ).rejects.toThrow();
+
+    expect((await service.findAll(20, 0, account.id)).total).toBe(0);
+    expect(emailMock.sendInviteEmail).not.toHaveBeenCalled();
+  });
+});
+
+// Only the newest email works, and only while the Staff record is still
+// pending. How long an Invite lasts, and that presenting a dead one is
+// refused, are the Emailed links module's (emailed-links.service.spec).
 describe('UsersService.resendInvite (OS-185)', () => {
-  it('rotates the token + expiry and re-sends the email', async () => {
+  it('emails a working link and kills the one from the earlier email', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    const invite = await insertUserInvite(db, {
-      userId: user.id,
-      token: 'old-token',
-      expiresAt: new Date(Date.now() - 1000),
-    });
-    expect(typeof invite.id).toBe('number');
-    expect(invite.userId).toBe(user.id);
-    expect(invite.token).toBe('old-token');
-    const service = await build();
+    const { service, links } = await buildBoth();
+    const first = await links.issue('invite', user.id);
 
     const result = await service.resendInvite(user.id, account.id);
     expect(result?.status).toBe('invited');
 
-    const [fresh] = await db
-      .select()
-      .from(userInvitesTable)
-      .where(eq(userInvitesTable.userId, user.id));
-    expect(fresh.token).not.toBe(hashToken('old-token'));
-    expect(fresh.token).not.toBe(hashToken(invite.token));
-    expect(fresh.expiresAt.getTime()).toBeGreaterThan(Date.now());
-
-    expect(emailMock.sendInviteEmail).toHaveBeenCalledTimes(1);
-    const [to, params] = emailMock.sendInviteEmail.mock.calls[0] as [
-      string,
-      { firstName: string; inviteUrl: string },
-    ];
-    expect(to).toBe(user.email);
-    // OS-476: the link carries the raw token, the row only its digest
-    const emailed = new URL(params.inviteUrl).searchParams.get('token')!;
-    expect(fresh.token).not.toBe(emailed);
-    expect(fresh.token).toBe(hashToken(emailed));
+    expect(emailMock.sendInviteEmail).toHaveBeenCalledWith(
+      user.email,
+      expect.objectContaining({ firstName: user.firstname }),
+    );
+    expect(await inviteIsLive(links, first)).toBe(false);
+    expect(await inviteIsLive(links, emailedInviteSecret())).toBe(true);
   });
 
   it('is undefined for a user who has already joined', async () => {
@@ -641,31 +874,40 @@ describe('UsersService.resendInvite (OS-185)', () => {
     expect(emailMock.sendInviteEmail).not.toHaveBeenCalled();
   });
 
-  it('is undefined for a user with no pending invite row', async () => {
+  // Unreachable in practice — a pending Staff record always has an Invite,
+  // because create() writes them together — but the answer to "resend" is
+  // a working link either way, never a 404.
+  it('issues one for a pending user who somehow holds none', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    const service = await build();
+    const { service, links } = await buildBoth();
 
-    expect(await service.resendInvite(user.id, account.id)).toBeUndefined();
+    expect((await service.resendInvite(user.id, account.id))?.status).toBe(
+      'invited',
+    );
+
+    expect(await inviteIsLive(links, emailedInviteSecret())).toBe(true);
   });
 
   it('is undefined for a user outside the account', async () => {
     const account = await insertAccount(db);
     const other = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    await insertUserInvite(db, { userId: user.id });
-    const service = await build();
+    const { service, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
 
     expect(await service.resendInvite(user.id, other.id)).toBeUndefined();
+    expect(emailMock.sendInviteEmail).not.toHaveBeenCalled();
+    expect(await inviteIsLive(links, invite)).toBe(true);
   });
 });
 
 describe('UsersService.revokeInvite (OS-185)', () => {
-  it('deletes the never-joined user and their invite', async () => {
+  it('deletes the never-joined user and kills their link immediately', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    await insertUserInvite(db, { userId: user.id });
-    const service = await build();
+    const { service, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
 
     expect((await service.revokeInvite(user.id, account.id))?.status).toBe(
       'invited',
@@ -676,11 +918,7 @@ describe('UsersService.revokeInvite (OS-185)', () => {
       .from(usersTable)
       .where(eq(usersTable.id, user.id));
     expect(users).toHaveLength(0);
-    const invites = await db
-      .select()
-      .from(userInvitesTable)
-      .where(eq(userInvitesTable.userId, user.id));
-    expect(invites).toHaveLength(0);
+    expect(await inviteIsLive(links, invite)).toBe(false);
   });
 
   it('refuses to revoke a user who has already joined', async () => {
@@ -706,9 +944,10 @@ describe('UsersService.revokeInvite (OS-185)', () => {
     const account = await insertAccount(db);
     const other = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    await insertUserInvite(db, { userId: user.id });
-    const service = await build();
+    const { service, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
 
     expect(await service.revokeInvite(user.id, other.id)).toBeUndefined();
+    expect(await inviteIsLive(links, invite)).toBe(true);
   });
 });

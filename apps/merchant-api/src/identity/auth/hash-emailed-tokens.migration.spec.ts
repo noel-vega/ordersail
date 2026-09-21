@@ -7,12 +7,13 @@ import {
   userPasswordResetsTable,
 } from 'db/identity';
 import { insertAccount, insertUser, useTestDb } from 'test-support';
-import { hashToken } from 'src/shared/common/generate-token.util';
+import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
 
 // Testcontainers applies every migration to an *empty* database, so a data
 // migration's UPDATE never runs against real rows there. This spec seeds
 // rows first and runs the OS-476 backfill SQL directly: if its digest ever
-// drifts from hashToken(), every outstanding emailed link would silently die.
+// drifts from emailedLinkDigest(), every outstanding Emailed link would
+// silently die.
 const db = useTestDb();
 
 function backfillSql(): string {
@@ -35,7 +36,7 @@ const tables = [
 
 describe('hash_emailed_tokens migration (OS-476)', () => {
   it.each(tables)(
-    'hashes plaintext $name tokens to hashToken() and leaves digests alone, idempotently',
+    'hashes plaintext $name tokens to emailedLinkDigest() and leaves digests alone, idempotently',
     async ({ table }) => {
       const account = await insertAccount(db);
       const legacyUser = await insertUser(db, { accountId: account.id });
@@ -44,7 +45,7 @@ describe('hash_emailed_tokens migration (OS-476)', () => {
 
       // generateToken(32)-shaped: 43 chars of base64url
       const legacyRaw = 'Ab3_-xYz0123456789ABCDEFGHIJKLMNOPQRSTUVWxy';
-      const alreadyHashed = hashToken('issued-after-deploy');
+      const alreadyHashed = emailedLinkDigest('issued-after-deploy');
       await db.insert(table).values([
         { userId: legacyUser.id, token: legacyRaw, expiresAt },
         { userId: hashedUser.id, token: alreadyHashed, expiresAt },
@@ -56,11 +57,11 @@ describe('hash_emailed_tokens migration (OS-476)', () => {
         (await db.select().from(table).where(eq(table.userId, userId)))[0]
           ?.token;
 
-      expect(await tokenFor(legacyUser.id)).toBe(hashToken(legacyRaw));
+      expect(await tokenFor(legacyUser.id)).toBe(emailedLinkDigest(legacyRaw));
       expect(await tokenFor(hashedUser.id)).toBe(alreadyHashed);
 
       await db.$client.query(backfillSql());
-      expect(await tokenFor(legacyUser.id)).toBe(hashToken(legacyRaw));
+      expect(await tokenFor(legacyUser.id)).toBe(emailedLinkDigest(legacyRaw));
       expect(await tokenFor(hashedUser.id)).toBe(alreadyHashed);
     },
   );
