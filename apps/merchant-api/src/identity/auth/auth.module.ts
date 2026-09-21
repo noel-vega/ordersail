@@ -24,8 +24,9 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
     UsersModule,
     AccountModule,
     PermissionsModule,
-    // Password reset and the Invite's redemption go through it; OS-529
-    // brings email verification onto it too.
+    // Every link this module sends or redeems goes through it: password
+    // reset, email verification, and the Invite's redemption. Issuing an
+    // Invite is UsersModule's, which imports it too.
     EmailedLinksModule,
     // single 'default' bucket, 100 req/min/IP — merchant-api runs one ECS
     // task today (desired_count=1), so the built-in in-memory storage is

@@ -6,16 +6,16 @@ import {
 } from './emailed-link-kinds';
 
 // Spec-only helpers for Emailed links. App-local rather than in
-// test-support because they have to agree with emailedLinkDigest(), and
-// that function has exactly one home — this module. test-support carried a
-// hand-copied digest until OS-509, which is the class of bug where the
-// fixtures and the code agree with each other and both are wrong.
-// Excluded from the build by tsconfig.build.json.
+// test-support because both reach a kind's table through
+// EMAILED_LINK_KINDS, which is this module's — and packages/test-support
+// cannot import an app. Excluded from the build by tsconfig.build.json.
 //
 // There is deliberately no helper that seeds a link row: every flow now
 // issues through the module (OS-529 took the last one, email verification,
 // and OS-530 Invites), so a spec that wants a live link calls issue() and
-// the digest stays the module's business alone.
+// the digest stays the module's business alone. test-support carried a
+// hand-copied digest until OS-509, which is the class of bug where the
+// fixtures and the code agree with each other and both are wrong.
 
 // Backdates a subject's outstanding link of this kind so that it has just
 // expired. Ageing the row rather than faking the clock: the claim compares

@@ -45,12 +45,12 @@ import {
 import type { TestDb } from './test-db/db.js';
 
 // Emailed links (Invite, password reset, email verification) are NOT seeded
-// from here. Their digest has one definition, in merchant-api's Emailed
-// links module, and a hand-copied second one lived at this spot until
-// OS-509 — a fixture in the wrong encoding is a green suite that agrees
-// with the bug. This package can't import an app, so the link builders
-// moved next to that definition, in
-// apps/merchant-api/src/identity/emailed-links/.
+// from here — nor anywhere else. Their digest has one definition, in
+// merchant-api's Emailed links module, and a hand-copied second one lived
+// at this spot until OS-509 — a fixture in the wrong encoding is a green
+// suite that agrees with the bug. A spec that wants a live link now asks
+// EmailedLinksService.issue() for one; the helpers around that live next to
+// the module, in apps/merchant-api/src/identity/emailed-links/.
 
 // TRUNCATE ... RESTART IDENTITY resets sequences per test, so a bare counter
 // is enough to keep unique columns (emails, connected-account ids, SKUs,
