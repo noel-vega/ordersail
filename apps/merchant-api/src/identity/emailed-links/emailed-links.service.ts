@@ -197,10 +197,17 @@ export class EmailedLinksService {
     kindNames: readonly EmailedLinkKindName[],
     tx?: DbTransaction,
   ): Promise<void> {
+    if (kindNames.length === 0) return;
+    const kinds = kindNames.map((kindName) => EMAILED_LINK_KINDS[kindName]);
+
     const revoke = async (tx: DbTransaction) => {
-      for (const kindName of kindNames) {
-        const kind = EMAILED_LINK_KINDS[kindName];
-        await this.lockSubject(tx, kind, subjectId);
+      // Lock once, delete n. One subjectId means one subject row, however
+      // many kinds hang off it — kinds named in the same call are always
+      // kinds of the same subject, or the id would name two different
+      // people — so any of them answers which row to take, and the
+      // withdrawal that follows is n statements under that one lock.
+      await this.lockSubject(tx, kinds[0], subjectId);
+      for (const kind of kinds) {
         await tx.delete(kind.table).where(eq(kind.table.userId, subjectId));
       }
     };
