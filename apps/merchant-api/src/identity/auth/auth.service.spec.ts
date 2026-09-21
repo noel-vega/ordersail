@@ -40,7 +40,6 @@ import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
-import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
 import { EmailedLinksService } from '../emailed-links/emailed-links.service';
 import {
   emailedLinkSecret,
@@ -367,15 +366,16 @@ describe('AuthService.requestPasswordReset — an emailed link, and no account e
       (params: { resetUrl: string }) => params.resetUrl,
     );
 
-    // OS-476: the link carries the secret, the row only its digest. The one
+    // OS-476: the link carries the secret, the row does not. The one
     // assertion here about storage, because a database read that could be
-    // replayed as a live link is invisible from outside.
+    // replayed as a live link is invisible from outside. What the stored
+    // digest actually is belongs to the Emailed links module and is
+    // asserted once in its own suite.
     const [reset] = await db
       .select()
       .from(userPasswordResetsTable)
       .where(eq(userPasswordResetsTable.userId, user.id));
     expect(reset?.token).not.toBe(emailed);
-    expect(reset?.token).toBe(emailedLinkDigest(emailed));
 
     await service.resetPassword(emailed, 'brand-new-password');
     await expect(
