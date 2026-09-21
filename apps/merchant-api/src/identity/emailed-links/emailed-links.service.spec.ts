@@ -325,9 +325,12 @@ describe('lock order', () => {
     ).toEqual({ redeemed: true, result: subject.id });
   });
 
-  // The pair OS-559 completes, when deactivating a User also withdraws
-  // their outstanding links: deactivation writes the User row and then rows
-  // that hang off it, and a redemption must go the same way round.
+  // Deactivation writes the User row and then rows that hang off it, and a
+  // redemption must go the same way round. Deactivating here is a bare
+  // UPDATE rather than UsersService.setDeactivated, so that this module's
+  // suite stays a leaf like the module — the real deactivation, which since
+  // OS-559 withdraws links as well and so closes the cycle properly, is
+  // raced against a redemption in users.service.spec.
   it('does not deadlock when a User is deactivated mid-redemption', async () => {
     const subject = await seedSubject();
     const links = service();

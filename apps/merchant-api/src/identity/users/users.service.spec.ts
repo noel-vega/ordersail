@@ -8,6 +8,7 @@ import {
   insertUser,
   liveRefreshTokenCount,
   lockWaiters,
+  raceForUserRow,
   seedPermissionsCatalog,
   useTestDb,
 } from 'test-support';
@@ -29,7 +30,12 @@ import {
 } from '../auth/sessions.spec-support';
 import { UsersService } from './users.service';
 import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
-import { seedInvite } from '../emailed-links/emailed-links.spec-support';
+import { EmailedLinksService } from '../emailed-links/emailed-links.service';
+import {
+  outstandingLinkCount,
+  seedInvite,
+} from '../emailed-links/emailed-links.spec-support';
+import { type DbTransaction } from 'src/shared/database/database.types';
 
 const db = useTestDb();
 
@@ -38,19 +44,26 @@ beforeEach(() => emailMock.sendInviteEmail.mockClear());
 
 // Sessions is real here, signing with a real JwtService: deactivation's
 // effect on a User's Sessions is only observable by redeeming their tokens.
+// Emailed links is real for the same reason — what a deactivation does to a
+// User's outstanding links is only observable by presenting one.
 async function buildBoth() {
   const ref = await Test.createTestingModule({
     providers: [
       UsersService,
       SessionsService,
       FactorStateService,
+      EmailedLinksService,
       { provide: DRIZZLE, useValue: db },
       { provide: EmailService, useValue: emailMock },
       { provide: PermissionsService, useValue: {} },
       { provide: JwtService, useValue: testJwt() },
     ],
   }).compile();
-  return { service: ref.get(UsersService), sessions: ref.get(SessionsService) };
+  return {
+    service: ref.get(UsersService),
+    sessions: ref.get(SessionsService),
+    links: ref.get(EmailedLinksService),
+  };
 }
 
 async function build() {
@@ -571,6 +584,188 @@ describe('UsersService.setDeactivated ends Sessions (OS-553)', () => {
     ).rejects.toBeInstanceOf(ConflictException);
 
     await expectWorkingSession(sessions, pair, user.id);
+  });
+});
+
+describe('UsersService.setDeactivated withdraws Emailed links (OS-559)', () => {
+  // Stands in for the real effects — set the password, mark the email
+  // verified — in the one respect that matters here: it writes the
+  // subject's row, which is what puts a redemption and a deactivation of
+  // the same User after the same rows. The column is arbitrary.
+  const renameTo =
+    (name: string) => async (tx: DbTransaction, subjectId: number) => {
+      await tx
+        .update(usersTable)
+        .set({ firstname: name })
+        .where(eq(usersTable.id, subjectId));
+      return subjectId;
+    };
+
+  async function firstnameOf(userId: number): Promise<string | undefined> {
+    const [row] = await db
+      .select({ firstname: usersTable.firstname })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId));
+    return row?.firstname;
+  }
+
+  it('leaves no working reset or verification link, and reactivating brings neither back', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const { service, links } = await buildBoth();
+    const reset = await links.issue('passwordReset', user.id);
+    const verification = await links.issue('emailVerification', user.id);
+
+    await service.setDeactivated(user.id, account.id, true);
+
+    expect(
+      await links.redeem('passwordReset', reset, renameTo('Reset')),
+    ).toEqual({ redeemed: false });
+    expect(
+      await links.redeem(
+        'emailVerification',
+        verification,
+        renameTo('Verified'),
+      ),
+    ).toEqual({ redeemed: false });
+
+    // Not merely refused while they're switched off: the links are gone, so
+    // a reactivation can't hand back a password chosen from an email sent
+    // before the deactivation.
+    await service.setDeactivated(user.id, account.id, false);
+
+    expect(
+      await links.redeem('passwordReset', reset, renameTo('Reset')),
+    ).toEqual({ redeemed: false });
+    expect(
+      await links.redeem(
+        'emailVerification',
+        verification,
+        renameTo('Verified'),
+      ),
+    ).toEqual({ redeemed: false });
+  });
+
+  // Deliberate: there is no credential to protect on a User who has never
+  // set one, and an Owner who switched someone off by mistake shouldn't
+  // have to re-invite them. Making an Invite go away is revokeInvite's job.
+  it('leaves a pending Invite alone — it still works after a reactivation', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id });
+    const { service, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
+
+    await service.setDeactivated(user.id, account.id, true);
+    await service.setDeactivated(user.id, account.id, false);
+
+    expect(await links.redeem('invite', invite, renameTo('Joined'))).toEqual({
+      redeemed: true,
+      result: user.id,
+    });
+  });
+
+  it("leaves a colleague's links of the same kinds alone", async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const colleague = await insertUser(db, {
+      accountId: account.id,
+      password: 'x',
+    });
+    const { service, links } = await buildBoth();
+    const theirs = await links.issue('passwordReset', colleague.id);
+
+    await service.setDeactivated(user.id, account.id, true);
+
+    expect(
+      await links.redeem('passwordReset', theirs, renameTo('Theirs')),
+    ).toEqual({ redeemed: true, result: colleague.id });
+  });
+
+  it('withdraws nothing when the last-Owner guard refuses the deactivation', async () => {
+    const account = await insertAccount(db);
+    await seedPermissionsCatalog(db);
+    const owner = await insertRole(db, {
+      accountId: account.id,
+      name: 'Owner',
+      isSystem: true,
+    });
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    await assignRole(db, { userId: user.id, roleId: owner.id });
+    const { service, links } = await buildBoth();
+    const reset = await links.issue('passwordReset', user.id);
+
+    await expect(
+      service.setDeactivated(user.id, account.id, true),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(
+      await links.redeem('passwordReset', reset, renameTo('Still')),
+    ).toEqual({ redeemed: true, result: user.id });
+  });
+
+  // The cycle this ticket closes. Until now a deactivation touched no link
+  // table, so however either side was written the two could not deadlock;
+  // now both transactions want the User's row and rows that hang off it,
+  // and the only thing keeping Postgres from aborting one of them as a
+  // deadlock victim is that both take the User's row first. Staged on that
+  // row so it is a race on every run rather than when the scheduler
+  // obliges, in both orders because which of the two arrives first is not
+  // ours to choose.
+  it('lets a redemption already in flight finish, then withdraws what is left', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const { service, links } = await buildBoth();
+    const reset = await links.issue('passwordReset', user.id);
+    const verification = await links.issue('emailVerification', user.id);
+
+    const [outcome] = await raceForUserRow(db, user.id, 2, async () => {
+      const redeeming = links.redeem(
+        'passwordReset',
+        reset,
+        renameTo('Redeemed'),
+      );
+      redeeming.catch(() => undefined);
+      await lockWaiters(db, 1);
+      return Promise.all([
+        redeeming,
+        service.setDeactivated(user.id, account.id, true),
+      ]);
+    });
+
+    // Both transactions completed. The redemption queued first, so it was
+    // let in and did its job; the deactivation behind it found that link
+    // already used up and took the other one with it.
+    expect(outcome).toEqual({ redeemed: true, result: user.id });
+    expect(await firstnameOf(user.id)).toBe('Redeemed');
+    expect(await outstandingLinkCount(db, 'passwordReset', user.id)).toBe(0);
+    expect(
+      await links.redeem('emailVerification', verification, renameTo('Late')),
+    ).toEqual({ redeemed: false });
+  });
+
+  // The other order: the deactivation holds the User's row first, so the
+  // redemption — which read a live link row before parking — is let through
+  // only once the withdrawal has committed. It must find nothing to claim
+  // and write nothing, rather than act on the row it read.
+  it('refuses a redemption let through only after the deactivation committed', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, { accountId: account.id, password: 'x' });
+    const { service, links } = await buildBoth();
+    const reset = await links.issue('passwordReset', user.id);
+    const before = await firstnameOf(user.id);
+
+    const [, outcome] = await raceForUserRow(db, user.id, 2, async () => {
+      const deactivating = service.setDeactivated(user.id, account.id, true);
+      deactivating.catch(() => undefined);
+      await lockWaiters(db, 1);
+      return Promise.all([
+        deactivating,
+        links.redeem('passwordReset', reset, renameTo('Redeemed')),
+      ]);
+    });
+
+    expect(outcome).toEqual({ redeemed: false });
+    expect(await firstnameOf(user.id)).toBe(before);
   });
 });
 

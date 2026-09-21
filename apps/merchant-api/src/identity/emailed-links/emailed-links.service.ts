@@ -62,9 +62,9 @@ export type EmailedLinkEffect<T> = (
 //     rows in the opposite order from a concurrent deactivation, and
 //     Postgres would abort one of the two — a 500, rare and
 //     unreproducible, which is the class of defect the Sessions review
-//     caught twice. Once OS-559 has deactivation withdraw links as well,
-//     the two transactions touch exactly the same rows, and the order is
-//     the only thing keeping them apart.
+//     caught twice. Since OS-559 a deactivation withdraws links too, so the
+//     two transactions touch exactly the same rows and the order is the
+//     only thing keeping them apart.
 //  2. So that the three operations serialize against each other and against
 //     a deactivation for the same subject, rather than partly. The foreign
 //     key does some of this for free — inserting a link row takes a KEY

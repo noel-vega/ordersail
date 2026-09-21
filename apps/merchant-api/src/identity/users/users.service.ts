@@ -17,6 +17,7 @@ import { SessionsService } from '../auth/sessions.service';
 import { generateToken } from '../../shared/common/generate-token.util';
 import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
 import { EMAILED_LINK_KINDS } from '../emailed-links/emailed-link-kinds';
+import { EmailedLinksService } from '../emailed-links/emailed-links.service';
 import { resolveOwned } from '../shared/resolve-owned.util';
 import { groupBy } from '../shared/group-by.util';
 import { assertCanGrant } from '../shared/assert-can-grant.util';
@@ -91,6 +92,7 @@ export class UsersService {
     private readonly emailService: EmailService,
     private readonly permissionsService: PermissionsService,
     private readonly sessionsService: SessionsService,
+    private readonly emailedLinksService: EmailedLinksService,
   ) {}
 
   // deactivated users are excluded so sign-in refuses them exactly like a
@@ -601,6 +603,28 @@ export class UsersService {
   // Reactivating touches no Session: the User signs in again. An access token
   // already issued still outlives this by up to its TTL (nothing re-checks
   // the row per request).
+  //
+  // And it withdraws their outstanding password-reset and email-verification
+  // links, for the same reason and in the same transaction: a reset link
+  // requested ten minutes before the deactivation otherwise still sets a new
+  // password on their row, and that password survives into a later
+  // reactivation. "Deactivated" should leave nothing of theirs that still
+  // works. A pending Invite is deliberately left alone — there is no
+  // credential to protect yet, and reactivating someone switched off by
+  // mistake shouldn't force a re-invite; an Owner has revokeInvite for when
+  // they do want it gone.
+  //
+  // The lock order is unchanged and load-bearing. The User row is written
+  // first, and it is the row everything after it wants: the Session sweep
+  // takes it FOR UPDATE, and so does every Emailed links operation. A
+  // concurrent redemption of one of these links therefore queues behind this
+  // transaction (or it behind that one) rather than the two taking the User
+  // row and a link row in opposite orders and Postgres aborting one as a
+  // deadlock victim.
+  //
+  // Refusing the last-Owner deactivation happens before any of this, inside
+  // the transaction, so a refusal withdraws nothing: the throw rolls back the
+  // whole thing.
   async setDeactivated(
     userId: number,
     accountId: number,
@@ -686,6 +710,11 @@ export class UsersService {
 
       if (deactivated && updated) {
         await this.sessionsService.revokeAll(userId, tx);
+        await this.emailedLinksService.revokeAllForSubject(
+          userId,
+          ['passwordReset', 'emailVerification'],
+          tx,
+        );
       }
     });
 

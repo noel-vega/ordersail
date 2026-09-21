@@ -107,11 +107,17 @@ async function buildBoth() {
         useValue: new JwtService({ secret: TEST_JWT_SECRET }),
       },
       // real UsersService (needed for requestPasswordReset's getByEmail) —
-      // its EmailService/PermissionsService/SessionsService deps are unused on
-      // that path
+      // its EmailService/PermissionsService/SessionsService/EmailedLinksService
+      // deps are unused on that path
       {
         provide: UsersService,
-        useValue: new UsersService(db, {} as never, {} as never, {} as never),
+        useValue: new UsersService(
+          db,
+          {} as never,
+          {} as never,
+          {} as never,
+          {} as never,
+        ),
       },
       // real AccountService for signup's provision(), over a real RolesService
       // for createSystemRole (whose PermissionsService dep is unused on that path)
