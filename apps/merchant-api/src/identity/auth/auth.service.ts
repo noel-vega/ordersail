@@ -22,9 +22,6 @@ import { DRIZZLE } from 'src/shared/database/database.constants';
 import { type DbTransaction } from 'src/shared/database/database.types';
 import { EmailService } from 'src/shared/email/email.service';
 import { env } from 'src/shared/env';
-import { generateToken } from 'src/shared/common/generate-token.util';
-import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
-import { EMAILED_LINK_KINDS } from '../emailed-links/emailed-link-kinds';
 import { EmailedLinksService } from '../emailed-links/emailed-links.service';
 import { decryptMfaSecret, encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
 import { generateRecoveryCodes } from 'src/shared/mfa/recovery-codes.util';
@@ -33,7 +30,6 @@ import {
   type db as Db,
   eq,
   isNull,
-  userEmailVerificationsTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
   usersTable,
@@ -602,48 +598,54 @@ export class AuthService {
     return this.sessionsService.start(user.id);
   }
 
-  // Verifies the emailed token for the *signed-in* caller and re-mints only
+  // Verifies the emailed link for the *signed-in* caller and re-mints only
   // their access token with emailVerified: true. The link proves control of
   // the inbox, never identity — it must not create a session, or it becomes
   // a password-free login link for anyone the email reaches (forwards,
-  // shared inboxes, link scanners). A token belonging to a different user
-  // is rejected without being consumed, so its owner can still use it.
+  // shared inboxes, link scanners).
+  //
+  // What this flow's link is for is the effect below; recognising it,
+  // expiring it and using it up exactly once are the Emailed links
+  // module's. The two refusals are deliberately different things, which is
+  // why one is a returned outcome and the other an exception:
+  //
+  //  - the module's single refusal (unknown, expired, already used, or the
+  //    loser of two simultaneous redemptions) is a 400, not a 401. The
+  //    caller is authenticated, so a 401 here reads as "your session
+  //    expired" to merchant-sdk, which answers it by refreshing and
+  //    retrying — with the same spent link.
+  //  - a link naming a different User is the effect refusing, and it is a
+  //    403. Throwing from inside the effect is what makes it a refusal
+  //    that does not use the link up: the claim rolls back with it, so the
+  //    link still works for whoever it was actually sent to.
   async verifyEmail(userId: number, token: string) {
-    const [verification] = await this.db
-      .select()
-      .from(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.token, emailedLinkDigest(token)));
+    const outcome = await this.emailedLinks.redeem(
+      'emailVerification',
+      token,
+      async (tx, subjectId) => {
+        if (subjectId !== userId) {
+          throw new ForbiddenException(
+            'This verification link belongs to a different account',
+          );
+        }
 
-    // 400, not 401: the caller is authenticated, so a 401 here would read as
-    // "your session expired" to the client's refresh-and-retry logic
-    if (!verification || verification.expiresAt < new Date()) {
-      throw new BadRequestException('Invalid or expired token');
-    }
-    if (verification.userId !== userId) {
-      throw new ForbiddenException(
-        'This verification link belongs to a different account',
-      );
-    }
+        await tx
+          .update(usersTable)
+          .set({ emailVerifiedAt: new Date(), updatedAt: new Date() })
+          .where(eq(usersTable.id, subjectId));
+      },
+    );
 
-    const [user] = await this.db
-      .update(usersTable)
-      .set({ emailVerifiedAt: new Date(), updatedAt: new Date() })
-      .where(eq(usersTable.id, verification.userId))
-      .returning({ id: usersTable.id });
-
-    if (!user) {
+    if (!outcome.redeemed) {
       throw new BadRequestException('Invalid or expired token');
     }
 
-    await this.db
-      .delete(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.id, verification.id));
-
-    // A re-mint, not a Session (see above): the access token the caller
-    // holds says emailVerified: false, and leaving it until their next
-    // refresh would bounce them straight back to the verify-email lobby.
+    // Outside the transaction, and a re-mint rather than a Session (see
+    // above): the access token the caller holds says emailVerified: false,
+    // and leaving it until their next refresh would bounce them straight
+    // back to the verify-email lobby.
     return {
-      access_token: await this.sessionsService.remintAccessToken(user.id),
+      access_token: await this.sessionsService.remintAccessToken(userId),
     };
   }
 
@@ -667,18 +669,12 @@ export class AuthService {
     email: string;
     firstname: string;
   }): Promise<void> {
-    const token = generateToken(32);
-    const tokenHash = emailedLinkDigest(token);
-    const expiresAt = new Date(
-      Date.now() + EMAILED_LINK_KINDS.emailVerification.ttlMs,
-    );
-    await this.db
-      .insert(userEmailVerificationsTable)
-      .values({ userId: user.id, token: tokenHash, expiresAt })
-      .onConflictDoUpdate({
-        target: userEmailVerificationsTable.userId,
-        set: { token: tokenHash, expiresAt },
-      });
+    // The Emailed links module owns the secret, the digest, the lifetime
+    // and the replacement of any link still outstanding — so a resend makes
+    // the earlier email useless without this flow doing anything about it.
+    // What's left here is the part that is about email verification: the
+    // URL merchant-web serves, and the email that carries it.
+    const token = await this.emailedLinks.issue('emailVerification', user.id);
 
     const verifyUrl = `${env.MERCHANT_WEB_URL}/verify-email?token=${token}`;
     await this.emailService.sendVerificationEmail(user.email, {

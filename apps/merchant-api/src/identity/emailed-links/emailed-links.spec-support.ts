@@ -1,4 +1,4 @@
-import { eq, userEmailVerificationsTable, userInvitesTable } from 'db/identity';
+import { eq, userInvitesTable } from 'db/identity';
 import { type TestDb } from 'test-support';
 import {
   EMAILED_LINK_KINDS,
@@ -61,23 +61,6 @@ export async function seedInvite(
     token: emailedLinkDigest(secret),
     expiresAt:
       opts.expiresAt ?? new Date(Date.now() + EMAILED_LINK_KINDS.invite.ttlMs),
-  });
-  return secret;
-}
-
-// The same, for an outstanding email verification (OS-529 moves that flow
-// onto the module).
-export async function seedEmailVerification(
-  db: TestDb,
-  opts: { userId: number; secret?: string; expiresAt?: Date },
-): Promise<string> {
-  const secret = opts.secret ?? `verification-secret-${opts.userId}`;
-  await db.insert(userEmailVerificationsTable).values({
-    userId: opts.userId,
-    token: emailedLinkDigest(secret),
-    expiresAt:
-      opts.expiresAt ??
-      new Date(Date.now() + EMAILED_LINK_KINDS.emailVerification.ttlMs),
   });
   return secret;
 }

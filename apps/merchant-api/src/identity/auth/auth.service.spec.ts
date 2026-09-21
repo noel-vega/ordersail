@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { authenticator } from 'otplib';
 import * as bcrypt from 'bcryptjs';
 import { encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
@@ -15,13 +20,13 @@ import {
   insertUserMfa,
   insertUserMfaRecoveryCode,
   insertUserPasskey,
+  raceForUserRow,
 } from 'test-support';
 import {
   PERMISSIONS_CATALOG,
   accountsTable,
   eq,
   permissionsTable,
-  userEmailVerificationsTable,
   userInvitesTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
@@ -39,7 +44,7 @@ import { AuthService } from './auth.service';
 import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
 import { EmailedLinksService } from '../emailed-links/emailed-links.service';
 import {
-  seedEmailVerification,
+  outstandingLinkCount,
   seedInvite,
 } from '../emailed-links/emailed-links.spec-support';
 import { FactorStateService } from './factor-state.service';
@@ -195,11 +200,9 @@ describe('AuthService.signup — a new Account, its Owner signed in', () => {
     const user = await userByEmail(signupDto.email);
     expect(user.emailVerifiedAt).toBeNull();
 
-    const [verification] = await db
-      .select()
-      .from(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.userId, user.id));
-    expect(verification).toBeDefined();
+    expect(await outstandingLinkCount(db, 'emailVerification', user.id)).toBe(
+      1,
+    );
     expect(emailMock.sendVerificationEmail).toHaveBeenCalledWith(
       signupDto.email,
       expect.objectContaining({ firstName: signupDto.firstName }),
@@ -697,16 +700,21 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     });
   }
 
+  // What this flow's link is for: the email is marked verified and the
+  // caller walks straight on with a token the gate accepts. That the link
+  // is then used up, that an expired or unknown one is refused, and that
+  // only the newest one works all belong to the Emailed links module and
+  // are proven once in its own suite (emailed-links.service.spec).
   it('verifies the caller and hands back an access token the email gate now accepts', async () => {
     const user = await seedUnverifiedUser();
-    const verification = await seedEmailVerification(db, { userId: user.id });
-    const { service, sessions } = await buildBoth();
+    const { service, sessions, links } = await buildBoth();
+    const secret = await links.issue('emailVerification', user.id);
     const session = await sessions.start(user.id);
     expect(await presentAccessToken(session.access_token)).toMatchObject({
       admitted: false,
     });
 
-    const result = await service.verifyEmail(user.id, verification);
+    const result = await service.verifyEmail(user.id, secret);
 
     expect(await presentAccessToken(result.access_token)).toMatchObject({
       admitted: true,
@@ -724,47 +732,27 @@ describe('AuthService.verifyEmail (OS-470)', () => {
       .from(usersTable)
       .where(eq(usersTable.id, user.id));
     expect(updated?.emailVerifiedAt).not.toBeNull();
-
-    const remaining = await db
-      .select()
-      .from(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.userId, user.id));
-    expect(remaining).toHaveLength(0);
   });
 
-  it('rejects an expired token', async () => {
-    const user = await seedUnverifiedUser();
-    const verification = await seedEmailVerification(db, {
-      userId: user.id,
-      expiresAt: new Date(Date.now() - 60_000),
-    });
-    const service = await build();
-
-    await expect(service.verifyEmail(user.id, verification)).rejects.toThrow(
-      'Invalid or expired token',
-    );
-  });
-
-  it('rejects an unknown token', async () => {
-    const user = await seedUnverifiedUser();
-    const service = await build();
-    await expect(
-      service.verifyEmail(user.id, 'not-a-real-token'),
-    ).rejects.toThrow('Invalid or expired token');
-  });
-
-  it("rejects another user's token without consuming it", async () => {
+  // The refusal that is this flow's own, and the reason redeem hands its
+  // effect the subject the link names: someone signed in as themselves
+  // following a link that was sent to somebody else. The effect throws,
+  // which rolls the claim back — so the refusal costs the real owner
+  // nothing, and their link still works afterwards.
+  it("refuses someone else's link as forbidden, and leaves it working for its owner", async () => {
     const owner = await seedUnverifiedUser();
     const other = await insertUser(db, {
       accountId: owner.accountId,
       email: 'someone-else@store.test',
       password: 'hashed',
     });
-    const verification = await seedEmailVerification(db, { userId: owner.id });
-    const service = await build();
+    const { service, links } = await buildBoth();
+    const secret = await links.issue('emailVerification', owner.id);
 
-    await expect(service.verifyEmail(other.id, verification)).rejects.toThrow(
-      'This verification link belongs to a different account',
+    await expect(service.verifyEmail(other.id, secret)).rejects.toThrow(
+      new ForbiddenException(
+        'This verification link belongs to a different account',
+      ),
     );
 
     const [otherRow] = await db
@@ -773,73 +761,123 @@ describe('AuthService.verifyEmail (OS-470)', () => {
       .where(eq(usersTable.id, other.id));
     expect(otherRow?.emailVerifiedAt).toBeNull();
 
-    await expect(
-      service.verifyEmail(owner.id, verification),
-    ).resolves.toHaveProperty('access_token');
+    await expect(service.verifyEmail(owner.id, secret)).resolves.toHaveProperty(
+      'access_token',
+    );
   });
 
-  it('rejects a token that has already been used', async () => {
+  // The status mapping, which is this flow's and not the module's: the one
+  // refusal the module gives for unknown, expired and already-used becomes
+  // a 400 and not a 401 — the caller here is signed in, so merchant-sdk
+  // would answer a 401 by refreshing and retrying with the same spent link.
+  // Deliberately a different answer from the wrong-owner 403 above: that
+  // one is the effect's, and it does not use the link up.
+  it('refuses an unusable link as a bad request, not as unauthorized', async () => {
     const user = await seedUnverifiedUser();
-    const verification = await seedEmailVerification(db, { userId: user.id });
     const service = await build();
 
-    await service.verifyEmail(user.id, verification);
+    await expect(
+      service.verifyEmail(user.id, 'not-a-real-token'),
+    ).rejects.toThrow(new BadRequestException('Invalid or expired token'));
 
-    await expect(service.verifyEmail(user.id, verification)).rejects.toThrow(
-      'Invalid or expired token',
+    const [row] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id));
+    expect(row?.emailVerifiedAt).toBeNull();
+  });
+
+  // A double-clicked verify button. The module makes exactly one of the two
+  // redemptions win (its own suite proves the effect runs once); what is
+  // this flow's is that the loser reads as an ordinary invalid link rather
+  // than a 500 — and that the winner still gets a usable token. Staged on
+  // the User's row, so it is a race every run.
+  it('lets one of two simultaneous verifications through and refuses the other', async () => {
+    const user = await seedUnverifiedUser();
+    const { service, links } = await buildBoth();
+    const secret = await links.issue('emailVerification', user.id);
+
+    const outcomes = await raceForUserRow(db, user.id, 2, () =>
+      Promise.allSettled([
+        service.verifyEmail(user.id, secret),
+        service.verifyEmail(user.id, secret),
+      ]),
+    );
+
+    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual([
+      'fulfilled',
+      'rejected',
+    ]);
+    const [verified] = outcomes.filter((o) => o.status === 'fulfilled');
+    const [refused] = outcomes.filter((o) => o.status === 'rejected');
+    expect(await presentAccessToken(verified.value.access_token)).toMatchObject(
+      { admitted: true, user: { sub: user.id } },
+    );
+    expect(refused.reason).toEqual(
+      new BadRequestException('Invalid or expired token'),
     );
   });
 });
 
+// The secret as the person receives it: out of the URL in the nth
+// verification email, which is the only place it is ever readable.
+function emailedVerificationSecret(call: number): string {
+  const [, params] = emailMock.sendVerificationEmail.mock.calls[call] as [
+    string,
+    { verifyUrl: string },
+  ];
+  const secret = new URL(params.verifyUrl).searchParams.get('token');
+  if (!secret) throw new Error('no token in the emailed verify URL');
+  return secret;
+}
+
 describe('AuthService.resendVerification (OS-470)', () => {
-  it('regenerates the token and resends for an unverified account', async () => {
+  async function seedUnverified(email: string) {
     const account = await insertAccount(db);
-    const user = await insertUser(db, {
-      accountId: account.id,
-      email: 'resend@store.test',
-      password: 'hashed',
-    });
+    return insertUser(db, { accountId: account.id, email, password: 'hashed' });
+  }
+
+  // Follows the link out of the email rather than reading the row it came
+  // from — an emailed link is only worth anything if the secret in the URL
+  // is the one the module minted.
+  it('emails an unverified account a link that actually verifies them', async () => {
+    const user = await seedUnverified('resend@store.test');
     const service = await build();
 
     await service.resendVerification(user.id);
 
-    const [verification] = await db
-      .select()
-      .from(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.userId, user.id));
-    expect(verification).toBeDefined();
     expect(emailMock.sendVerificationEmail).toHaveBeenCalledWith(
       user.email,
       expect.objectContaining({ firstName: user.firstname }),
     );
-
-    // OS-476: only the digest of the emailed token is stored
-    const [, params] = emailMock.sendVerificationEmail.mock.calls[0] as [
-      string,
-      { verifyUrl: string },
-    ];
-    const emailed = new URL(params.verifyUrl).searchParams.get('token')!;
-    expect(verification.token).not.toBe(emailed);
-    expect(verification.token).toBe(emailedLinkDigest(emailed));
+    await expect(
+      service.verifyEmail(user.id, emailedVerificationSecret(0)),
+    ).resolves.toHaveProperty('access_token');
   });
 
-  it('replaces an existing pending verification instead of accumulating rows', async () => {
-    const account = await insertAccount(db);
-    const user = await insertUser(db, {
-      accountId: account.id,
-      email: 'resend2@store.test',
-      password: 'hashed',
-    });
+  // Story 23. Replacement is the module's mechanism and its suite proves it
+  // per kind; what is asserted here is that this flow goes through it — a
+  // resend that inserted a second row would leave two live links.
+  it('replaces the earlier link: only the newest email still works', async () => {
+    const user = await seedUnverified('resend2@store.test');
     const service = await build();
 
     await service.resendVerification(user.id);
     await service.resendVerification(user.id);
+    const [first, second] = [
+      emailedVerificationSecret(0),
+      emailedVerificationSecret(1),
+    ];
 
-    const rows = await db
-      .select()
-      .from(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.userId, user.id));
-    expect(rows).toHaveLength(1);
+    expect(await outstandingLinkCount(db, 'emailVerification', user.id)).toBe(
+      1,
+    );
+    await expect(service.verifyEmail(user.id, first)).rejects.toThrow(
+      new BadRequestException('Invalid or expired token'),
+    );
+    await expect(service.verifyEmail(user.id, second)).resolves.toHaveProperty(
+      'access_token',
+    );
   });
 
   it('is a silent no-op for an already-verified account', async () => {
@@ -1786,12 +1824,10 @@ describe('AuthService — the Factor requirement on a new Session (OS-473/OS-494
         email: `verify-mfa-${randomUUID()}@store.test`,
         password: 'hashed',
       });
-      const verification = await seedEmailVerification(db, {
-        userId: user.id,
-      });
-      const service = await build();
+      const { service, links } = await buildBoth();
+      const secret = await links.issue('emailVerification', user.id);
 
-      const result = await service.verifyEmail(user.id, verification);
+      const result = await service.verifyEmail(user.id, secret);
 
       expect(await presentAccessToken(result.access_token)).toEqual(HELD);
       expect(
