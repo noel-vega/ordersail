@@ -140,6 +140,13 @@ export class EmailedLinksService {
   // There is no non-consuming "peek", deliberately: a caller that wants to
   // refuse without using the link up (email verification's wrong-owner
   // case) throws from the effect, which rolls the claim back.
+  //
+  // And no `tx` parameter, unlike issue and revokeAllForSubject: this
+  // operation owns its transaction. What a caller would otherwise want to
+  // join it to is its own work, and that already runs inside this one, as
+  // the effect. Handing it someone else's transaction would only let the
+  // claim and the effect commit apart, which is the one fact redeem exists
+  // to make.
   async redeem<T>(
     kindName: EmailedLinkKindName,
     secret: string,

@@ -88,7 +88,7 @@ export class UsersService {
     // and withdrawn belongs to that module; what is left here is the Staff
     // record it is about. Deactivation withdraws the other kinds through it
     // too (OS-559).
-    private readonly emailedLinksService: EmailedLinksService,
+    private readonly emailedLinks: EmailedLinksService,
   ) {}
 
   // deactivated users are excluded so sign-in refuses them exactly like a
@@ -234,11 +234,7 @@ export class UsersService {
             );
         }
 
-        const secret = await this.emailedLinksService.issue(
-          'invite',
-          user.id,
-          tx,
-        );
+        const secret = await this.emailedLinks.issue('invite', user.id, tx);
 
         return { user, secret };
       });
@@ -704,7 +700,7 @@ export class UsersService {
 
       if (deactivated && updated) {
         await this.sessionsService.revokeAll(userId, tx);
-        await this.emailedLinksService.revokeAllForSubject(
+        await this.emailedLinks.revokeAllForSubject(
           userId,
           ['passwordReset', 'emailVerification'],
           tx,
@@ -742,7 +738,7 @@ export class UsersService {
 
     if (!user || user.password) return undefined;
 
-    const secret = await this.emailedLinksService.issue('invite', userId);
+    const secret = await this.emailedLinks.issue('invite', userId);
 
     const inviteUrl = `${env.MERCHANT_WEB_URL}/join?token=${secret}`;
     await this.emailService.sendInviteEmail(user.email, {
@@ -790,11 +786,7 @@ export class UsersService {
     // was withdrawn can't leave a Staff record nobody can join and nobody
     // can re-invite.
     await this.db.transaction(async (tx) => {
-      await this.emailedLinksService.revokeAllForSubject(
-        userId,
-        ['invite'],
-        tx,
-      );
+      await this.emailedLinks.revokeAllForSubject(userId, ['invite'], tx);
       await tx.delete(usersTable).where(eq(usersTable.id, userId));
     });
     return toUser(user, roles.get(user.id) ?? []);
