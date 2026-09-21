@@ -14,10 +14,9 @@ import { EmailService } from 'src/shared/email/email.service';
 import { resolvePageParams } from 'src/shared/pagination';
 import { PermissionsService } from '../permissions/permissions.service';
 import { SessionsService } from '../auth/sessions.service';
-import {
-  generateToken,
-  hashToken,
-} from '../../shared/common/generate-token.util';
+import { generateToken } from '../../shared/common/generate-token.util';
+import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
+import { EMAILED_LINK_KINDS } from '../emailed-links/emailed-link-kinds';
 import { resolveOwned } from '../shared/resolve-owned.util';
 import { groupBy } from '../shared/group-by.util';
 import { assertCanGrant } from '../shared/assert-can-grant.util';
@@ -44,7 +43,10 @@ import {
   usersTable,
 } from 'db/identity';
 
-const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, matches the refresh token TTL
+// An Invite's lifetime is declared with the kind, not here — see
+// identity/emailed-links/emailed-link-kinds.ts. OS-530 moves the rest of
+// the invite plumbing below onto that module too.
+const INVITE_TTL_MS = EMAILED_LINK_KINDS.invite.ttlMs;
 
 function userStatus(row: typeof usersTable.$inferSelect): UserStatus {
   if (row.deactivatedAt) return 'deactivated';
@@ -109,7 +111,7 @@ export class UsersService {
       .select({ user: usersTable, expiresAt: userInvitesTable.expiresAt })
       .from(userInvitesTable)
       .innerJoin(usersTable, eq(userInvitesTable.userId, usersTable.id))
-      .where(eq(userInvitesTable.token, hashToken(token)));
+      .where(eq(userInvitesTable.token, emailedLinkDigest(token)));
 
     return row;
   }
@@ -238,7 +240,7 @@ export class UsersService {
         const token = generateToken(32);
         await tx.insert(userInvitesTable).values({
           userId: user.id,
-          token: hashToken(token),
+          token: emailedLinkDigest(token),
           expiresAt: new Date(Date.now() + INVITE_TTL_MS),
         });
 
@@ -714,7 +716,7 @@ export class UsersService {
     const [invite] = await this.db
       .update(userInvitesTable)
       .set({
-        token: hashToken(token),
+        token: emailedLinkDigest(token),
         expiresAt: new Date(Date.now() + INVITE_TTL_MS),
       })
       .where(eq(userInvitesTable.userId, userId))

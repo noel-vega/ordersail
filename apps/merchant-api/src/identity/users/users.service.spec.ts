@@ -6,7 +6,6 @@ import {
   insertAccount,
   insertRole,
   insertUser,
-  insertUserInvite,
   liveRefreshTokenCount,
   lockWaiters,
   seedPermissionsCatalog,
@@ -29,7 +28,8 @@ import {
   testJwt,
 } from '../auth/sessions.spec-support';
 import { UsersService } from './users.service';
-import { hashToken } from 'src/shared/common/generate-token.util';
+import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
+import { seedInvite } from '../emailed-links/emailed-links.spec-support';
 
 const db = useTestDb();
 
@@ -596,14 +596,11 @@ describe('UsersService.resendInvite (OS-185)', () => {
   it('rotates the token + expiry and re-sends the email', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    const invite = await insertUserInvite(db, {
+    const expired = await seedInvite(db, {
       userId: user.id,
-      token: 'old-token',
+      secret: 'old-secret',
       expiresAt: new Date(Date.now() - 1000),
     });
-    expect(typeof invite.id).toBe('number');
-    expect(invite.userId).toBe(user.id);
-    expect(invite.token).toBe('old-token');
     const service = await build();
 
     const result = await service.resendInvite(user.id, account.id);
@@ -613,8 +610,7 @@ describe('UsersService.resendInvite (OS-185)', () => {
       .select()
       .from(userInvitesTable)
       .where(eq(userInvitesTable.userId, user.id));
-    expect(fresh.token).not.toBe(hashToken('old-token'));
-    expect(fresh.token).not.toBe(hashToken(invite.token));
+    expect(fresh.token).not.toBe(emailedLinkDigest(expired));
     expect(fresh.expiresAt.getTime()).toBeGreaterThan(Date.now());
 
     expect(emailMock.sendInviteEmail).toHaveBeenCalledTimes(1);
@@ -626,7 +622,7 @@ describe('UsersService.resendInvite (OS-185)', () => {
     // OS-476: the link carries the raw token, the row only its digest
     const emailed = new URL(params.inviteUrl).searchParams.get('token')!;
     expect(fresh.token).not.toBe(emailed);
-    expect(fresh.token).toBe(hashToken(emailed));
+    expect(fresh.token).toBe(emailedLinkDigest(emailed));
   });
 
   it('is undefined for a user who has already joined', async () => {
@@ -653,7 +649,7 @@ describe('UsersService.resendInvite (OS-185)', () => {
     const account = await insertAccount(db);
     const other = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    await insertUserInvite(db, { userId: user.id });
+    await seedInvite(db, { userId: user.id });
     const service = await build();
 
     expect(await service.resendInvite(user.id, other.id)).toBeUndefined();
@@ -664,7 +660,7 @@ describe('UsersService.revokeInvite (OS-185)', () => {
   it('deletes the never-joined user and their invite', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    await insertUserInvite(db, { userId: user.id });
+    await seedInvite(db, { userId: user.id });
     const service = await build();
 
     expect((await service.revokeInvite(user.id, account.id))?.status).toBe(
@@ -706,7 +702,7 @@ describe('UsersService.revokeInvite (OS-185)', () => {
     const account = await insertAccount(db);
     const other = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    await insertUserInvite(db, { userId: user.id });
+    await seedInvite(db, { userId: user.id });
     const service = await build();
 
     expect(await service.revokeInvite(user.id, other.id)).toBeUndefined();

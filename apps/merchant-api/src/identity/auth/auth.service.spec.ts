@@ -5,7 +5,6 @@ import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { authenticator } from 'otplib';
 import * as bcrypt from 'bcryptjs';
 import { encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
-import { hashToken } from 'src/shared/common/generate-token.util';
 import {
   useTestDb,
   lockWaiters,
@@ -13,9 +12,6 @@ import {
   deactivateUser,
   insertAccount,
   insertUser,
-  insertUserPasswordReset,
-  insertUserEmailVerification,
-  insertUserInvite,
   insertUserMfa,
   insertUserMfaRecoveryCode,
   insertUserPasskey,
@@ -40,6 +36,12 @@ import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
+import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
+import { EmailedLinksService } from '../emailed-links/emailed-links.service';
+import {
+  seedEmailVerification,
+  seedInvite,
+} from '../emailed-links/emailed-links.spec-support';
 import { FactorStateService } from './factor-state.service';
 import { SessionsService } from './sessions.service';
 import {
@@ -96,6 +98,9 @@ async function buildBoth() {
       AuthService,
       SessionsService,
       FactorStateService,
+      // real Emailed links module — a reset link is issued and redeemed
+      // through it, and its own suite is emailed-links.service.spec
+      EmailedLinksService,
       { provide: DRIZZLE, useValue: db },
       {
         provide: JwtService,
@@ -123,6 +128,7 @@ async function buildBoth() {
     service: ref.get(AuthService),
     sessions: ref.get(SessionsService),
     users: ref.get(UsersService),
+    links: ref.get(EmailedLinksService),
   };
 }
 
@@ -328,7 +334,11 @@ describe('AuthService.me — who the caller is now', () => {
 });
 
 describe('AuthService.requestPasswordReset — an emailed link, and no account enumeration', () => {
-  it('creates a reset row and emails the user for an active account', async () => {
+  // What the link in the email is for — so this follows it rather than
+  // reading the row it came from. Expiry, replacement and single use are
+  // the Emailed links module's (emailed-links.service.spec); what is this
+  // flow's is who gets an email at all, and that the link inside it works.
+  it('emails an active account a link that actually resets their password', async () => {
     const account = await insertAccountFor();
     const user = await insertUser(db, {
       accountId: account.id,
@@ -339,43 +349,30 @@ describe('AuthService.requestPasswordReset — an emailed link, and no account e
 
     await service.requestPasswordReset(user.email);
 
-    const [reset] = await db
-      .select()
-      .from(userPasswordResetsTable)
-      .where(eq(userPasswordResetsTable.userId, user.id));
-    expect(reset).toBeDefined();
     expect(emailMock.sendPasswordResetEmail).toHaveBeenCalledWith(
       user.email,
       expect.objectContaining({ firstName: user.firstname }),
     );
-
-    // OS-476: only the digest of the emailed token is stored
     const [, params] = emailMock.sendPasswordResetEmail.mock.calls[0] as [
       string,
       { resetUrl: string },
     ];
     const emailed = new URL(params.resetUrl).searchParams.get('token')!;
-    expect(reset.token).not.toBe(emailed);
-    expect(reset.token).toBe(hashToken(emailed));
-  });
 
-  it('replaces an existing pending reset instead of accumulating rows', async () => {
-    const account = await insertAccountFor();
-    const user = await insertUser(db, {
-      accountId: account.id,
-      email: 'active2@store.test',
-      password: 'hashed',
-    });
-    const service = await build();
-
-    await service.requestPasswordReset(user.email);
-    await service.requestPasswordReset(user.email);
-
-    const rows = await db
+    // OS-476: the link carries the secret, the row only its digest. The one
+    // assertion here about storage, because a database read that could be
+    // replayed as a live link is invisible from outside.
+    const [reset] = await db
       .select()
       .from(userPasswordResetsTable)
       .where(eq(userPasswordResetsTable.userId, user.id));
-    expect(rows).toHaveLength(1);
+    expect(reset?.token).not.toBe(emailed);
+    expect(reset?.token).toBe(emailedLinkDigest(emailed));
+
+    await service.resetPassword(emailed, 'brand-new-password');
+    await expect(
+      service.verifyPassword(user.id, 'brand-new-password'),
+    ).resolves.toBeUndefined();
   });
 
   it('is a silent no-op for an unknown email (no account enumeration)', async () => {
@@ -433,30 +430,22 @@ describe('AuthService.resetPassword — a new password ends every Session', () =
     return user;
   }
 
-  it('sets the new password, consumes the token, and revokes all sessions', async () => {
+  // What this flow's effect IS: the password changes and every Session
+  // ends, together. That the link is then used up, and that presenting it
+  // again is refused, belongs to the Emailed links module and is proven
+  // once in its own suite rather than again per flow.
+  it('sets the new password and ends every Session the User holds', async () => {
     const user = await seedActiveUser();
-    const reset = await insertUserPasswordReset(db, { userId: user.id });
-    // fixture returns the full row (not just the overridden raw token)
-    expect(typeof reset.id).toBe('number');
-    expect(reset.userId).toBe(user.id);
-    expect(reset.expiresAt).toBeInstanceOf(Date);
-    const { service, sessions } = await buildBoth();
+    const { service, sessions, links } = await buildBoth();
+    const secret = await links.issue('passwordReset', user.id);
     const laptop = await sessions.start(user.id);
     const phone = await sessions.start(user.id);
 
-    await service.resetPassword(reset.token, 'brand-new-password');
+    await service.resetPassword(secret, 'brand-new-password');
 
-    const [updated] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, user.id));
-    expect(updated?.password).not.toBe(user.password);
-
-    const remaining = await db
-      .select()
-      .from(userPasswordResetsTable)
-      .where(eq(userPasswordResetsTable.userId, user.id));
-    expect(remaining).toHaveLength(0);
+    await expect(
+      service.verifyPassword(user.id, 'brand-new-password'),
+    ).resolves.toBeUndefined();
 
     // whoever prompted the reset is signed out, on every browser
     await expect(sessions.refreshTokens(laptop.refresh_token)).rejects.toThrow(
@@ -474,8 +463,8 @@ describe('AuthService.resetPassword — a new password ends every Session', () =
   // refresh is parked first, so it is the one in flight.
   it("ends a Session whose refresh was already in flight — an attacker's successor does not survive the reset", async () => {
     const user = await seedActiveUser();
-    const reset = await insertUserPasswordReset(db, { userId: user.id });
-    const { service, sessions } = await buildBoth();
+    const { service, sessions, links } = await buildBoth();
+    const secret = await links.issue('passwordReset', user.id);
     const attacker = await sessions.start(user.id);
 
     const [refreshed] = await raceForRefreshRow(
@@ -488,7 +477,7 @@ describe('AuthService.resetPassword — a new password ends every Session', () =
         await lockWaiters(db, 1);
         return Promise.all([
           refreshing,
-          service.resetPassword(reset.token, 'brand-new-password'),
+          service.resetPassword(secret, 'brand-new-password'),
         ]);
       },
     );
@@ -499,36 +488,20 @@ describe('AuthService.resetPassword — a new password ends every Session', () =
     expect(await liveRefreshTokenCount(db, user.id)).toBe(0);
   });
 
-  it('rejects an expired token', async () => {
+  // The status mapping, which is this flow's and not the module's: the one
+  // refusal the module gives for unknown, expired and already-used becomes
+  // a 401 with a message that distinguishes none of them. Which links are
+  // unusable is the module's suite; that they all read alike here is this.
+  it('refuses an unusable link as unauthorized, and changes nothing', async () => {
     const user = await seedActiveUser();
-    const reset = await insertUserPasswordReset(db, {
-      userId: user.id,
-      expiresAt: new Date(Date.now() - 60_000),
-    });
     const service = await build();
 
-    await expect(
-      service.resetPassword(reset.token, 'brand-new-password'),
-    ).rejects.toThrow('Invalid or expired token');
-  });
-
-  it('rejects a token that has already been used', async () => {
-    const user = await seedActiveUser();
-    const reset = await insertUserPasswordReset(db, { userId: user.id });
-    const service = await build();
-
-    await service.resetPassword(reset.token, 'brand-new-password');
-
-    await expect(
-      service.resetPassword(reset.token, 'another-password'),
-    ).rejects.toThrow('Invalid or expired token');
-  });
-
-  it('rejects an unknown token', async () => {
-    const service = await build();
     await expect(
       service.resetPassword('not-a-real-token', 'brand-new-password'),
-    ).rejects.toThrow('Invalid or expired token');
+    ).rejects.toThrow(new UnauthorizedException('Invalid or expired token'));
+    await expect(
+      service.verifyPassword(user.id, 'brand-new-password'),
+    ).rejects.toThrow(UnauthorizedException);
   });
 });
 
@@ -640,11 +613,11 @@ describe('AuthService.acceptInvite — email verification (OS-470)', () => {
       email: 'invitee@store.test',
       password: null,
     });
-    const invite = await insertUserInvite(db, { userId: user.id });
+    const invite = await seedInvite(db, { userId: user.id });
     const { service, sessions } = await buildBoth();
 
     const session = await service.acceptInvite({
-      token: invite.token,
+      token: invite,
       password: 'brand-new-password',
     });
 
@@ -679,12 +652,12 @@ describe('AuthService.acceptInvite — a deactivated User', () => {
       email: 'switched-off@store.test',
       password: null,
     });
-    const invite = await insertUserInvite(db, { userId: user.id });
+    const invite = await seedInvite(db, { userId: user.id });
     await deactivateUser(db, user.id);
     const service = await build();
 
     const refusal = await service
-      .acceptInvite({ token: invite.token, password: 'brand-new-password' })
+      .acceptInvite({ token: invite, password: 'brand-new-password' })
       .catch((err: unknown) => err);
     const unknownInvite = await service
       .acceptInvite({ token: 'no-such-invite', password: 'brand-new-password' })
@@ -720,19 +693,14 @@ describe('AuthService.verifyEmail (OS-470)', () => {
 
   it('verifies the caller and hands back an access token the email gate now accepts', async () => {
     const user = await seedUnverifiedUser();
-    const verification = await insertUserEmailVerification(db, {
-      userId: user.id,
-    });
-    expect(typeof verification.id).toBe('number');
-    expect(verification.userId).toBe(user.id);
-    expect(verification.expiresAt).toBeInstanceOf(Date);
+    const verification = await seedEmailVerification(db, { userId: user.id });
     const { service, sessions } = await buildBoth();
     const session = await sessions.start(user.id);
     expect(await presentAccessToken(session.access_token)).toMatchObject({
       admitted: false,
     });
 
-    const result = await service.verifyEmail(user.id, verification.token);
+    const result = await service.verifyEmail(user.id, verification);
 
     expect(await presentAccessToken(result.access_token)).toMatchObject({
       admitted: true,
@@ -760,15 +728,15 @@ describe('AuthService.verifyEmail (OS-470)', () => {
 
   it('rejects an expired token', async () => {
     const user = await seedUnverifiedUser();
-    const verification = await insertUserEmailVerification(db, {
+    const verification = await seedEmailVerification(db, {
       userId: user.id,
       expiresAt: new Date(Date.now() - 60_000),
     });
     const service = await build();
 
-    await expect(
-      service.verifyEmail(user.id, verification.token),
-    ).rejects.toThrow('Invalid or expired token');
+    await expect(service.verifyEmail(user.id, verification)).rejects.toThrow(
+      'Invalid or expired token',
+    );
   });
 
   it('rejects an unknown token', async () => {
@@ -786,14 +754,12 @@ describe('AuthService.verifyEmail (OS-470)', () => {
       email: 'someone-else@store.test',
       password: 'hashed',
     });
-    const verification = await insertUserEmailVerification(db, {
-      userId: owner.id,
-    });
+    const verification = await seedEmailVerification(db, { userId: owner.id });
     const service = await build();
 
-    await expect(
-      service.verifyEmail(other.id, verification.token),
-    ).rejects.toThrow('This verification link belongs to a different account');
+    await expect(service.verifyEmail(other.id, verification)).rejects.toThrow(
+      'This verification link belongs to a different account',
+    );
 
     const [otherRow] = await db
       .select()
@@ -802,22 +768,20 @@ describe('AuthService.verifyEmail (OS-470)', () => {
     expect(otherRow?.emailVerifiedAt).toBeNull();
 
     await expect(
-      service.verifyEmail(owner.id, verification.token),
+      service.verifyEmail(owner.id, verification),
     ).resolves.toHaveProperty('access_token');
   });
 
   it('rejects a token that has already been used', async () => {
     const user = await seedUnverifiedUser();
-    const verification = await insertUserEmailVerification(db, {
-      userId: user.id,
-    });
+    const verification = await seedEmailVerification(db, { userId: user.id });
     const service = await build();
 
-    await service.verifyEmail(user.id, verification.token);
+    await service.verifyEmail(user.id, verification);
 
-    await expect(
-      service.verifyEmail(user.id, verification.token),
-    ).rejects.toThrow('Invalid or expired token');
+    await expect(service.verifyEmail(user.id, verification)).rejects.toThrow(
+      'Invalid or expired token',
+    );
   });
 });
 
@@ -850,7 +814,7 @@ describe('AuthService.resendVerification (OS-470)', () => {
     ];
     const emailed = new URL(params.verifyUrl).searchParams.get('token')!;
     expect(verification.token).not.toBe(emailed);
-    expect(verification.token).toBe(hashToken(emailed));
+    expect(verification.token).toBe(emailedLinkDigest(emailed));
   });
 
   it('replaces an existing pending verification instead of accumulating rows', async () => {
@@ -1736,11 +1700,11 @@ describe('AuthService — the Factor requirement on a new Session (OS-473/OS-494
         accountId: account.id,
         password: null,
       });
-      const invite = await insertUserInvite(db, { userId: user.id });
+      const invite = await seedInvite(db, { userId: user.id });
       const service = await build();
 
       const session = await service.acceptInvite({
-        token: invite.token,
+        token: invite,
         password: 'brand-new-password',
       });
 
@@ -1755,11 +1719,11 @@ describe('AuthService — the Factor requirement on a new Session (OS-473/OS-494
         accountId: account.id,
         password: null,
       });
-      const invite = await insertUserInvite(db, { userId: user.id });
+      const invite = await seedInvite(db, { userId: user.id });
       const { service, sessions } = await buildBoth();
 
       const session = await service.acceptInvite({
-        token: invite.token,
+        token: invite,
         password: 'brand-new-password',
       });
 
@@ -1816,12 +1780,12 @@ describe('AuthService — the Factor requirement on a new Session (OS-473/OS-494
         email: `verify-mfa-${randomUUID()}@store.test`,
         password: 'hashed',
       });
-      const verification = await insertUserEmailVerification(db, {
+      const verification = await seedEmailVerification(db, {
         userId: user.id,
       });
       const service = await build();
 
-      const result = await service.verifyEmail(user.id, verification.token);
+      const result = await service.verifyEmail(user.id, verification);
 
       expect(await presentAccessToken(result.access_token)).toEqual(HELD);
       expect(

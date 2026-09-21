@@ -22,10 +22,10 @@ import { DRIZZLE } from 'src/shared/database/database.constants';
 import { type DbTransaction } from 'src/shared/database/database.types';
 import { EmailService } from 'src/shared/email/email.service';
 import { env } from 'src/shared/env';
-import {
-  generateToken,
-  hashToken,
-} from 'src/shared/common/generate-token.util';
+import { generateToken } from 'src/shared/common/generate-token.util';
+import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
+import { EMAILED_LINK_KINDS } from '../emailed-links/emailed-link-kinds';
+import { EmailedLinksService } from '../emailed-links/emailed-links.service';
 import { decryptMfaSecret, encryptMfaSecret } from 'src/shared/mfa/mfa-crypto';
 import { generateRecoveryCodes } from 'src/shared/mfa/recovery-codes.util';
 import {
@@ -36,18 +36,9 @@ import {
   userEmailVerificationsTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
-  userPasswordResetsTable,
   usersTable,
 } from 'db/identity';
 import * as bcrypt from 'bcryptjs';
-
-// deliberately much shorter than the 7-day invite TTL — an existing active
-// user can always request a fresh link, so there's no cost to expiring fast
-const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
-
-// no urgency signal the way a password reset has ("someone might be taking
-// over your account right now") — a generous window is fine
-const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
 // long enough to type a code in, short enough that a challenge token isn't
 // worth much if it leaks (e.g. via a referrer header or a shared machine)
@@ -85,6 +76,7 @@ export class AuthService {
     private emailService: EmailService,
     private sessionsService: SessionsService,
     private factorState: FactorStateService,
+    private emailedLinks: EmailedLinksService,
   ) {}
 
   // Who the caller is *now*. Email and name are read from the User row, not
@@ -620,7 +612,7 @@ export class AuthService {
     const [verification] = await this.db
       .select()
       .from(userEmailVerificationsTable)
-      .where(eq(userEmailVerificationsTable.token, hashToken(token)));
+      .where(eq(userEmailVerificationsTable.token, emailedLinkDigest(token)));
 
     // 400, not 401: the caller is authenticated, so a 401 here would read as
     // "your session expired" to the client's refresh-and-retry logic
@@ -676,20 +668,16 @@ export class AuthService {
     firstname: string;
   }): Promise<void> {
     const token = generateToken(32);
-    const tokenHash = hashToken(token);
+    const tokenHash = emailedLinkDigest(token);
+    const expiresAt = new Date(
+      Date.now() + EMAILED_LINK_KINDS.emailVerification.ttlMs,
+    );
     await this.db
       .insert(userEmailVerificationsTable)
-      .values({
-        userId: user.id,
-        token: tokenHash,
-        expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
-      })
+      .values({ userId: user.id, token: tokenHash, expiresAt })
       .onConflictDoUpdate({
         target: userEmailVerificationsTable.userId,
-        set: {
-          token: tokenHash,
-          expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
-        },
+        set: { token: tokenHash, expiresAt },
       });
 
     const verifyUrl = `${env.MERCHANT_WEB_URL}/verify-email?token=${token}`;
@@ -708,22 +696,11 @@ export class AuthService {
     const user = await this.usersService.getByEmail(email);
     if (!user || !user.password) return;
 
-    const token = generateToken(32);
-    const tokenHash = hashToken(token);
-    await this.db
-      .insert(userPasswordResetsTable)
-      .values({
-        userId: user.id,
-        token: tokenHash,
-        expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
-      })
-      .onConflictDoUpdate({
-        target: userPasswordResetsTable.userId,
-        set: {
-          token: tokenHash,
-          expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
-        },
-      });
+    // The Emailed links module owns the secret, the digest, the lifetime and
+    // the replacement of any link still outstanding; what's left here is the
+    // part that is about password reset — who gets one, and what the email
+    // says.
+    const token = await this.emailedLinks.issue('passwordReset', user.id);
 
     const resetUrl = `${env.MERCHANT_WEB_URL}/reset-password?token=${token}`;
     await this.emailService.sendPasswordResetEmail(user.email, {
@@ -732,41 +709,48 @@ export class AuthService {
     });
   }
 
-  // Sets a new password, consumes the reset token, and revokes every
-  // existing refresh-token family for the user — unlike a normal token
-  // rotation (which only kills the one family being rotated), a password
-  // reset must kill every live session, since the whole point is "whoever
-  // had the old password should be logged out everywhere."
+  // What a reset link is for: set the new password and end every Session
+  // the User holds. Unlike an ordinary rotation (which only kills the one
+  // family being rotated) this kills them all, since the whole point is
+  // "whoever had the old password should be signed out everywhere" —
+  // whoever prompted the reset included.
+  //
+  // The effect is everything after the link is claimed, and it runs in the
+  // module's transaction, so "the link is used up", "the password changed"
+  // and "every Session ended" are one fact. Anything less has a failure
+  // mode: a revoke that failed after the password write had committed could
+  // not be retried with the same link, leaving the old password's Sessions
+  // running under the new one. A link that two people follow at the same
+  // moment sets exactly one password — the claim inside redeem is what
+  // guarantees that, not this method.
+  //
+  // The refusal is one answer for unknown, expired and already-used, so a
+  // link tells whoever presents it nothing.
   async resetPassword(token: string, newPassword: string): Promise<void> {
-    const [reset] = await this.db
-      .select()
-      .from(userPasswordResetsTable)
-      .where(eq(userPasswordResetsTable.token, hashToken(token)));
-
-    if (!reset || reset.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
-
+    // Hashed before the transaction opens, not inside the effect: bcrypt
+    // takes ~100ms and the effect runs holding this User's row locked, with
+    // every concurrent operation on them queued behind it. The cost is a
+    // hash computed for a link that turns out to be invalid, on a throttled
+    // route — and that also makes an invalid link cost the same time as a
+    // valid one.
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // One transaction, so "the password changed" and "every Session ended"
-    // commit as one fact: a revoke that failed after the password write had
-    // committed could not be retried with the same link (the token is
-    // consumed), leaving the old password's Sessions running under the new
-    // one. Writing the User row first also takes the lock revokeAll wants —
-    // see SessionsService.revokeAll for why a sweep holds it.
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(usersTable)
-        .set({ password: hashedPassword, updatedAt: new Date() })
-        .where(eq(usersTable.id, reset.userId));
+    const outcome = await this.emailedLinks.redeem(
+      'passwordReset',
+      token,
+      async (tx, userId) => {
+        await tx
+          .update(usersTable)
+          .set({ password: hashedPassword, updatedAt: new Date() })
+          .where(eq(usersTable.id, userId));
 
-      await tx
-        .delete(userPasswordResetsTable)
-        .where(eq(userPasswordResetsTable.id, reset.id));
+        await this.sessionsService.revokeAll(userId, tx);
+      },
+    );
 
-      await this.sessionsService.revokeAll(reset.userId, tx);
-    });
+    if (!outcome.redeemed) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
   }
 
   // Changes the password of a caller who is already signed in — the
