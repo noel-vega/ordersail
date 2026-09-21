@@ -720,11 +720,22 @@ export class UsersService {
   // joined, which is the whole precondition: a Staff record with no password
   // is what "still invited" means.
   //
-  // It used to be undefined for a pending User with no invite row too. That
-  // state is unreachable — create() writes the Invite in the same
-  // transaction as the Staff record, and accepting one sets the password —
-  // and a resend that answered "not found" rather than sending the link the
-  // Owner asked for would be the wrong answer if it ever were reachable.
+  // It used to be undefined for a pending User with no invite row too, and
+  // that fourth answer is gone deliberately (OS-530). Two module rules
+  // between them forbid it: an Emailed link has no non-consuming peek, and
+  // no code outside the module reads the link tables. Asking "is there an
+  // Invite row?" before issuing a replacement is exactly that peek, and
+  // there is no version of it this service is allowed to make.
+  //
+  // Nothing is lost. The state is unreachable — create() writes the Invite
+  // in the same transaction as the Staff record, and accepting one sets the
+  // password, which this method's own precondition already excludes — and
+  // if it ever were reachable, answering "not found" rather than sending
+  // the link the Owner asked for would be the wrong answer anyway, since
+  // issuing replaces whether or not a row is there. No caller depends on
+  // the old behaviour either: UsersController still turns undefined into a
+  // 404 for a wrong-account id or an already-joined User, and merchant-web
+  // only raises a toast from it.
   async resendInvite(
     userId: number,
     accountId: number,

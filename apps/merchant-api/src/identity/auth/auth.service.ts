@@ -574,8 +574,14 @@ export class AuthService {
   async acceptInvite(dto: AcceptInviteDto): Promise<TokenPair> {
     // Hashed before the redemption opens, for the reason resetPassword
     // hashes early: the effect runs holding this User's row locked, and
-    // bcrypt would hold every concurrent operation on them behind ~100ms of
-    // CPU. It also makes an invalid Invite cost the same time as a real one.
+    // bcrypt inside it would hold every concurrent operation on them behind
+    // ~100ms of CPU. The lock order leaves nowhere else to put it — the
+    // link can't be checked first, because checking it *is* claiming it.
+    //
+    // So a token nobody was ever sent costs a bcrypt hash too. That is the
+    // accepted price, on a route the throttler bounds (see
+    // AuthController.acceptInvite), and it buys back a timing side channel:
+    // an invalid Invite takes the same time as a real one.
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     const outcome = await this.emailedLinks.redeem(
