@@ -1,10 +1,9 @@
-import { eq, userInvitesTable } from 'db/identity';
+import { eq } from 'db/identity';
 import { type TestDb } from 'test-support';
 import {
   EMAILED_LINK_KINDS,
   type EmailedLinkKindName,
 } from './emailed-link-kinds';
-import { emailedLinkDigest } from './emailed-link-digest';
 
 // Spec-only helpers for Emailed links. App-local rather than in
 // test-support because they have to agree with emailedLinkDigest(), and
@@ -12,6 +11,11 @@ import { emailedLinkDigest } from './emailed-link-digest';
 // hand-copied digest until OS-509, which is the class of bug where the
 // fixtures and the code agree with each other and both are wrong.
 // Excluded from the build by tsconfig.build.json.
+//
+// There is deliberately no helper that seeds a link row: every flow now
+// issues through the module (OS-529 took the last one, email verification,
+// and OS-530 Invites), so a spec that wants a live link calls issue() and
+// the digest stays the module's business alone.
 
 // Backdates a subject's outstanding link of this kind so that it has just
 // expired. Ageing the row rather than faking the clock: the claim compares
@@ -44,23 +48,4 @@ export async function outstandingLinkCount(
     .from(table)
     .where(eq(table.userId, subjectId));
   return rows.length;
-}
-
-// An outstanding Invite for a User, with the secret a real emailed link
-// would carry — the one thing a spec can't get back out of the database.
-// Invites are still issued by hand in UsersService (OS-530 moves them onto
-// the module); until then this is how a spec seeds one, through the real
-// digest.
-export async function seedInvite(
-  db: TestDb,
-  opts: { userId: number; secret?: string; expiresAt?: Date },
-): Promise<string> {
-  const secret = opts.secret ?? `invite-secret-${opts.userId}`;
-  await db.insert(userInvitesTable).values({
-    userId: opts.userId,
-    token: emailedLinkDigest(secret),
-    expiresAt:
-      opts.expiresAt ?? new Date(Date.now() + EMAILED_LINK_KINDS.invite.ttlMs),
-  });
-  return secret;
 }

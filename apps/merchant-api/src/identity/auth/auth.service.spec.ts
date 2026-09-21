@@ -27,7 +27,6 @@ import {
   accountsTable,
   eq,
   permissionsTable,
-  userInvitesTable,
   userMfaRecoveryCodesTable,
   userMfaTable,
   userPasswordResetsTable,
@@ -43,10 +42,7 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
 import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
 import { EmailedLinksService } from '../emailed-links/emailed-links.service';
-import {
-  outstandingLinkCount,
-  seedInvite,
-} from '../emailed-links/emailed-links.spec-support';
+import { outstandingLinkCount } from '../emailed-links/emailed-links.spec-support';
 import { FactorStateService } from './factor-state.service';
 import { SessionsService } from './sessions.service';
 import {
@@ -111,9 +107,10 @@ async function buildBoth() {
         provide: JwtService,
         useValue: new JwtService({ secret: TEST_JWT_SECRET }),
       },
-      // real UsersService (needed for requestPasswordReset's getByEmail) —
-      // its EmailService/PermissionsService/SessionsService/EmailedLinksService
-      // deps are unused on that path
+      // real UsersService (requestPasswordReset's getByEmail, acceptInvite's
+      // activate) over a real Emailed links service — its
+      // EmailService/PermissionsService/SessionsService deps are unused on
+      // those paths
       {
         provide: UsersService,
         useValue: new UsersService(
@@ -121,7 +118,7 @@ async function buildBoth() {
           {} as never,
           {} as never,
           {} as never,
-          {} as never,
+          new EmailedLinksService(db),
         ),
       },
       // real AccountService for signup's provision(), over a real RolesService
@@ -622,8 +619,8 @@ describe('AuthService.acceptInvite — email verification (OS-470)', () => {
       email: 'invitee@store.test',
       password: null,
     });
-    const invite = await seedInvite(db, { userId: user.id });
-    const { service, sessions } = await buildBoth();
+    const { service, sessions, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
 
     const session = await service.acceptInvite({
       token: invite,
@@ -648,22 +645,23 @@ describe('AuthService.acceptInvite — email verification (OS-470)', () => {
 });
 
 // SessionsService.start would refuse an invited User switched off before
-// they join, as it refuses every sign-in path — but by then accepting the
-// invite has already written: a password, a verified email, the Factor
-// requirement, and the invite consumed. So this path is refused up front,
-// before any of that, and answered exactly like an invite that doesn't
-// exist: the link tells nobody that the User behind it was deactivated.
+// they join, as it refuses every sign-in path — but by then the join has
+// written a password, a verified email and the Factor requirement, and used
+// the Invite up. So the refusal comes from inside the redemption's effect
+// instead: it answers exactly like an Invite that doesn't exist (the link
+// tells nobody the User behind it was deactivated), and it rolls the claim
+// back, so the link is still there when the Owner changes their mind.
 describe('AuthService.acceptInvite — a deactivated User', () => {
-  it('is refused like an invalid invite, with nothing written: no Session, no password, and the invite left in place', async () => {
+  it('is refused like an invalid invite with nothing written, and the same Invite joins them once reactivated', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, {
       accountId: account.id,
       email: 'switched-off@store.test',
       password: null,
     });
-    const invite = await seedInvite(db, { userId: user.id });
+    const { service, sessions, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
     await deactivateUser(db, user.id);
-    const service = await build();
 
     const refusal = await service
       .acceptInvite({ token: invite, password: 'brand-new-password' })
@@ -678,15 +676,67 @@ describe('AuthService.acceptInvite — a deactivated User', () => {
       emailVerifiedAt: null,
       factorRequiredAt: null,
     });
-    expect(
-      await db
-        .select()
-        .from(userInvitesTable)
-        .where(eq(userInvitesTable.userId, user.id)),
-    ).toHaveLength(1);
-
     expect(refusal).toBeInstanceOf(UnauthorizedException);
     expect(refusal).toEqual(unknownInvite);
+
+    // the Invite survived being presented, so reactivating is all it takes
+    await db
+      .update(usersTable)
+      .set({ deactivatedAt: null })
+      .where(eq(usersTable.id, user.id));
+
+    const session = await service.acceptInvite({
+      token: invite,
+      password: 'brand-new-password',
+    });
+
+    await expectWorkingSession(sessions, session, user.id);
+  });
+});
+
+// Story 4: the invited person double-clicks Join. With the lookup, the
+// activation and the delete as separate statements both requests pass the
+// lookup and both activate — two Sessions out of one Invite, and whichever
+// password landed second is the one they have. Staged on the User's row so
+// it is a race on every run, not on the runs the scheduler obliges.
+describe('AuthService.acceptInvite — the same Invite followed twice at once', () => {
+  it('joins once and starts one Session; the other attempt is refused like an invalid invite', async () => {
+    const account = await insertAccount(db);
+    const user = await insertUser(db, {
+      accountId: account.id,
+      email: 'double-click@store.test',
+      password: null,
+    });
+    const { service, sessions, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
+
+    const outcomes = await raceForUserRow(db, user.id, 2, () =>
+      Promise.allSettled([
+        service.acceptInvite({ token: invite, password: 'first-password' }),
+        service.acceptInvite({ token: invite, password: 'second-password' }),
+      ]),
+    );
+
+    const joined = outcomes.filter((o) => o.status === 'fulfilled');
+    const refused = outcomes.filter((o) => o.status === 'rejected');
+    expect(joined).toHaveLength(1);
+    expect(refused[0]?.reason).toEqual(
+      new UnauthorizedException('Invalid or expired invite'),
+    );
+
+    // one join: one working Session and no second one behind it, and the
+    // password they end up with is the one attempt that succeeded
+    await expectWorkingSession(sessions, joined[0].value, user.id);
+    expect(await liveRefreshTokenCount(db, user.id)).toBe(1);
+    const accepted = await Promise.all(
+      ['first-password', 'second-password'].map((password) =>
+        service.verifyPassword(user.id, password).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
+    expect(accepted.filter(Boolean)).toHaveLength(1);
   });
 });
 
@@ -1744,8 +1794,8 @@ describe('AuthService — the Factor requirement on a new Session (OS-473/OS-494
         accountId: account.id,
         password: null,
       });
-      const invite = await seedInvite(db, { userId: user.id });
-      const service = await build();
+      const { service, links } = await buildBoth();
+      const invite = await links.issue('invite', user.id);
 
       const session = await service.acceptInvite({
         token: invite,
@@ -1763,8 +1813,8 @@ describe('AuthService — the Factor requirement on a new Session (OS-473/OS-494
         accountId: account.id,
         password: null,
       });
-      const invite = await seedInvite(db, { userId: user.id });
-      const { service, sessions } = await buildBoth();
+      const { service, sessions, links } = await buildBoth();
+      const invite = await links.issue('invite', user.id);
 
       const session = await service.acceptInvite({
         token: invite,

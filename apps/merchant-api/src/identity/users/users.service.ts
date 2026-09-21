@@ -14,9 +14,6 @@ import { EmailService } from 'src/shared/email/email.service';
 import { resolvePageParams } from 'src/shared/pagination';
 import { PermissionsService } from '../permissions/permissions.service';
 import { SessionsService } from '../auth/sessions.service';
-import { generateToken } from '../../shared/common/generate-token.util';
-import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
-import { EMAILED_LINK_KINDS } from '../emailed-links/emailed-link-kinds';
 import { EmailedLinksService } from '../emailed-links/emailed-links.service';
 import { resolveOwned } from '../shared/resolve-owned.util';
 import { groupBy } from '../shared/group-by.util';
@@ -24,6 +21,7 @@ import { assertCanGrant } from '../shared/assert-can-grant.util';
 import { env } from 'src/shared/env';
 import { getPermissionKeysForRoles } from '../shared/get-permission-keys-for-roles.util';
 import { DRIZZLE } from 'src/shared/database/database.constants';
+import { type DbTransaction } from 'src/shared/database/database.types';
 import {
   and,
   type db as Db,
@@ -39,15 +37,9 @@ import {
   rolesTable,
   type SQL,
   sql,
-  userInvitesTable,
   userRolesTable,
   usersTable,
 } from 'db/identity';
-
-// An Invite's lifetime is declared with the kind, not here — see
-// identity/emailed-links/emailed-link-kinds.ts. OS-530 moves the rest of
-// the invite plumbing below onto that module too.
-const INVITE_TTL_MS = EMAILED_LINK_KINDS.invite.ttlMs;
 
 function userStatus(row: typeof usersTable.$inferSelect): UserStatus {
   if (row.deactivatedAt) return 'deactivated';
@@ -92,6 +84,10 @@ export class UsersService {
     private readonly emailService: EmailService,
     private readonly permissionsService: PermissionsService,
     private readonly sessionsService: SessionsService,
+    // An Invite is an Emailed link, so how one is made, replaced, recognised
+    // and withdrawn belongs to that module; what is left here is the Staff
+    // record it is about. Deactivation withdraws the other kinds through it
+    // too (OS-559).
     private readonly emailedLinksService: EmailedLinksService,
   ) {}
 
@@ -108,30 +104,32 @@ export class UsersService {
     return user;
   }
 
-  async getByInviteToken(token: string) {
-    const [row] = await this.db
-      .select({ user: usersTable, expiresAt: userInvitesTable.expiresAt })
-      .from(userInvitesTable)
-      .innerJoin(usersTable, eq(userInvitesTable.userId, usersTable.id))
-      .where(eq(userInvitesTable.token, emailedLinkDigest(token)));
-
-    return row;
-  }
-
-  // sets the user's real password and consumes the invite — called once
-  // they follow the emailed link and choose one. Returns undefined if the
-  // user no longer exists (e.g. deleted between the invite lookup and this
-  // call) rather than assuming the update always finds a row. Also marks
-  // the account email-verified (OS-470) — clicking the emailed invite link
-  // already proves ownership of the address, so there's no separate
-  // verification step for staff who join this way. And stamps
-  // factorRequiredAt (OS-494) in the same UPDATE, so there is no window in
-  // which a joined staff member exists without the factor requirement.
+  // What following an Invite does to the Staff record: it stops being
+  // pending. Runs as the effect of redeeming the Invite
+  // (AuthService.acceptInvite), inside that redemption's transaction, so the
+  // join and the link's disappearance are one fact — which is why `tx` is
+  // required rather than optional, and why nothing here deletes the invite
+  // row: the Emailed links module owns that.
+  //
+  // Marks the email verified (OS-470) — clicking the emailed link already
+  // proves ownership of the address, so staff who join this way need no
+  // separate verification step — and stamps factorRequiredAt (OS-494) in the
+  // same UPDATE, so there is no window in which a joined staff member exists
+  // without the factor requirement.
+  //
+  // Undefined for a User who is gone or deactivated, and the caller answers
+  // both the way it answers an Invite it doesn't recognise. Deactivation is
+  // part of the WHERE rather than a read of its own so that "is this person
+  // still allowed to join" and "join them" cannot come apart; the row is
+  // locked by the redemption either way. The caller throws on undefined,
+  // which rolls the claim back — so a deactivated invitee's Invite survives
+  // for a later reactivation.
   async activate(
     id: number,
     hashedPassword: string,
+    tx: DbTransaction,
   ): Promise<User | undefined> {
-    const [user] = await this.db
+    const [user] = await tx
       .update(usersTable)
       .set({
         password: hashedPassword,
@@ -139,23 +137,20 @@ export class UsersService {
         factorRequiredAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(usersTable.id, id))
+      .where(and(eq(usersTable.id, id), isNull(usersTable.deactivatedAt)))
       .returning();
 
     if (!user) return undefined;
 
-    await this.db
-      .delete(userInvitesTable)
-      .where(eq(userInvitesTable.userId, id));
-
-    const roles = await this.getRolesByUserId([user.id]);
+    const roles = await this.getRolesByUserId([user.id], tx);
     return toUser(user, roles.get(user.id) ?? []);
   }
 
   // no password is set here — the account owner invites a staff member and
   // they join later via the emailed invite link, at which point they set
-  // their own. The user + invite rows are inserted together so a failure
-  // partway through never leaves a user with no way to ever join. roleIds
+  // their own. The Staff record and its Invite are written in one
+  // transaction so a failure partway through never leaves a user with no way
+  // to ever join — which is what the tx handed to issue() is for. roleIds
   // is optional — a user invited with none can still log in, they just
   // can't use anything gated by @RequirePermissions until assigned a role.
   async create(
@@ -239,12 +234,11 @@ export class UsersService {
             );
         }
 
-        const token = generateToken(32);
-        await tx.insert(userInvitesTable).values({
-          userId: user.id,
-          token: emailedLinkDigest(token),
-          expiresAt: new Date(Date.now() + INVITE_TTL_MS),
-        });
+        const token = await this.emailedLinksService.issue(
+          'invite',
+          user.id,
+          tx,
+        );
 
         return { user, token };
       });
@@ -724,10 +718,17 @@ export class UsersService {
     return toUser(updated, roles.get(updated.id) ?? []);
   }
 
-  // regenerates the pending invite's token + expiry (killing the old link)
-  // and re-sends the email. Returns undefined when there's no pending invite
-  // for this account's user — either the id is wrong or they've already
-  // joined (password set → invite row consumed).
+  // Sends this account's pending staff member a fresh Invite, which kills
+  // the one in the earlier email — issuing replaces. Returns undefined when
+  // the id doesn't name a User of this account, or when they've already
+  // joined, which is the whole precondition: a Staff record with no password
+  // is what "still invited" means.
+  //
+  // It used to be undefined for a pending User with no invite row too. That
+  // state is unreachable — create() writes the Invite in the same
+  // transaction as the Staff record, and accepting one sets the password —
+  // and a resend that answered "not found" rather than sending the link the
+  // Owner asked for would be the wrong answer if it ever were reachable.
   async resendInvite(
     userId: number,
     accountId: number,
@@ -741,17 +742,7 @@ export class UsersService {
 
     if (!user || user.password) return undefined;
 
-    const token = generateToken(32);
-    const [invite] = await this.db
-      .update(userInvitesTable)
-      .set({
-        token: emailedLinkDigest(token),
-        expiresAt: new Date(Date.now() + INVITE_TTL_MS),
-      })
-      .where(eq(userInvitesTable.userId, userId))
-      .returning();
-
-    if (!invite) return undefined;
+    const token = await this.emailedLinksService.issue('invite', userId);
 
     const inviteUrl = `${env.MERCHANT_WEB_URL}/join?token=${token}`;
     await this.emailService.sendInviteEmail(user.email, {
@@ -790,17 +781,33 @@ export class UsersService {
 
     const roles = await this.getRolesByUserId([user.id]);
 
-    // the user_invites row has onDelete: cascade on userId, so deleting the
-    // user removes the invite too
-    await this.db.delete(usersTable).where(eq(usersTable.id, userId));
+    // The Invite is withdrawn through the module rather than left to the
+    // user_invites row's ON DELETE CASCADE: an Invite stops working because
+    // something revoked it, not as a side effect of a foreign key, and this
+    // is the operation that serializes with a redemption already in flight
+    // (it takes the User's row first, like every other Emailed link
+    // operation). One transaction, so a revoke that failed after the link
+    // was withdrawn can't leave a Staff record nobody can join and nobody
+    // can re-invite.
+    await this.db.transaction(async (tx) => {
+      await this.emailedLinksService.revokeAllForSubject(
+        userId,
+        ['invite'],
+        tx,
+      );
+      await tx.delete(usersTable).where(eq(usersTable.id, userId));
+    });
     return toUser(user, roles.get(user.id) ?? []);
   }
 
-  // batched: one query for every user's roles instead of one per user
-  private async getRolesByUserId(userIds: number[]) {
+  // batched: one query for every user's roles instead of one per user.
+  // Takes an optional transaction so a caller that is mid-write (activate,
+  // inside the Invite's redemption) reads through it rather than opening a
+  // second connection that would see the row as it was before.
+  private async getRolesByUserId(userIds: number[], tx?: DbTransaction) {
     if (userIds.length === 0) return new Map<number, UserRoleSummary[]>();
 
-    const rows = await this.db
+    const rows = await (tx ?? this.db)
       .select({
         userId: userRolesTable.userId,
         id: rolesTable.id,

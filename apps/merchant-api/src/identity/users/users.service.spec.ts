@@ -12,12 +12,7 @@ import {
   seedPermissionsCatalog,
   useTestDb,
 } from 'test-support';
-import {
-  eq,
-  userInvitesTable,
-  userRefreshTokensTable,
-  usersTable,
-} from 'db/identity';
+import { eq, userRefreshTokensTable, usersTable } from 'db/identity';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { EmailService } from 'src/shared/email/email.service';
 import { PermissionsService } from '../permissions/permissions.service';
@@ -29,12 +24,9 @@ import {
   testJwt,
 } from '../auth/sessions.spec-support';
 import { UsersService } from './users.service';
-import { emailedLinkDigest } from '../emailed-links/emailed-link-digest';
+import { CreateUserDto } from './dto/create-user.dto';
 import { EmailedLinksService } from '../emailed-links/emailed-links.service';
-import {
-  outstandingLinkCount,
-  seedInvite,
-} from '../emailed-links/emailed-links.spec-support';
+import { outstandingLinkCount } from '../emailed-links/emailed-links.spec-support';
 import { type DbTransaction } from 'src/shared/database/database.types';
 
 const db = useTestDb();
@@ -44,8 +36,9 @@ beforeEach(() => emailMock.sendInviteEmail.mockClear());
 
 // Sessions is real here, signing with a real JwtService: deactivation's
 // effect on a User's Sessions is only observable by redeeming their tokens.
-// Emailed links is real for the same reason — what a deactivation does to a
-// User's outstanding links is only observable by presenting one.
+// Emailed links is real for the same reason — an Invite is one, and what a
+// deactivation does to a User's outstanding links, or a resend to the link
+// in the earlier email, is only observable by presenting one.
 async function buildBoth() {
   const ref = await Test.createTestingModule({
     providers: [
@@ -64,6 +57,30 @@ async function buildBoth() {
     sessions: ref.get(SessionsService),
     links: ref.get(EmailedLinksService),
   };
+}
+
+// Whether the link in an invite email is still live, asked the way the
+// invitee's browser asks it — by presenting it. The effect is a no-op:
+// what joining actually does to the Staff record is acceptInvite's, in
+// auth.service.spec.
+async function inviteIsLive(
+  links: EmailedLinksService,
+  secret: string,
+): Promise<boolean> {
+  const outcome = await links.redeem('invite', secret, () =>
+    Promise.resolve(true),
+  );
+  return outcome.redeemed;
+}
+
+// The token out of the most recent invite email — the secret only ever
+// exists there and in the invitee's URL.
+function emailedInviteSecret(call = 0): string {
+  const [, params] = emailMock.sendInviteEmail.mock.calls[call] as [
+    string,
+    { inviteUrl: string },
+  ];
+  return new URL(params.inviteUrl).searchParams.get('token')!;
 }
 
 async function build() {
@@ -787,37 +804,71 @@ describe('UsersService.getByEmail (OS-184)', () => {
   });
 });
 
+describe('UsersService.create — the pending Staff record and its Invite', () => {
+  it('emails the new staff member a link that is live', async () => {
+    const account = await insertAccount(db);
+    const { service, links } = await buildBoth();
+
+    const created = await service.create(
+      new CreateUserDto('Fox', 'Mulder', '5555550111', 'fox@store.test'),
+      account.id,
+      1,
+    );
+
+    expect(created.status).toBe('invited');
+    expect(emailMock.sendInviteEmail).toHaveBeenCalledWith(
+      'fox@store.test',
+      expect.objectContaining({ firstName: 'Fox' }),
+    );
+    expect(await inviteIsLive(links, emailedInviteSecret())).toBe(true);
+  });
+
+  // The Staff record and its Invite are one write: a create that fails
+  // after the User row would otherwise leave someone who can never join and
+  // can't be re-invited (resendInvite needs the account's own id).
+  it('leaves no Staff record behind when the create rolls back', async () => {
+    const account = await insertAccount(db);
+    const { service } = await buildBoth();
+
+    await expect(
+      service.create(
+        new CreateUserDto(
+          'Dana',
+          'Scully',
+          '5555550112',
+          'dana@store.test',
+          [404],
+        ),
+        account.id,
+        1,
+        new Set(['users:manage_roles']),
+      ),
+    ).rejects.toThrow();
+
+    expect((await service.findAll(20, 0, account.id)).total).toBe(0);
+    expect(emailMock.sendInviteEmail).not.toHaveBeenCalled();
+  });
+});
+
+// Only the newest email works, and only while the Staff record is still
+// pending. How long an Invite lasts, and that presenting a dead one is
+// refused, are the Emailed links module's (emailed-links.service.spec).
 describe('UsersService.resendInvite (OS-185)', () => {
-  it('rotates the token + expiry and re-sends the email', async () => {
+  it('emails a working link and kills the one from the earlier email', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    const expired = await seedInvite(db, {
-      userId: user.id,
-      secret: 'old-secret',
-      expiresAt: new Date(Date.now() - 1000),
-    });
-    const service = await build();
+    const { service, links } = await buildBoth();
+    const first = await links.issue('invite', user.id);
 
     const result = await service.resendInvite(user.id, account.id);
     expect(result?.status).toBe('invited');
 
-    const [fresh] = await db
-      .select()
-      .from(userInvitesTable)
-      .where(eq(userInvitesTable.userId, user.id));
-    expect(fresh.token).not.toBe(emailedLinkDigest(expired));
-    expect(fresh.expiresAt.getTime()).toBeGreaterThan(Date.now());
-
-    expect(emailMock.sendInviteEmail).toHaveBeenCalledTimes(1);
-    const [to, params] = emailMock.sendInviteEmail.mock.calls[0] as [
-      string,
-      { firstName: string; inviteUrl: string },
-    ];
-    expect(to).toBe(user.email);
-    // OS-476: the link carries the raw token, the row only its digest
-    const emailed = new URL(params.inviteUrl).searchParams.get('token')!;
-    expect(fresh.token).not.toBe(emailed);
-    expect(fresh.token).toBe(emailedLinkDigest(emailed));
+    expect(emailMock.sendInviteEmail).toHaveBeenCalledWith(
+      user.email,
+      expect.objectContaining({ firstName: user.firstname }),
+    );
+    expect(await inviteIsLive(links, first)).toBe(false);
+    expect(await inviteIsLive(links, emailedInviteSecret())).toBe(true);
   });
 
   it('is undefined for a user who has already joined', async () => {
@@ -832,31 +883,40 @@ describe('UsersService.resendInvite (OS-185)', () => {
     expect(emailMock.sendInviteEmail).not.toHaveBeenCalled();
   });
 
-  it('is undefined for a user with no pending invite row', async () => {
+  // Unreachable in practice — a pending Staff record always has an Invite,
+  // because create() writes them together — but the answer to "resend" is
+  // a working link either way, never a 404.
+  it('issues one for a pending user who somehow holds none', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    const service = await build();
+    const { service, links } = await buildBoth();
 
-    expect(await service.resendInvite(user.id, account.id)).toBeUndefined();
+    expect((await service.resendInvite(user.id, account.id))?.status).toBe(
+      'invited',
+    );
+
+    expect(await inviteIsLive(links, emailedInviteSecret())).toBe(true);
   });
 
   it('is undefined for a user outside the account', async () => {
     const account = await insertAccount(db);
     const other = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    await seedInvite(db, { userId: user.id });
-    const service = await build();
+    const { service, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
 
     expect(await service.resendInvite(user.id, other.id)).toBeUndefined();
+    expect(emailMock.sendInviteEmail).not.toHaveBeenCalled();
+    expect(await inviteIsLive(links, invite)).toBe(true);
   });
 });
 
 describe('UsersService.revokeInvite (OS-185)', () => {
-  it('deletes the never-joined user and their invite', async () => {
+  it('deletes the never-joined user and kills their link immediately', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    await seedInvite(db, { userId: user.id });
-    const service = await build();
+    const { service, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
 
     expect((await service.revokeInvite(user.id, account.id))?.status).toBe(
       'invited',
@@ -867,11 +927,7 @@ describe('UsersService.revokeInvite (OS-185)', () => {
       .from(usersTable)
       .where(eq(usersTable.id, user.id));
     expect(users).toHaveLength(0);
-    const invites = await db
-      .select()
-      .from(userInvitesTable)
-      .where(eq(userInvitesTable.userId, user.id));
-    expect(invites).toHaveLength(0);
+    expect(await inviteIsLive(links, invite)).toBe(false);
   });
 
   it('refuses to revoke a user who has already joined', async () => {
@@ -897,9 +953,10 @@ describe('UsersService.revokeInvite (OS-185)', () => {
     const account = await insertAccount(db);
     const other = await insertAccount(db);
     const user = await insertUser(db, { accountId: account.id });
-    await seedInvite(db, { userId: user.id });
-    const service = await build();
+    const { service, links } = await buildBoth();
+    const invite = await links.issue('invite', user.id);
 
     expect(await service.revokeInvite(user.id, other.id)).toBeUndefined();
+    expect(await inviteIsLive(links, invite)).toBe(true);
   });
 });

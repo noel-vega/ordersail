@@ -562,27 +562,47 @@ export class AuthService {
     return this.sessionsService.start(user.id);
   }
 
+  // What an Invite is for: the pending Staff record becomes a joined one,
+  // with the password the person just chose, and they are signed in.
+  //
+  // The Invite is redeemed together with the join, so the two are one fact:
+  // two people (or two clicks) following the same link at the same moment
+  // produce exactly one joined User and one Session, and a join that fails
+  // part-way leaves the link working for the next attempt. Expiry,
+  // replacement and single use are the Emailed links module's, proven in its
+  // own suite rather than again here.
   async acceptInvite(dto: AcceptInviteDto): Promise<TokenPair> {
-    const invite = await this.usersService.getByInviteToken(dto.token);
-
-    // A deactivated User is refused here, before anything is written, and
-    // with the answer an unknown link gets — so the link is no oracle for
-    // "this User was switched off". SessionsService.start would refuse them
-    // too, but only after activate() below had set their password, verified
-    // their email, stamped the Factor requirement and consumed the invite:
-    // a refusal that leaves a joined User behind. The invite survives, so
-    // the same link works if they're reactivated before it expires.
-    if (!invite || invite.expiresAt < new Date() || invite.user.deactivatedAt) {
-      throw new UnauthorizedException('Invalid or expired invite');
-    }
-
+    // Hashed before the redemption opens, for the reason resetPassword
+    // hashes early: the effect runs holding this User's row locked, and
+    // bcrypt would hold every concurrent operation on them behind ~100ms of
+    // CPU. It also makes an invalid Invite cost the same time as a real one.
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const user = await this.usersService.activate(
-      invite.user.id,
-      hashedPassword,
+
+    const outcome = await this.emailedLinks.redeem(
+      'invite',
+      dto.token,
+      async (tx, userId) => {
+        const user = await this.usersService.activate(
+          userId,
+          hashedPassword,
+          tx,
+        );
+        // A deactivated User (or one deleted under us) is refused with the
+        // answer an unknown link gets, so the link is no oracle for "this
+        // User was switched off". Thrown rather than returned, because
+        // throwing rolls the claim back: nothing is written, and the Invite
+        // survives for a reactivation before it expires. Without it,
+        // SessionsService.start would still refuse them below — but only
+        // after their password was set, their email verified, the Factor
+        // requirement stamped and the Invite used up.
+        if (!user) {
+          throw new UnauthorizedException('Invalid or expired invite');
+        }
+        return user;
+      },
     );
 
-    if (!user) {
+    if (!outcome.redeemed) {
       throw new UnauthorizedException('Invalid or expired invite');
     }
 
@@ -595,7 +615,11 @@ export class AuthService {
     // never enrollment-satisfied here and goes straight to setting one up.
     // It's the same computation refreshTokens() runs, which is what keeps
     // that gate standing after the first navigation.
-    return this.sessionsService.start(user.id);
+    //
+    // Started after the transaction commits, deliberately: a Session is not
+    // part of the join, and minting one inside the effect would hand out
+    // tokens for a transaction that could still roll back.
+    return this.sessionsService.start(outcome.result.id);
   }
 
   // Verifies the emailed link for the *signed-in* caller and re-mints only
