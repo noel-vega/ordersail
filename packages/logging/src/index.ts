@@ -201,13 +201,18 @@ function mixin(): Record<string, unknown> {
 
 // Before configureLogging() runs (specs, scripts, module-level code that logs
 // during import) lines still go somewhere sensible: JSON at info, silent under
-// jest so unmocked service logs don't flood test output.
-let root: PinoLogger = pino({
-  level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
-  mixin,
-  redact,
-  serializers,
-});
+// jest so unmocked service logs don't flood test output. Synchronous stdout for
+// the same reason as production (configureLogging): the main pre-configure
+// caller is parseEnv failing at boot, which logs fatal and exits on the spot.
+let root: PinoLogger = pino(
+  {
+    level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
+    mixin,
+    redact,
+    serializers,
+  },
+  destination({ dest: 1, sync: true }),
+);
 
 // Called once at the top of each service's main.ts, before NestFactory.create.
 // Production writes one JSON object per line to stdout (ECS → CloudWatch);

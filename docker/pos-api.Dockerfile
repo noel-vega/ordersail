@@ -34,7 +34,7 @@ RUN npm ci
 # (dependency order), then the app itself.
 FROM deps AS build
 COPY . .
-RUN npm run build --workspace=config --workspace=logging --workspace=db
+RUN npm run build --workspace=logging --workspace=config --workspace=db
 RUN npm run build --workspace=pos-api
 
 # --- prod-deps: same package.json-only copy, but omit devDependencies —
