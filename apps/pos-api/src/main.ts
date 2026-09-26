@@ -2,7 +2,15 @@ import { env } from "./env"; // validates process.env before anything else loads
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule } from "@nestjs/swagger";
-import { Logger, configureLogging, requestLoggingMiddleware } from "logging";
+import {
+  Logger,
+  LoggingExceptionFilter,
+  configureLogging,
+  exitOnFatal,
+  installProcessHandlers,
+  installShutdownHandler,
+  requestLoggingMiddleware,
+} from "logging";
 import { AppModule } from "./app.module";
 import { createSwaggerConfig } from "./swagger.config";
 
@@ -16,6 +24,8 @@ async function bootstrap() {
     logger: new Logger(),
   });
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  app.useGlobalFilters(new LoggingExceptionFilter(app.getHttpAdapter()));
+  installShutdownHandler(app);
 
   // correlation ID (reused from a well-formed inbound x-request-id or minted)
   // + one access log line per request — see docs/observability.md
@@ -37,4 +47,8 @@ async function bootstrap() {
 
   await app.listen(env.PORT);
 }
-bootstrap();
+
+// before bootstrap() so a crash anywhere — boot included — ends in one fatal
+// JSON line instead of a raw stderr trace (docs/observability.md → Errors)
+installProcessHandlers();
+bootstrap().catch((err) => exitOnFatal(err, "app.boot_failed"));

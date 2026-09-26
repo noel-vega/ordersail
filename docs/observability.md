@@ -157,6 +157,55 @@ Examples: `order.created`, `order_job.dead_lettered`, `checkout.session_created`
 `LOG_LEVEL` sets the threshold: default `info` in production, `debug` elsewhere. `/health`
 requests are never logged (ALB + ECS checks hit them every 15s).
 
+## Errors
+
+Every service's `main.ts` wires the same three things from `logging`, so an error is logged
+once, as structured JSON, wherever it happens:
+
+- **`LoggingExceptionFilter`** (`app.useGlobalFilters`) — every exception that escapes a
+  controller or guard. The response is unchanged (it answers through Nest's
+  `BaseExceptionFilter`, so Express and Fastify behave the same, and clients never see a stack).
+  The log line:
+
+  | Status | Level | Line |
+  |---|---|---|
+  | 5xx, or anything that isn't an `HttpException` | `error` | `{ err, event: 'http.unhandled_error', route, status }` — with the stack |
+  | 401 / 403 / 429 | `warn` | `{ event: 'http.request_rejected', route, status, reason }` — no stack |
+  | other 4xx (validation, not found, 413…) | `debug` | same as above |
+
+  Nest's own unstructured `ExceptionsHandler` line is suppressed so each error shows up once.
+  The access line for the same request is still written separately. Don't catch-and-rethrow
+  just to log: throw, and let the filter log it.
+- **`installProcessHandlers()`** — an uncaught exception or unhandled rejection logs one
+  `fatal` line (`process.uncaught_exception` / `process.unhandled_rejection`), flushes, then
+  exits 1. The process still crashes, same as Node's default. The difference is that the last
+  thing in the log is now a line an alarm can match. Both events have their own listener, so
+  this keeps working when something else (a library, Sentry) also listens for
+  `unhandledRejection`, or under `--unhandled-rejections=warn`.
+- **`bootstrap().catch((err) => exitOnFatal(err, 'app.boot_failed'))`** — the same path for a
+  failed boot (the worker crash-at-boot incident used to leave only a raw stderr trace).
+- **`parseEnv`** (`packages/config`) — an invalid environment is also a failed boot, but it's
+  caught on import, before the handlers above are installed. So `parseEnv` logs its own `fatal`
+  `app.boot_failed` line, with `issues: [{ path, message }]` (the variable names, never their
+  values), and exits 1.
+- **`installShutdownHandler(app)`** — on SIGTERM (an ECS deploy or scale-in) or SIGINT, it:
+  1. logs `process.shutdown_started`;
+  2. calls `app.close()`, which runs every shutdown hook (the worker's BullMQ consumers let the
+     in-flight job finish);
+  3. flushes the logs and exits 0.
+
+  A second signal of either kind logs `process.shutdown_forced` and exits 1 immediately, so
+  `close()` never runs twice. If `close()` hasn't finished within 25s, it logs `fatal`
+  `process.shutdown_timed_out` and exits 1, before ECS's SIGKILL at the 30s stop timeout would
+  end it silently. Use this instead of `app.enableShutdownHooks()`: Nest's version re-raises
+  the signal after closing, and that kills the process before the log stream is flushed.
+
+Worker job failures log from the `failed` handlers:
+
+- A retryable attempt logs at `warn` (`order_job.attempt_failed`, `email_job.attempt_failed`).
+- The last attempt logs at `error` (`order_job.failed`, `email_job.failed`), with
+  `{ err, queue, jobId, jobName, attemptsMade, attempts }`.
+
 ## Personal data & secrets
 
 Logs are retained 30 days and readable by anyone with CloudWatch access. **Log IDs, not people.**

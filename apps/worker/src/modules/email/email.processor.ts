@@ -150,9 +150,28 @@ export class EmailProcessor extends WorkerHost {
   @OnWorkerEvent('failed')
   onFailed(job: Job<EmailJobData>, err: Error) {
     runWithLogContext(logContextOf(job.data), () => {
-      this.logger.warn(
-        `Job ${job.id} (${job.name}) failed on attempt ${job.attemptsMade}: ${err.message}`,
-      );
+      const attempts = job.opts.attempts ?? 1;
+      const fields = {
+        err,
+        queue: QUEUE_NAMES.EMAIL,
+        jobId: job.id,
+        jobName: job.name,
+        attemptsMade: job.attemptsMade,
+        attempts,
+      };
+      // the last attempt failing means an email the recipient is waiting on
+      // (invite, reset, order confirmation) is never coming — error, not warn
+      if (job.attemptsMade >= attempts) {
+        this.logger.error(
+          { ...fields, event: 'email_job.failed' },
+          'Email job failed permanently',
+        );
+      } else {
+        this.logger.warn(
+          { ...fields, event: 'email_job.attempt_failed' },
+          'Email job attempt failed, will retry',
+        );
+      }
     });
   }
 

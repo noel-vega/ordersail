@@ -1,8 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { LoggerService } from '@nestjs/common';
-import { pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
+import { HttpException, type ArgumentsHost, type LoggerService } from '@nestjs/common';
+import { BaseExceptionFilter } from '@nestjs/core';
+import { destination, pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
 
 // ---------------------------------------------------------------------------
 // correlation context
@@ -200,13 +201,18 @@ function mixin(): Record<string, unknown> {
 
 // Before configureLogging() runs (specs, scripts, module-level code that logs
 // during import) lines still go somewhere sensible: JSON at info, silent under
-// jest so unmocked service logs don't flood test output.
-let root: PinoLogger = pino({
-  level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
-  mixin,
-  redact,
-  serializers,
-});
+// jest so unmocked service logs don't flood test output. Synchronous stdout for
+// the same reason as production (configureLogging): the main pre-configure
+// caller is parseEnv failing at boot, which logs fatal and exits on the spot.
+let root: PinoLogger = pino(
+  {
+    level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
+    mixin,
+    redact,
+    serializers,
+  },
+  destination({ dest: 1, sync: true }),
+);
 
 // Called once at the top of each service's main.ts, before NestFactory.create.
 // Production writes one JSON object per line to stdout (ECS → CloudWatch);
@@ -225,20 +231,24 @@ export function configureLogging(options: ConfigureLoggingOptions): PinoLogger {
     root = pino(loggerOptions, options.destination);
     return root;
   }
+  if (isProduction) {
+    // Synchronous stdout: each line is written before the call returns, in
+    // order. pino's default async stream can drop or reorder the last lines
+    // when the process exits — exactly the fatal / shutdown lines that matter
+    // most — and at this volume the blocking write costs nothing measurable.
+    root = pino(loggerOptions, destination({ dest: 1, sync: true }));
+    return root;
+  }
   root = pino({
     ...loggerOptions,
-    ...(isProduction
-      ? {}
-      : {
-          transport: {
-            target: 'pino-pretty',
-            options: {
-              translateTime: 'SYS:HH:MM:ss.l',
-              ignore: 'pid,hostname,service,env,context',
-              messageFormat: '[{context}] {msg}',
-            },
-          },
-        }),
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        translateTime: 'SYS:HH:MM:ss.l',
+        ignore: 'pid,hostname,service,env,context',
+        messageFormat: '[{context}] {msg}',
+      },
+    },
   });
   return root;
 }
@@ -438,4 +448,171 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
 
     als.run(store, next);
   };
+}
+
+// ---------------------------------------------------------------------------
+// errors — one exception filter for HTTP, one crash path for the process
+// ---------------------------------------------------------------------------
+
+// Resolves once everything pino has accepted is written. Production stdout is
+// already synchronous (configureLogging), so this matters for the pino-pretty
+// transport in dev, which ships lines to a worker thread.
+export function flushLogs(): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      root.flush(() => resolve());
+    } catch {
+      resolve();
+    }
+  });
+}
+
+// Logs one fatal line, flushes, exits 1. The single place a process goes down on
+// purpose — bootstrap failure and uncaught errors both land here, so the last
+// thing in the log stream is always a structured line an alarm can match.
+// (Sentry's crash capture joins here, OS-69.)
+export async function exitOnFatal(err: unknown, event: string): Promise<never> {
+  new Logger('Process').fatal({ err, event }, 'Process exiting after a fatal error');
+  // don't let a wedged stream keep a crashed process alive
+  setTimeout(() => process.exit(1), 2000);
+  await flushLogs();
+  process.exit(1);
+}
+
+let processHandlersInstalled = false;
+
+// Call once at the top of each main.ts, before bootstrap(). Both listeners are
+// explicit: leaning on Node's --unhandled-rejections=throw conversion breaks
+// silently the moment anything else (a library, Sentry) adds its own
+// unhandledRejection listener, or the flag changes. Either way the process
+// still exits 1 — this makes the crash legible, it doesn't swallow it.
+export function installProcessHandlers(): void {
+  if (processHandlersInstalled) return;
+  processHandlersInstalled = true;
+  process.on('uncaughtException', (err) => void exitOnFatal(err, 'process.uncaught_exception'));
+  process.on('unhandledRejection', (reason) => void exitOnFatal(reason, 'process.unhandled_rejection'));
+}
+
+type ClosableApp = { close(): Promise<void> };
+
+type ShutdownOptions = {
+  // ECS sends SIGKILL at the task's stopTimeout (30s by default); give up a
+  // little before that so the last line is ours, not a silent kill
+  timeoutMs?: number;
+};
+
+// Replaces app.enableShutdownHooks(): on the first SIGTERM/SIGINT, close the
+// app (runs every onModuleDestroy / onApplicationShutdown hook — BullMQ workers
+// finish their active job, pools close), flush the logs, exit. Nest's own
+// version re-raises the signal after closing, which kills the process before
+// the log stream can flush. Any second signal — SIGTERM or SIGINT — exits 1
+// immediately (a double Ctrl-C in dev) instead of starting a second close().
+export function installShutdownHandler(app: ClosableApp, options: ShutdownOptions = {}): void {
+  const logger = new Logger('Process');
+  const timeoutMs = options.timeoutMs ?? 25_000;
+  let shuttingDown = false;
+  const onSignal = (signal: NodeJS.Signals) => {
+    if (shuttingDown) {
+      // stdout is synchronous in production, so this line lands before exit
+      logger.warn({ event: 'process.shutdown_forced', signal }, 'Second signal, exiting now');
+      process.exit(1);
+    }
+    shuttingDown = true;
+    logger.info({ event: 'process.shutdown_started', signal }, 'Shutting down');
+    const timer = setTimeout(() => {
+      const err = new Error(`app.close() did not finish within ${timeoutMs}ms`);
+      void exitOnFatal(err, 'process.shutdown_timed_out');
+    }, timeoutMs);
+    void (async () => {
+      try {
+        await app.close();
+      } catch (err) {
+        await exitOnFatal(err, 'process.shutdown_failed');
+      }
+      clearTimeout(timer);
+      await flushLogs();
+      process.exit(0);
+    })();
+  };
+  process.on('SIGTERM', onSignal);
+  process.on('SIGINT', onSignal);
+}
+
+// 4xx that are worth a warn: someone is being turned away (auth, rate limits).
+// Other 4xx (validation, not found) are the client's problem — debug only; the
+// access line already counts them.
+const SECURITY_STATUSES = new Set([401, 403, 429]);
+
+// http-errors thrown by body parsers (413 payload too large, …). Same truthy
+// test as @nestjs/core's BaseExceptionFilter.isHttpError, so the status we log
+// and the body we send agree with what Nest itself would do.
+function httpErrorOf(exception: unknown): { statusCode: number; message: string } | undefined {
+  const candidate = exception as { statusCode?: number; message?: string } | null;
+  return candidate?.statusCode && candidate?.message
+    ? { statusCode: candidate.statusCode, message: candidate.message }
+    : undefined;
+}
+
+function statusOf(exception: unknown): number {
+  if (exception instanceof HttpException) return exception.getStatus();
+  return httpErrorOf(exception)?.statusCode ?? 500;
+}
+
+// Global HTTP exception filter (register with app.useGlobalFilters in main.ts).
+// Logs every exception once, with the request's context and route template,
+// then hands the response to Nest's BaseExceptionFilter so bodies are
+// byte-for-byte what they were — on Express and Fastify alike, since the base
+// class answers through the HTTP adapter. Stack traces never reach clients.
+export class LoggingExceptionFilter extends BaseExceptionFilter {
+  private readonly logger = new Logger('ExceptionFilter');
+
+  override catch(exception: unknown, host: ArgumentsHost): void {
+    if (host.getType() === 'http') this.log(exception, host);
+    super.catch(exception, host);
+  }
+
+  // Nest's handleUnknownError logs the error itself (an unstructured
+  // 'ExceptionsHandler' line) after replying; catch() above already logged it,
+  // so re-implement the reply without that second line. Body shape mirrors
+  // @nestjs/core's — the spec pins it against BaseExceptionFilter.
+  override handleUnknownError(
+    exception: unknown,
+    host: ArgumentsHost,
+    applicationRef: Parameters<BaseExceptionFilter['handleUnknownError']>[2],
+  ): void {
+    const body = httpErrorOf(exception) ?? {
+      statusCode: 500,
+      message: 'Internal server error',
+    };
+    const response = host.getArgByIndex(1);
+    if (!applicationRef.isHeadersSent(response)) {
+      applicationRef.reply(response, body, body.statusCode);
+    } else {
+      applicationRef.end(response);
+    }
+  }
+
+  private log(exception: unknown, host: ArgumentsHost): void {
+    const request = host.switchToHttp().getRequest<IncomingMessage & { raw?: IncomingMessage }>();
+    // Fastify wraps the Node request; Express hands it over as is
+    const route = resolveRoute(request.raw ?? request);
+    const status = statusOf(exception);
+
+    if (status >= 500) {
+      this.logger.error(
+        { err: exception, event: 'http.unhandled_error', route, status },
+        'Unhandled error',
+      );
+      return;
+    }
+    // a rejected request isn't an error in the code — no stack, just why
+    const fields = {
+      event: 'http.request_rejected',
+      route,
+      status,
+      reason: exception instanceof Error ? exception.message : String(exception),
+    };
+    if (SECURITY_STATUSES.has(status)) this.logger.warn(fields, 'Request rejected');
+    else this.logger.debug(fields, 'Request rejected');
+  }
 }

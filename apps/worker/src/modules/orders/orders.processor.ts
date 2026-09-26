@@ -342,10 +342,19 @@ export class OrdersProcessor extends WorkerHost {
     await runWithLogContext(logContextOf(job.data), async () => {
       const attempts = job.opts.attempts ?? 1;
       const exhausted = job.attemptsMade >= attempts;
+      const fields = {
+        err,
+        queue: QUEUE_NAMES.ORDERS,
+        jobId: job.id,
+        jobName: job.name,
+        attemptsMade: job.attemptsMade,
+        attempts,
+      };
 
       if (!exhausted) {
         this.logger.warn(
-          `Job ${job.id} (${job.name}) failed on attempt ${job.attemptsMade}/${attempts}: ${err.message}`,
+          { ...fields, event: 'order_job.attempt_failed' },
+          'Order job attempt failed, will retry',
         );
         return;
       }
@@ -353,7 +362,8 @@ export class OrdersProcessor extends WorkerHost {
       const data = job.data;
       if (data.type !== 'checkout-completed') {
         this.logger.error(
-          `Job ${job.id} (${job.name}) failed permanently after ${job.attemptsMade} attempts — needs manual review: ${err.message}`,
+          { ...fields, event: 'order_job.failed' },
+          'Order job failed permanently — needs manual review',
         );
         return;
       }

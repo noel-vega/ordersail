@@ -2,7 +2,14 @@
 // anything else — nothing else in this app imports env early enough
 import { env } from './env';
 import { NestFactory } from '@nestjs/core';
-import { Logger, configureLogging } from 'logging';
+import {
+  Logger,
+  LoggingExceptionFilter,
+  configureLogging,
+  exitOnFatal,
+  installProcessHandlers,
+  installShutdownHandler,
+} from 'logging';
 import { AppModule } from './app.module';
 
 // still no user-facing HTTP API — this only keeps @Processor classes alive
@@ -18,6 +25,14 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: new Logger(),
   });
+  app.useGlobalFilters(new LoggingExceptionFilter(app.getHttpAdapter()));
+  // closing the app closes the BullMQ workers, which let an in-flight job
+  // finish instead of leaving it to be picked up as stalled
+  installShutdownHandler(app);
   await app.listen(env.PORT);
 }
-bootstrap();
+
+// before bootstrap() so a crash anywhere — boot included — ends in one fatal
+// JSON line instead of a raw stderr trace (docs/observability.md → Errors)
+installProcessHandlers();
+bootstrap().catch((err) => exitOnFatal(err, 'app.boot_failed'));

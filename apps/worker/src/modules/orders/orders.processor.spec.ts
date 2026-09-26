@@ -557,10 +557,19 @@ describe('OrdersProcessor.onFailed', () => {
     const s = await seedScenario();
     const { processor, alerts } = await build();
 
-    await processor.onFailed(jobAt(s, 2), new Error('boom'));
+    const err = new Error('boom');
+    await processor.onFailed(jobAt(s, 2), err);
 
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('failed on attempt 2/8'),
+      expect.objectContaining({
+        event: 'order_job.attempt_failed',
+        queue: 'orders',
+        jobId: 'j-1',
+        attemptsMade: 2,
+        attempts: 8,
+        err,
+      }),
+      expect.any(String),
     );
     expect(await db.select().from(failedOrdersTable)).toEqual([]);
     expect(alerts.publishCritical).not.toHaveBeenCalled();
@@ -637,6 +646,7 @@ describe('OrdersProcessor.onFailed', () => {
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
     const { processor, alerts } = await build();
+    const err = new Error('boom');
 
     await processor.onFailed(
       {
@@ -646,11 +656,19 @@ describe('OrdersProcessor.onFailed', () => {
         attemptsMade: 8,
         opts: { attempts: 8 },
       } as unknown as Job<OrderJobData>,
-      new Error('boom'),
+      err,
     );
 
     expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining('failed permanently'),
+      expect.objectContaining({
+        event: 'order_job.failed',
+        queue: 'orders',
+        jobId: '1',
+        attemptsMade: 8,
+        attempts: 8,
+        err,
+      }),
+      expect.any(String),
     );
     expect(await db.select().from(failedOrdersTable)).toEqual([]);
     expect(alerts.publishCritical).not.toHaveBeenCalled();
