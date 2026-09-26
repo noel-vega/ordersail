@@ -9,9 +9,8 @@ data "aws_route53_zone" "this" {
 }
 
 # Wildcard SAN covers every future subdomain (merchant.${domain}, etc.) in
-# advance, even though only the apex (-> website) and merchant.${domain} are
-# wired up below. Pointing another subdomain at this same cert later is a
-# two-line change with no re-validation.
+# advance, so each alias record below needs no cert change of its own. Pointing
+# another subdomain at this same cert later is a two-line change with no re-validation.
 resource "aws_acm_certificate" "frontends" {
   domain_name               = var.domain_name
   subject_alternative_names = ["*.${var.domain_name}"]
@@ -81,6 +80,30 @@ resource "aws_route53_record" "pos_api_alias" {
   alias {
     name                   = module.alb_pos_api.dns_name
     zone_id                = module.alb_pos_api.zone_id
+    evaluate_target_health = true
+  }
+}
+
+# storefront-api's public endpoint. Unlike merchant-api — which needs no record,
+# because merchant-web's CloudFront proxies /api/* straight to its ALB
+# (`enable_api_routing`) — storefront-api is called directly, over the open
+# internet, by third-party storefronts hosted on arbitrary merchant-owned
+# domains. There is no distribution of ours to hide it behind, so it needs a real
+# host for the same TLS-SNI reason as pos-api above.
+#
+# `api.${domain}` rather than `storefront.${domain}`: storefront-api is in
+# practice the only public, third-party-facing API here (merchant-api is proxied,
+# pos-api serves our own app), and this string ends up in every published code
+# sample, the OpenAPI `servers` array and the SDK README — so treat it as
+# permanent.
+resource "aws_route53_record" "storefront_api_alias" {
+  zone_id = data.aws_route53_zone.this.zone_id
+  name    = "api.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = module.alb_storefront_api.dns_name
+    zone_id                = module.alb_storefront_api.zone_id
     evaluate_target_health = true
   }
 }

@@ -106,12 +106,12 @@ jobs:
         run: |
           set -uo pipefail
           case "${{ matrix.app }}" in
-            merchant-api)   URL="https://merchant.ordersail.com/api/health" ; K="" ;;
-            pos-api)        URL="https://pos.ordersail.com/health" ; K="" ;;
-            storefront-api) URL="https://$(aws ssm get-parameter --name /ordersail/production/alb/storefront-api-dns --query Parameter.Value --output text)/health" ; K="-k" ;;
+            merchant-api)   URL="https://merchant.ordersail.com/api/health" ;;
+            pos-api)        URL="https://pos.ordersail.com/health" ;;
+            storefront-api) URL="https://api.ordersail.com/health" ;;
           esac
           for i in $(seq 1 5); do
-            code=$(curl -s $K -o /tmp/b -w '%{http_code}' --max-time 15 "$URL" || echo 000)
+            code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$URL" || echo 000)
             if [ "$code" = "200" ] && grep -q '"status":"ok"' /tmp/b; then echo "ok  $URL -> 200"; exit 0; fi
             sleep 6
           done

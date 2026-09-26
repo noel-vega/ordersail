@@ -340,19 +340,17 @@ jobs:
             fi
           }
 
-          STOREFRONT=$(aws ssm get-parameter --name /ordersail/production/alb/storefront-api-dns \
-            --query Parameter.Value --output text)
-
           echo "== APIs =="
           hit      "merchant-api   GET /health"      200 https://merchant.ordersail.com/api/health
           body_has "merchant-api   GET /health"      '"status":"ok"' https://merchant.ordersail.com/api/health
           hit      "merchant-api   GET /products"    401 https://merchant.ordersail.com/api/products
 
-          # storefront-api has no domain — the raw ALB serves the *.ordersail.com
-          # wildcard cert, so -k (skip hostname check) is expected on this host only.
-          hit      "storefront-api GET /health"      200 -k "https://$STOREFRONT/health"
-          body_has "storefront-api GET /health"      '"status":"ok"' -k "https://$STOREFRONT/health"
-          hit      "storefront-api GET /products"    401 -k "https://$STOREFRONT/products"
+          # api.ordersail.com is storefront-api's real public hostname (OS-560) —
+          # the one published in the SDK docs, so check exactly what developers
+          # call. Full TLS verification: no -k, unlike before the record existed.
+          hit      "storefront-api GET /health"      200 https://api.ordersail.com/health
+          body_has "storefront-api GET /health"      '"status":"ok"' https://api.ordersail.com/health
+          hit      "storefront-api GET /products"    401 https://api.ordersail.com/products
 
           hit      "pos-api        GET /health"      200 https://pos.ordersail.com/health
           body_has "pos-api        GET /health"      '"status":"ok"' https://pos.ordersail.com/health
