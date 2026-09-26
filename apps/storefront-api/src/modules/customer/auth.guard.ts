@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
+import { setLogContext } from 'logging';
 import type { AuthenticatedCustomer } from './auth.decorators';
 
 // unlike merchant-api's AuthGuard (and this app's own AppKeyGuard), this is
@@ -50,6 +51,8 @@ export class CustomerAuthGuard implements CanActivate {
     }
 
     request.customer = payload;
+    // the ID only — the payload also carries the customer's email and name
+    setLogContext({ customerId: payload.sub });
     return true;
   }
 

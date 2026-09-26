@@ -1,6 +1,5 @@
-import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { getCorrelationId, runWithCorrelationId } from 'logging';
+import { jobLogContext, runWithLogContext } from 'logging';
 import {
   DOMAIN_EVENTS,
   OnDomainEvent,
@@ -21,7 +20,10 @@ export class CheckoutOrderHandler {
 
   @OnDomainEvent(DOMAIN_EVENTS.CHECKOUT_SESSION_PAID)
   async handle(event: CheckoutSessionPaidPayload): Promise<void> {
-    await runWithCorrelationId(getCorrelationId() ?? randomUUID(), async () => {
+    // the Stripe webhook is unauthenticated, so no guard has set the tenant —
+    // the event is what knows it
+    const context = { ...jobLogContext(), accountId: event.accountId };
+    await runWithLogContext(context, async () => {
       const payload = await this.checkoutOrders.resolveOrderPayload(event);
       if (payload) await this.checkoutOrders.enqueue(payload);
     });

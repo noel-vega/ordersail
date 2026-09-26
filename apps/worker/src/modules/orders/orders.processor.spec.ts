@@ -328,6 +328,7 @@ describe('OrdersProcessor — checkout-completed', () => {
       accountName: 'Test Store',
       orderId: order.id,
       correlationId: 'corr-1',
+      accountId: s.accountId,
       subtotalCents: 23000,
       shippingCents: 845,
       amountTotalCents: 23845,

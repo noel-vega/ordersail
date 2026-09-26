@@ -8,20 +8,64 @@ import { pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
 // correlation context
 // ---------------------------------------------------------------------------
 
-type CorrelationStore = { correlationId: string };
+// What every log line inside a scope is stamped with. `correlationId` is fixed
+// when the scope opens (per HTTP request in requestLoggingMiddleware, per job in
+// the worker); the identity fields are filled in later, by whichever auth guard
+// resolves the caller (setLogContext). IDs only — never names, emails or tokens.
+export type LogContext = {
+  correlationId: string;
+  accountId?: number;
+  userId?: number;
+  customerId?: number;
+  deviceId?: number;
+  locationId?: number;
+  appKeyId?: number;
+  orderId?: number;
+};
 
-const als = new AsyncLocalStorage<CorrelationStore>();
+const als = new AsyncLocalStorage<LogContext>();
 
 // wraps the rest of an HTTP request (APIs) or a single job's processing
 // (worker) so every log line emitted anywhere in that call stack — including
-// inside services several layers deep — picks up the same correlation ID
-// without it having to be threaded through every function signature
-export function runWithCorrelationId<T>(correlationId: string, fn: () => T): T {
-  return als.run({ correlationId }, fn);
+// inside services several layers deep — picks up the same context without it
+// having to be threaded through every function signature
+export function runWithLogContext<T>(context: LogContext, fn: () => T): T {
+  return als.run(withoutUndefined(context), fn);
+}
+
+// Adds fields to the current scope's context. Mutates the store in place rather
+// than opening a nested scope: a guard runs in the middle of the request's
+// async chain, and only a mutation is visible to everything after it — the
+// rest of the handler *and* the access line, which holds the same object. A
+// no-op outside a scope (a module-level call, a test without one).
+export function setLogContext(fields: Partial<Omit<LogContext, 'correlationId'>>): void {
+  const store = als.getStore();
+  if (store) Object.assign(store, withoutUndefined(fields));
+}
+
+export function getLogContext(): Readonly<LogContext> | undefined {
+  return als.getStore();
 }
 
 export function getCorrelationId(): string | undefined {
   return als.getStore()?.correlationId;
+}
+
+// The part of the context that crosses a queue hop: spread into a job payload
+// by the producer, handed back to runWithLogContext by the worker. Mints a
+// correlation ID when there's no scope, so a job always has one.
+export function jobLogContext(): { correlationId: string; accountId?: number } {
+  const store = als.getStore();
+  return withoutUndefined({
+    correlationId: store?.correlationId ?? randomUUID(),
+    accountId: store?.accountId,
+  });
+}
+
+function withoutUndefined<T extends object>(fields: T): T {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== undefined),
+  ) as T;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,11 +177,11 @@ export function maskEmail(email: string): string {
 const redact = { paths: REDACT_PATHS, censor: '[REDACTED]' };
 const serializers = { err: serializeError };
 
-// stamps the ambient correlation ID onto every line; request-context fields
-// (accountId, userId, …) join it here in OS-479
+// stamps the ambient log context (correlation ID + whatever identity the
+// guards resolved) onto every line
 function mixin(): Record<string, unknown> {
-  const correlationId = getCorrelationId();
-  return correlationId ? { correlationId } : {};
+  const store = als.getStore();
+  return store ? { ...store } : {};
 }
 
 // Before configureLogging() runs (specs, scripts, module-level code that logs
@@ -346,7 +390,7 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
     res.setHeader('x-request-id', correlationId);
 
     const path = (req.url ?? '').split('?')[0];
-    const store: CorrelationStore = { correlationId };
+    const store: LogContext = { correlationId };
 
     if (!ignorePaths.has(path)) {
       const startedAt = process.hrtime.bigint();

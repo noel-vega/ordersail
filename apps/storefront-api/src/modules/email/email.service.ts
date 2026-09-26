@@ -1,9 +1,8 @@
-import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { QUEUE_NAMES, withTimeout, type EmailJobData } from 'queue';
-import { Logger, getCorrelationId } from 'logging';
+import { Logger, jobLogContext } from 'logging';
 
 // this no longer talks to SMTP at all — it enqueues a job for apps/worker
 // to actually send. Send failures are retried by the worker; a failure to
@@ -26,7 +25,7 @@ export class EmailService {
       await withTimeout(
         this.emailQueue.add('customer-thank-you', {
           type: 'customer-thank-you',
-          correlationId: getCorrelationId() ?? randomUUID(),
+          ...jobLogContext(),
           to,
           ...params,
         }),

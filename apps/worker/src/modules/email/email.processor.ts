@@ -1,7 +1,7 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import { QUEUE_NAMES, type EmailJobData } from 'queue';
-import { Logger, runWithCorrelationId } from 'logging';
+import { QUEUE_NAMES, logContextOf, type EmailJobData } from 'queue';
+import { Logger, runWithLogContext } from 'logging';
 import {
   renderCustomerThankYouEmail,
   renderOrderConfirmationEmail,
@@ -33,7 +33,7 @@ export class EmailProcessor extends WorkerHost {
   // mailerService — is traceable back to whatever enqueued it (a request, or
   // an order job forwarding its own id)
   process(job: Job<EmailJobData>): Promise<void> {
-    return runWithCorrelationId(job.data.correlationId, () =>
+    return runWithLogContext(logContextOf(job.data), () =>
       this.processJob(job),
     );
   }
@@ -149,7 +149,7 @@ export class EmailProcessor extends WorkerHost {
   // explicitly from job.data, same id either way
   @OnWorkerEvent('failed')
   onFailed(job: Job<EmailJobData>, err: Error) {
-    runWithCorrelationId(job.data.correlationId, () => {
+    runWithLogContext(logContextOf(job.data), () => {
       this.logger.warn(
         `Job ${job.id} (${job.name}) failed on attempt ${job.attemptsMade}: ${err.message}`,
       );
@@ -158,7 +158,7 @@ export class EmailProcessor extends WorkerHost {
 
   @OnWorkerEvent('completed')
   onCompleted(job: Job<EmailJobData>) {
-    runWithCorrelationId(job.data.correlationId, () => {
+    runWithLogContext(logContextOf(job.data), () => {
       this.logger.log(`Job ${job.id} (${job.name}) sent`);
     });
   }

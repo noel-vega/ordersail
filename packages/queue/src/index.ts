@@ -13,23 +13,36 @@ export const QUEUE_NAMES = {
 // URL in a multi-tenant, bring-your-own-domain system; revisit once there's
 // a real per-account deep-linking mechanism.
 //
-// correlationId rides along on every job so a worker log line can be traced
-// back to the request (or the upstream job) that produced it — see
-// the `logging` package's runWithCorrelationId/getCorrelationId
-export type EmailJobData =
-  | { type: "staff-invite"; correlationId: string; to: string; firstName: string; inviteUrl: string }
-  | { type: "password-reset"; correlationId: string; to: string; firstName: string; resetUrl: string }
-  | { type: "verify-email"; correlationId: string; to: string; firstName: string; verifyUrl: string }
+// Every job carries the producer's log context so a worker log line can be
+// traced back to the request (or the upstream job) that produced it, and
+// filtered by tenant — producers spread the `logging` package's
+// jobLogContext(), the worker restores it with runWithLogContext. accountId is
+// absent when the producer had no tenant (e.g. a password reset for an
+// unauthenticated caller).
+export type JobLogContext = { correlationId: string; accountId?: number };
+
+// Picks the log context back out of a job — never hand job.data itself to
+// runWithLogContext, it would stamp the whole payload (emails, addresses) on
+// every line.
+export function logContextOf(data: JobLogContext): JobLogContext {
+  return data.accountId === undefined
+    ? { correlationId: data.correlationId }
+    : { correlationId: data.correlationId, accountId: data.accountId };
+}
+
+export type EmailJobData = JobLogContext &
+  (
+  | { type: "staff-invite"; to: string; firstName: string; inviteUrl: string }
+  | { type: "password-reset"; to: string; firstName: string; resetUrl: string }
+  | { type: "verify-email"; to: string; firstName: string; verifyUrl: string }
   | {
       type: "customer-thank-you";
-      correlationId: string;
       to: string;
       firstName: string;
       accountName: string;
     }
   | {
       type: "order-confirmation";
-      correlationId: string;
       to: string;
       customerName: string;
       accountName: string;
@@ -50,7 +63,8 @@ export type EmailJobData =
       shippingState: string | null;
       shippingPostalCode: string;
       shippingCountry: string;
-    };
+    }
+  );
 
 // a flattened snapshot of everything the order-creation transaction needs
 // from the Stripe session + cart, resolved by the producer (storefront-api's

@@ -55,11 +55,12 @@ dev the same data is pretty-printed.
 | `context` | `new Logger(X.name)` | class that logged |
 | `msg` | caller | short, human, **no interpolated IDs or PII** |
 | `correlationId` | request middleware / job processor | always present inside a request or job |
-| `accountId` | auth guards / job data | the tenant |
+| `accountId` | auth guards / job data / Stripe webhook event | the tenant |
 | `userId` | merchant-api `AuthGuard` | merchant staff member |
-| `customerId` | storefront-api customer auth | logged-in storefront customer |
-| `deviceId` | pos-api `PosAuthGuard` | paired POS device |
+| `customerId` | storefront-api `CustomerAuthGuard` | logged-in storefront customer — the ID only, never their email or name |
+| `deviceId`, `locationId` | pos-api `PosDeviceGuard` | paired POS device and its location |
 | `appKeyId` | storefront-api `AppKeyGuard` | which storefront key was used |
+| `orderId` | worker order processor, once the order is committed | also passed by hand as a domain field elsewhere |
 | `event` | caller | stable dotted name, see below |
 | domain IDs | caller | `orderId`, `jobId`, `queue`, `disputeId`, `chargeId`, `stripeEventId`… — top-level, camelCase |
 | `err` | caller | the Error object; serialized to `type`, `message`, `stack` (+ safe provider fields) |
@@ -67,7 +68,10 @@ dev the same data is pretty-printed.
 | `trace_id`, `span_id` | *reserved* | added automatically once OpenTelemetry lands (OS-94) |
 
 Request-context fields (`correlationId`, `accountId`, `userId`, …) are attached automatically
-from AsyncLocalStorage — **don't pass them by hand**.
+from AsyncLocalStorage — **don't pass them by hand**. The middleware opens the scope with the
+correlation ID; each auth guard adds the caller it resolved with `setLogContext()`, so every
+later line of the request — service lines and the access line — carries it. A line logged
+before the guard runs (or on a public route) has only `correlationId`.
 
 ### Access log
 
@@ -110,8 +114,10 @@ this.logger.error(
 );
 ```
 
-Worker job processors log the same way; the processor restores `correlationId` (and
-`accountId`) from the job data before any work runs:
+Worker job processors log the same way. Producers spread `jobLogContext()` into the job payload
+(`correlationId` + `accountId` when the request had one), and the processor restores it with
+`runWithLogContext(logContextOf(job.data), …)` before any work runs — `logContextOf` picks just
+those fields, never the rest of the payload:
 
 ```ts
 this.logger.warn(
