@@ -7,7 +7,12 @@ import {
 import { Inject } from '@nestjs/common';
 import type { Job, Queue } from 'bullmq';
 import { QUEUE_NAMES, type EmailJobData, type OrderJobData } from 'queue';
-import { Logger, runWithCorrelationId } from 'logging';
+import {
+  Logger,
+  logContextOf,
+  runWithLogContext,
+  setLogContext,
+} from 'logging';
 import {
   accountsTable,
   and,
@@ -52,7 +57,7 @@ export class OrdersProcessor extends WorkerHost {
   // traceable back to the request that enqueued it, without threading an
   // id through every method signature
   process(job: Job<OrderJobData>): Promise<void> {
-    return runWithCorrelationId(job.data.correlationId, async () => {
+    return runWithLogContext(logContextOf(job.data), async () => {
       const data = job.data;
 
       switch (data.type) {
@@ -95,6 +100,7 @@ export class OrdersProcessor extends WorkerHost {
         ),
       );
     if (existing) {
+      setLogContext({ orderId: existing.id });
       // the order itself is done, but if the worker died between the
       // transaction below committing and the email enqueueing (BullMQ
       // redelivers on a stalled job the same way it does on failure), this
@@ -249,6 +255,9 @@ export class OrdersProcessor extends WorkerHost {
           ),
         );
     });
+    // after the commit, not inside the transaction — a rolled-back order ID
+    // would point every later line at an order that doesn't exist
+    setLogContext({ orderId });
 
     await this.enqueueOrderConfirmationEmail(orderId, data);
   }
@@ -274,7 +283,7 @@ export class OrdersProcessor extends WorkerHost {
         type: 'order-confirmation',
         // forwarded, not regenerated — keeps the order and its confirmation
         // email traceable under the same id as the original checkout request
-        correlationId: data.correlationId,
+        ...logContextOf(data),
         to: data.customerEmail,
         customerName: data.customerName,
         accountName: account?.name ?? '',
@@ -330,7 +339,7 @@ export class OrdersProcessor extends WorkerHost {
   // the bookkeeping from turning into an unhandled rejection.
   @OnWorkerEvent('failed')
   async onFailed(job: Job<OrderJobData>, err: Error) {
-    await runWithCorrelationId(job.data.correlationId, async () => {
+    await runWithLogContext(logContextOf(job.data), async () => {
       const attempts = job.opts.attempts ?? 1;
       const exhausted = job.attemptsMade >= attempts;
 
@@ -427,7 +436,7 @@ export class OrdersProcessor extends WorkerHost {
 
   @OnWorkerEvent('completed')
   async onCompleted(job: Job<OrderJobData>) {
-    await runWithCorrelationId(job.data.correlationId, async () => {
+    await runWithLogContext(logContextOf(job.data), async () => {
       const sessionId =
         job.data.type === 'checkout-completed'
           ? job.data.stripeCheckoutSessionId

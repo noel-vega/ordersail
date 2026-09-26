@@ -1,8 +1,7 @@
-import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { Logger, getCorrelationId } from 'logging';
+import { Logger, jobLogContext } from 'logging';
 import { QUEUE_NAMES, type OrderJobData } from 'queue';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import type { CheckoutSessionPaidPayload } from 'src/shared/events';
@@ -45,7 +44,8 @@ export class CheckoutOrderService {
     const addr = event.shippingAddress;
     return {
       type: 'checkout-completed',
-      correlationId: getCorrelationId() ?? randomUUID(),
+      ...jobLogContext(),
+      // the event is authoritative — the webhook route has no guard to set it
       accountId: event.accountId,
       cartToken: event.cartToken,
       stripeCheckoutSessionId: event.checkoutSessionId,

@@ -10,6 +10,7 @@ import { APP_GUARD, Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { DRIZZLE } from '../../database/database.constants';
 import { accountApiKeysTable, and, eq, isNull, type db as Db } from 'db';
+import { setLogContext } from 'logging';
 import { IS_PUBLIC_KEY } from './app-key.decorators';
 
 const APP_KEY_HEADER = 'x-app-key';
@@ -52,6 +53,7 @@ export class AppKeyGuard implements CanActivate {
 
     // stashed for CurrentAccountId() and for services to scope queries by tenant
     (request as Request & { accountId: number }).accountId = record.accountId;
+    setLogContext({ accountId: record.accountId, appKeyId: record.id });
     return true;
   }
 }

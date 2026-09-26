@@ -8,6 +8,7 @@ import {
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { setLogContext } from 'logging';
 import { AuthenticatedUser, IS_PUBLIC_KEY } from 'src/shared/auth/decorators';
 
 type RequestWithUser = Request & { user?: AuthenticatedUser };
@@ -47,6 +48,7 @@ export class AuthGuard implements CanActivate {
       // 💡 We're assigning the payload to the request object here
       // so that we can access it in our route handlers
       request.user = payload;
+      setLogContext({ accountId: payload.accountId, userId: payload.sub });
     } catch {
       throw new UnauthorizedException();
     }

@@ -1,5 +1,6 @@
 import { Redis } from "ioredis";
 import type { JobsOptions } from "bullmq";
+import type { JobLogContext } from "logging";
 
 export const QUEUE_NAMES = {
   EMAIL: "email",
@@ -13,23 +14,23 @@ export const QUEUE_NAMES = {
 // URL in a multi-tenant, bring-your-own-domain system; revisit once there's
 // a real per-account deep-linking mechanism.
 //
-// correlationId rides along on every job so a worker log line can be traced
-// back to the request (or the upstream job) that produced it — see
-// the `logging` package's runWithCorrelationId/getCorrelationId
-export type EmailJobData =
-  | { type: "staff-invite"; correlationId: string; to: string; firstName: string; inviteUrl: string }
-  | { type: "password-reset"; correlationId: string; to: string; firstName: string; resetUrl: string }
-  | { type: "verify-email"; correlationId: string; to: string; firstName: string; verifyUrl: string }
+// Every job carries the producer's log context (JobLogContext) so a worker log
+// line can be traced back to the request (or the upstream job) that produced
+// it, and filtered by tenant — producers spread the `logging` package's
+// jobLogContext(), the worker restores it with runWithLogContext(logContextOf(…)).
+export type EmailJobData = JobLogContext &
+  (
+  | { type: "staff-invite"; to: string; firstName: string; inviteUrl: string }
+  | { type: "password-reset"; to: string; firstName: string; resetUrl: string }
+  | { type: "verify-email"; to: string; firstName: string; verifyUrl: string }
   | {
       type: "customer-thank-you";
-      correlationId: string;
       to: string;
       firstName: string;
       accountName: string;
     }
   | {
       type: "order-confirmation";
-      correlationId: string;
       to: string;
       customerName: string;
       accountName: string;
@@ -50,15 +51,17 @@ export type EmailJobData =
       shippingState: string | null;
       shippingPostalCode: string;
       shippingCountry: string;
-    };
+    }
+  );
 
 // a flattened snapshot of everything the order-creation transaction needs
-// from the Stripe session + cart, resolved by the producer (storefront-api's
-// CheckoutService, which already has the cart loaded) so the worker never
-// has to touch cart-domain tables/queries itself
-export type OrderJobData = {
+// from the Stripe session + cart, resolved by the producer (merchant-api's
+// CheckoutOrderService in sales/checkout-orders, which loads the cart when the
+// checkout webhook fires) so the worker never has to touch cart-domain
+// tables/queries itself
+export type OrderJobData = JobLogContext & {
   type: "checkout-completed";
-  correlationId: string;
+  // required here: an order job always belongs to a tenant
   accountId: number;
   cartToken: string;
   stripeCheckoutSessionId: string;

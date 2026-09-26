@@ -9,6 +9,7 @@ import {
 import { APP_GUARD, Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { and, eq, isNotNull, isNull, posDevicesTable, type db as Db } from "db";
+import { setLogContext } from "logging";
 import { DRIZZLE } from "../../database/database.constants";
 import { IS_PUBLIC_KEY, type PosDeviceContext } from "./pos-auth.decorators";
 
@@ -61,6 +62,11 @@ export class PosDeviceGuard implements CanActivate {
     };
     (request as Request & { posDevice: PosDeviceContext }).posDevice =
       posDevice;
+    setLogContext({
+      deviceId: posDevice.deviceId,
+      accountId: posDevice.accountId,
+      locationId: posDevice.locationId,
+    });
 
     const now = Date.now();
     if (

@@ -3,11 +3,15 @@ import { describe, it } from 'node:test';
 import {
   configureLogging,
   getCorrelationId,
+  getLogContext,
+  jobLogContext,
+  logContextOf,
   Logger,
   maskEmail,
   normalizeLogArgs,
   requestLoggingMiddleware,
-  runWithCorrelationId,
+  runWithLogContext,
+  setLogContext,
   setRequestRoute,
 } from './index.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -78,14 +82,75 @@ describe('normalizeLogArgs', () => {
   });
 });
 
-describe('correlation context', () => {
+describe('log context', () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
+
   it('is visible across awaits inside the scope and absent outside', async () => {
     assert.equal(getCorrelationId(), undefined);
-    await runWithCorrelationId('abc', async () => {
-      await new Promise((resolve) => setTimeout(resolve, 1));
+    await runWithLogContext({ correlationId: 'abc' }, async () => {
+      await tick();
       assert.equal(getCorrelationId(), 'abc');
     });
     assert.equal(getCorrelationId(), undefined);
+  });
+
+  it('fields set mid-scope (as a guard does) reach async work that runs after', async () => {
+    await runWithLogContext({ correlationId: 'req-1' }, async () => {
+      await tick();
+      setLogContext({ accountId: 42, userId: 7 });
+      await tick();
+      assert.deepEqual(getLogContext(), { correlationId: 'req-1', accountId: 42, userId: 7 });
+    });
+  });
+
+  it('concurrent scopes do not bleed into each other', async () => {
+    const request = (correlationId: string, accountId: number, delay: number) =>
+      runWithLogContext({ correlationId }, async () => {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        setLogContext({ accountId });
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return getLogContext();
+      });
+    const [a, b] = await Promise.all([request('a', 1, 5), request('b', 2, 1)]);
+    assert.deepEqual(a, { correlationId: 'a', accountId: 1 });
+    assert.deepEqual(b, { correlationId: 'b', accountId: 2 });
+  });
+
+  it('setLogContext is a no-op outside a scope and skips undefined fields', async () => {
+    setLogContext({ accountId: 1 });
+    assert.equal(getLogContext(), undefined);
+    await runWithLogContext({ correlationId: 'x', accountId: undefined }, async () => {
+      setLogContext({ userId: undefined, deviceId: 3 });
+      assert.deepEqual(getLogContext(), { correlationId: 'x', deviceId: 3 });
+    });
+  });
+
+  it('jobLogContext carries correlationId + accountId, minting an ID with no scope', async () => {
+    await runWithLogContext({ correlationId: 'c', accountId: 9, userId: 4 }, async () => {
+      assert.deepEqual(jobLogContext(), { correlationId: 'c', accountId: 9 });
+    });
+    const minted = jobLogContext();
+    assert.match(minted.correlationId, /^[0-9a-f-]{36}$/);
+    assert.equal('accountId' in minted, false);
+  });
+
+  it('logContextOf picks only the log context out of a job payload', () => {
+    const payload = { correlationId: 'c', accountId: 9, to: 'a@b.co', firstName: 'Ann' };
+    assert.deepEqual(logContextOf(payload), { correlationId: 'c', accountId: 9 });
+    const noTenant = { correlationId: 'c', to: 'a@b.co' };
+    assert.deepEqual(logContextOf(noTenant), { correlationId: 'c' });
+  });
+
+  it('every line in the scope carries the context', async () => {
+    const lines = captureLogs();
+    await runWithLogContext({ correlationId: 'job-1', accountId: 5 }, async () => {
+      setLogContext({ orderId: 11 });
+      new Logger('Svc').info({ event: 'order.created' }, 'Order created');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(lines[0].correlationId, 'job-1');
+    assert.equal(lines[0].accountId, 5);
+    assert.equal(lines[0].orderId, 11);
   });
 });
 
@@ -390,6 +455,28 @@ describe('requestLoggingMiddleware', () => {
         }
         // the handler ran inside the scope with the same ID that was echoed
         assert.equal(seen[0], 'abc-123.def:4');
+      },
+    );
+  });
+
+  it('carries identity a guard set mid-request on service lines and the access line', async () => {
+    const lines = captureLogs();
+    await withServer(
+      (_req, res) => {
+        setLogContext({ accountId: 42, userId: 7 });
+        new Logger('Svc').info({ event: 'thing.done' }, 'done');
+        res.end();
+      },
+      async (url) => {
+        await (await fetch(url)).text();
+        await settle();
+        const service = lines.find((line) => line.event === 'thing.done');
+        const access = lines.find((line) => line.event === 'http.request');
+        for (const line of [service, access]) {
+          assert.equal(line?.accountId, 42);
+          assert.equal(line?.userId, 7);
+        }
+        assert.equal(service?.correlationId, access?.correlationId);
       },
     );
   });
