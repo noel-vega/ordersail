@@ -55,9 +55,10 @@ export type EmailJobData = JobLogContext &
   );
 
 // a flattened snapshot of everything the order-creation transaction needs
-// from the Stripe session + cart, resolved by the producer (storefront-api's
-// CheckoutService, which already has the cart loaded) so the worker never
-// has to touch cart-domain tables/queries itself
+// from the Stripe session + cart, resolved by the producer (merchant-api's
+// CheckoutOrderService in sales/checkout-orders, which loads the cart when the
+// checkout webhook fires) so the worker never has to touch cart-domain
+// tables/queries itself
 export type OrderJobData = JobLogContext & {
   type: "checkout-completed";
   // required here: an order job always belongs to a tenant
