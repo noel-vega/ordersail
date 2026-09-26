@@ -1,5 +1,16 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import {
+  BadRequestException,
+  ForbiddenException,
+  InternalServerErrorException,
+  NotFoundException,
+  UnauthorizedException,
+  type ArgumentsHost,
+} from '@nestjs/common';
+import { BaseExceptionFilter } from '@nestjs/core';
 import {
   configureLogging,
   getCorrelationId,
@@ -7,6 +18,7 @@ import {
   jobLogContext,
   logContextOf,
   Logger,
+  LoggingExceptionFilter,
   maskEmail,
   normalizeLogArgs,
   requestLoggingMiddleware,
@@ -478,6 +490,213 @@ describe('requestLoggingMiddleware', () => {
         }
         assert.equal(service?.correlationId, access?.correlationId);
       },
+    );
+  });
+});
+
+describe('LoggingExceptionFilter', () => {
+  function captureAll(): Record<string, any>[] {
+    const lines: Record<string, any>[] = [];
+    configureLogging({
+      service: 'test',
+      nodeEnv: 'production',
+      level: 'debug',
+      destination: { write: (chunk: string) => void lines.push(JSON.parse(chunk)) },
+    });
+    return lines;
+  }
+
+  // the slice of Nest's HttpServer adapter the filters answer through
+  function fakeAdapter() {
+    const replies: { body: unknown; status: number }[] = [];
+    const adapter = {
+      reply: (_res: unknown, body: unknown, status: number) => void replies.push({ body, status }),
+      isHeadersSent: () => false,
+      end: () => undefined,
+    };
+    return { adapter: adapter as any, replies };
+  }
+
+  function httpHost(request: unknown): ArgumentsHost {
+    const response = {};
+    return {
+      getType: () => 'http',
+      getArgByIndex: (index: number) => [request, response][index],
+      switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
+    } as unknown as ArgumentsHost;
+  }
+
+  const expressRequest = { method: 'GET', route: { path: '/orders/:id' } };
+
+  // the body our filter sends must be exactly what Nest's own filter sends
+  function assertSameResponseAsNest(exception: unknown, request: unknown = expressRequest) {
+    const ours = fakeAdapter();
+    const nest = fakeAdapter();
+    new LoggingExceptionFilter(ours.adapter).catch(exception, httpHost(request));
+    // Nest's filter logs unknown errors through its own static logger — keep
+    // that out of the lines under test
+    const silence = captureAll();
+    new BaseExceptionFilter(nest.adapter).catch(exception, httpHost(request));
+    silence.length = 0;
+    assert.deepEqual(ours.replies, nest.replies);
+    return ours.replies[0];
+  }
+
+  it('a plain Error: one error line with stack, context and route; generic 500 body', async () => {
+    const lines = captureAll();
+    const { adapter, replies } = fakeAdapter();
+    await runWithLogContext({ correlationId: 'req-1', accountId: 42 }, async () => {
+      new LoggingExceptionFilter(adapter).catch(new Error('db exploded'), httpHost(expressRequest));
+    });
+    assert.equal(lines.length, 1, 'exactly one line — Nest\'s own ExceptionsHandler line is suppressed');
+    const [line] = lines;
+    assert.equal(line.level, 50);
+    assert.equal(line.event, 'http.unhandled_error');
+    assert.equal(line.status, 500);
+    assert.equal(line.route, '/orders/:id');
+    assert.equal(line.correlationId, 'req-1');
+    assert.equal(line.accountId, 42);
+    assert.equal(line.err.message, 'db exploded');
+    assert.match(line.err.stack, /db exploded/);
+    assert.deepEqual(replies, [{ body: { statusCode: 500, message: 'Internal server error' }, status: 500 }]);
+    assert.ok(!JSON.stringify(replies).includes('db exploded'), 'the client never sees the error');
+  });
+
+  it('matches Nest\'s response for unknown errors, HttpExceptions and http-errors', () => {
+    captureAll();
+    assertSameResponseAsNest(new Error('boom'));
+    assertSameResponseAsNest(new NotFoundException());
+    assertSameResponseAsNest(new BadRequestException(['email must be an email']));
+    assertSameResponseAsNest(new InternalServerErrorException());
+    const tooLarge = Object.assign(new Error('request entity too large'), { statusCode: 413 });
+    assert.deepEqual(assertSameResponseAsNest(tooLarge), {
+      body: { statusCode: 413, message: 'request entity too large' },
+      status: 413,
+    });
+  });
+
+  it('401/403/429 log at warn with the reason and no stack', () => {
+    const lines = captureAll();
+    const filter = new LoggingExceptionFilter(fakeAdapter().adapter);
+    filter.catch(new UnauthorizedException(), httpHost(expressRequest));
+    filter.catch(new ForbiddenException('Missing permission'), httpHost(expressRequest));
+    assert.deepEqual(
+      lines.map((line) => [line.level, line.event, line.status, line.reason, line.err]),
+      [
+        [40, 'http.request_rejected', 401, 'Unauthorized', undefined],
+        [40, 'http.request_rejected', 403, 'Missing permission', undefined],
+      ],
+    );
+  });
+
+  it('other 4xx (validation, not found, http-errors) log at debug', () => {
+    const lines = captureAll();
+    const filter = new LoggingExceptionFilter(fakeAdapter().adapter);
+    filter.catch(new NotFoundException(), httpHost(expressRequest));
+    filter.catch(Object.assign(new Error('too large'), { statusCode: 413 }), httpHost(expressRequest));
+    assert.deepEqual(lines.map((line) => [line.level, line.status]), [[20, 404], [20, 413]]);
+  });
+
+  it('a thrown 5xx HttpException logs at error', () => {
+    const lines = captureAll();
+    new LoggingExceptionFilter(fakeAdapter().adapter).catch(
+      new InternalServerErrorException(),
+      httpHost(expressRequest),
+    );
+    assert.equal(lines[0].level, 50);
+    assert.equal(lines[0].event, 'http.unhandled_error');
+  });
+
+  it('reads the route template off a Fastify request\'s raw Node request', () => {
+    const lines = captureAll();
+    const raw = { method: 'POST' } as IncomingMessage;
+    setRequestRoute(raw, '/webhooks/stripe');
+    new LoggingExceptionFilter(fakeAdapter().adapter).catch(new Error('x'), httpHost({ raw }));
+    assert.equal(lines[0].route, '/webhooks/stripe');
+  });
+});
+
+// Process-level behaviour needs a real process: run a tiny script against this
+// module in a child and read what it wrote to stdout.
+describe('process handlers', () => {
+  const indexPath = fileURLToPath(new URL('./index.ts', import.meta.url));
+
+  function runScript(
+    body: string,
+    onLine?: (line: Record<string, any>, child: ReturnType<typeof spawn>) => void,
+  ): Promise<{ code: number | null; lines: Record<string, any>[] }> {
+    const script = `
+      import * as logging from ${JSON.stringify(indexPath)};
+      logging.configureLogging({ service: 'test', nodeEnv: 'production' });
+      ${body}
+    `;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+      env: { ...process.env, NODE_ENV: 'production' },
+    });
+    const lines: Record<string, any>[] = [];
+    let buffer = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString();
+      let newline: number;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = JSON.parse(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        lines.push(line);
+        onLine?.(line, child);
+      }
+    });
+    return new Promise((resolve) => child.on('close', (code) => resolve({ code, lines })));
+  }
+
+  it('an unhandled rejection logs one fatal line and exits 1', async () => {
+    const { code, lines } = await runScript(`
+      logging.installProcessHandlers();
+      Promise.reject(new Error('nobody caught me'));
+    `);
+    assert.equal(code, 1);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].level, 60);
+    assert.equal(lines[0].event, 'process.unhandled_rejection');
+    assert.equal(lines[0].err.message, 'nobody caught me');
+  });
+
+  it('an uncaught exception logs one fatal line and exits 1', async () => {
+    const { code, lines } = await runScript(`
+      logging.installProcessHandlers();
+      setTimeout(() => { throw new Error('thrown in a timer'); }, 0);
+    `);
+    assert.equal(code, 1);
+    assert.deepEqual(lines.map((line) => [line.level, line.event]), [[60, 'process.uncaught_exception']]);
+  });
+
+  it('a failed bootstrap logs app.boot_failed and exits 1', async () => {
+    const { code, lines } = await runScript(`
+      async function bootstrap() { throw new Error('redis unreachable'); }
+      bootstrap().catch((err) => logging.exitOnFatal(err, 'app.boot_failed'));
+    `);
+    assert.equal(code, 1);
+    assert.equal(lines[0].event, 'app.boot_failed');
+    assert.equal(lines[0].err.message, 'redis unreachable');
+  });
+
+  it('SIGTERM closes the app, flushes and exits 0', async () => {
+    const { code, lines } = await runScript(
+      `
+      const logger = new logging.Logger('App');
+      logging.installShutdownHandler({
+        close: async () => { logger.info({ event: 'app.closed' }, 'closed'); },
+      });
+      setInterval(() => undefined, 1000);
+      logger.info({ event: 'app.ready' }, 'ready');
+    `,
+      (line, child) => {
+        if (line.event === 'app.ready') child.kill('SIGTERM');
+      },
+    );
+    assert.equal(code, 0);
+    assert.deepEqual(
+      lines.map((line) => line.event),
+      ['app.ready', 'process.shutdown_started', 'app.closed'],
     );
   });
 });

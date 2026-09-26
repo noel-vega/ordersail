@@ -11,7 +11,11 @@ import fastifyHelmet from '@fastify/helmet';
 import { SwaggerModule } from '@nestjs/swagger';
 import {
   Logger,
+  LoggingExceptionFilter,
   configureLogging,
+  exitOnFatal,
+  installProcessHandlers,
+  installShutdownHandler,
   requestLoggingMiddleware,
   setRequestRoute,
 } from 'logging';
@@ -36,6 +40,8 @@ async function bootstrap() {
     },
   );
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  app.useGlobalFilters(new LoggingExceptionFilter(app.getHttpAdapter()));
+  installShutdownHandler(app);
 
   // correlation ID (reused from a well-formed inbound x-request-id or minted)
   // + one access log line per request — see docs/observability.md. Fastify
@@ -85,4 +91,8 @@ async function bootstrap() {
   // task's real VPC IP, not loopback.
   await app.listen(env.PORT, '0.0.0.0');
 }
-bootstrap();
+
+// before bootstrap() so a crash anywhere — boot included — ends in one fatal
+// JSON line instead of a raw stderr trace (docs/observability.md → Errors)
+installProcessHandlers();
+bootstrap().catch((err) => exitOnFatal(err, 'app.boot_failed'));
