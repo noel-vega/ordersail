@@ -22,7 +22,7 @@ output "storefront_api_url" {
 }
 
 output "pos_api_url" {
-  value = "https://pos.${var.domain_name}"
+  value = "https://${aws_route53_record.pos_api_alias.fqdn}"
 }
 
 output "merchant_web_url" {
