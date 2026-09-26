@@ -18,7 +18,7 @@ output "merchant_api_url" {
 # The real public hostname — third-party storefronts call this directly, and it's
 # the `baseUrl` published in the SDK docs.
 output "storefront_api_url" {
-  value = "https://api.${var.domain_name}"
+  value = "https://${aws_route53_record.storefront_api_alias.fqdn}"
 }
 
 output "pos_api_url" {
