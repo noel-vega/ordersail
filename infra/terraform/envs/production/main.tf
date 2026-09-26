@@ -240,7 +240,14 @@ module "ecs_service_merchant_api" {
     # references the module directly, not local.frontends["merchant-web"] — that local
     # aggregates every frontend module as one map expression, so going through it would make a
     # -target apply of just this service also pull in the website's (unrelated) frontend.
-    { name = "MERCHANT_WEB_URL", value = "https://${module.frontend_merchant_web.distribution_domain_name}" },
+    #
+    # `public_url`, not `distribution_domain_name`: this is the dashboard's address as a
+    # merchant sees it, and merchant-api derives the WebAuthn relying-party ID from it
+    # (identity/auth/webauthn.config.ts) as well as every transactional email link. The
+    # generated *.cloudfront.net name is a real host, so the wrong value fails silently —
+    # it just never matches the origin the browser is on, and every passkey ceremony is
+    # rejected before it reaches us (OS-654).
+    { name = "MERCHANT_WEB_URL", value = module.frontend_merchant_web.public_url },
     # STOREFRONT_WEB_URL removed (OS-440) — storefronts are hosted on
     # arbitrary merchant-owned domains now, so there's no single canonical
     # value to set here. CheckoutOrderService.resolveStorefrontUrl (OS-439)
