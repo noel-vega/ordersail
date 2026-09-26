@@ -58,6 +58,12 @@ variable "include_ecs_deploy" {
   default     = false
 }
 
+variable "include_secret_verification" {
+  description = "Grant read access to the app secrets under name_prefix/production/*, so cd.yml's verify-contracts job can confirm every task-definition secret mapping resolves to a JSON key that actually exists (OS-653). Off by default — only the platform-wide role needs this. Note this is not a privilege escalation in practice: a role that can register a task definition and PassRole the execution role can already surface any of these values."
+  type        = bool
+  default     = false
+}
+
 variable "include_environment_toggle" {
   description = "Grant the environment.yml on/off workflow (OS-379) its extra permissions: toggle the cluster's Container Insights setting and arm/disarm the running-below-desired alarms. Off by default — only the platform-wide role needs this."
   type        = bool

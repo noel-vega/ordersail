@@ -20,7 +20,8 @@
     "typecheck": "nx run-many -t typecheck",
     "lint": "nx run-many -t lint:ci",
     "test": "nx run-many -t test",
-    "logs": "docker compose logs -f"
+    "logs": "docker compose logs -f",
+    "verify:contracts": "node scripts/verify-taskdef-contracts.mjs"
   },
   "devDependencies": {
     "nx": "23.0.1"
