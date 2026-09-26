@@ -8,12 +8,17 @@ output "deploy_role_platform_arn" {
   value       = module.deploy_role_platform.deploy_role_arn
 }
 
+# No Route53 record: merchant-web's CloudFront proxies /api/* to this ALB, so the
+# browser only ever talks to merchant.${domain}. The raw ALB name is here for
+# debugging and would fail TLS hostname verification if called directly.
 output "merchant_api_url" {
   value = "https://${module.alb_merchant_api.dns_name}"
 }
 
+# The real public hostname — third-party storefronts call this directly, and it's
+# the `baseUrl` published in the SDK docs.
 output "storefront_api_url" {
-  value = "https://${module.alb_storefront_api.dns_name}"
+  value = "https://api.${var.domain_name}"
 }
 
 output "pos_api_url" {
