@@ -5,6 +5,7 @@ import {
   getCorrelationId,
   getLogContext,
   jobLogContext,
+  logContextOf,
   Logger,
   maskEmail,
   normalizeLogArgs,
@@ -131,6 +132,13 @@ describe('log context', () => {
     const minted = jobLogContext();
     assert.match(minted.correlationId, /^[0-9a-f-]{36}$/);
     assert.equal('accountId' in minted, false);
+  });
+
+  it('logContextOf picks only the log context out of a job payload', () => {
+    const payload = { correlationId: 'c', accountId: 9, to: 'a@b.co', firstName: 'Ann' };
+    assert.deepEqual(logContextOf(payload), { correlationId: 'c', accountId: 9 });
+    const noTenant = { correlationId: 'c', to: 'a@b.co' };
+    assert.deepEqual(logContextOf(noTenant), { correlationId: 'c' });
   });
 
   it('every line in the scope carries the context', async () => {

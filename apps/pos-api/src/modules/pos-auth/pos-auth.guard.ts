@@ -62,7 +62,11 @@ export class PosDeviceGuard implements CanActivate {
     };
     (request as Request & { posDevice: PosDeviceContext }).posDevice =
       posDevice;
-    setLogContext(posDevice);
+    setLogContext({
+      deviceId: posDevice.deviceId,
+      accountId: posDevice.accountId,
+      locationId: posDevice.locationId,
+    });
 
     const now = Date.now();
     if (

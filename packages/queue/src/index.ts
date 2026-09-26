@@ -1,5 +1,6 @@
 import { Redis } from "ioredis";
 import type { JobsOptions } from "bullmq";
+import type { JobLogContext } from "logging";
 
 export const QUEUE_NAMES = {
   EMAIL: "email",
@@ -13,23 +14,10 @@ export const QUEUE_NAMES = {
 // URL in a multi-tenant, bring-your-own-domain system; revisit once there's
 // a real per-account deep-linking mechanism.
 //
-// Every job carries the producer's log context so a worker log line can be
-// traced back to the request (or the upstream job) that produced it, and
-// filtered by tenant — producers spread the `logging` package's
-// jobLogContext(), the worker restores it with runWithLogContext. accountId is
-// absent when the producer had no tenant (e.g. a password reset for an
-// unauthenticated caller).
-export type JobLogContext = { correlationId: string; accountId?: number };
-
-// Picks the log context back out of a job — never hand job.data itself to
-// runWithLogContext, it would stamp the whole payload (emails, addresses) on
-// every line.
-export function logContextOf(data: JobLogContext): JobLogContext {
-  return data.accountId === undefined
-    ? { correlationId: data.correlationId }
-    : { correlationId: data.correlationId, accountId: data.accountId };
-}
-
+// Every job carries the producer's log context (JobLogContext) so a worker log
+// line can be traced back to the request (or the upstream job) that produced
+// it, and filtered by tenant — producers spread the `logging` package's
+// jobLogContext(), the worker restores it with runWithLogContext(logContextOf(…)).
 export type EmailJobData = JobLogContext &
   (
   | { type: "staff-invite"; to: string; firstName: string; inviteUrl: string }
@@ -70,9 +58,9 @@ export type EmailJobData = JobLogContext &
 // from the Stripe session + cart, resolved by the producer (storefront-api's
 // CheckoutService, which already has the cart loaded) so the worker never
 // has to touch cart-domain tables/queries itself
-export type OrderJobData = {
+export type OrderJobData = JobLogContext & {
   type: "checkout-completed";
-  correlationId: string;
+  // required here: an order job always belongs to a tenant
   accountId: number;
   cartToken: string;
   stripeCheckoutSessionId: string;

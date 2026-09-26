@@ -52,13 +52,27 @@ export function getCorrelationId(): string | undefined {
 }
 
 // The part of the context that crosses a queue hop: spread into a job payload
-// by the producer, handed back to runWithLogContext by the worker. Mints a
-// correlation ID when there's no scope, so a job always has one.
-export function jobLogContext(): { correlationId: string; accountId?: number } {
+// by the producer, handed back to runWithLogContext by the worker. accountId is
+// absent when the producer had no tenant (e.g. a password reset for an
+// unauthenticated caller).
+export type JobLogContext = Pick<LogContext, 'correlationId' | 'accountId'>;
+
+// Mints a correlation ID when there's no scope, so a job always has one.
+export function jobLogContext(): JobLogContext {
   const store = als.getStore();
   return withoutUndefined({
     correlationId: store?.correlationId ?? randomUUID(),
     accountId: store?.accountId,
+  });
+}
+
+// Picks the log context back out of a job — never hand job.data itself to
+// runWithLogContext, it would stamp the whole payload (emails, addresses) on
+// every line.
+export function logContextOf(data: JobLogContext): JobLogContext {
+  return withoutUndefined({
+    correlationId: data.correlationId,
+    accountId: data.accountId,
   });
 }
 

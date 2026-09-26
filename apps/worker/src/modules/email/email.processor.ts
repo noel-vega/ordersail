@@ -1,7 +1,7 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import { QUEUE_NAMES, logContextOf, type EmailJobData } from 'queue';
-import { Logger, runWithLogContext } from 'logging';
+import { QUEUE_NAMES, type EmailJobData } from 'queue';
+import { Logger, logContextOf, runWithLogContext } from 'logging';
 import {
   renderCustomerThankYouEmail,
   renderOrderConfirmationEmail,

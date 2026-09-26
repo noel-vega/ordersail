@@ -6,13 +6,13 @@ import {
 } from '@nestjs/bullmq';
 import { Inject } from '@nestjs/common';
 import type { Job, Queue } from 'bullmq';
+import { QUEUE_NAMES, type EmailJobData, type OrderJobData } from 'queue';
 import {
-  QUEUE_NAMES,
+  Logger,
   logContextOf,
-  type EmailJobData,
-  type OrderJobData,
-} from 'queue';
-import { Logger, runWithLogContext, setLogContext } from 'logging';
+  runWithLogContext,
+  setLogContext,
+} from 'logging';
 import {
   accountsTable,
   and,
@@ -283,8 +283,7 @@ export class OrdersProcessor extends WorkerHost {
         type: 'order-confirmation',
         // forwarded, not regenerated — keeps the order and its confirmation
         // email traceable under the same id as the original checkout request
-        correlationId: data.correlationId,
-        accountId: data.accountId,
+        ...logContextOf(data),
         to: data.customerEmail,
         customerName: data.customerName,
         accountName: account?.name ?? '',
