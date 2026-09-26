@@ -624,13 +624,14 @@ describe('process handlers', () => {
   function runScript(
     body: string,
     onLine?: (line: Record<string, any>, child: ReturnType<typeof spawn>) => void,
+    nodeFlags: string[] = [],
   ): Promise<{ code: number | null; lines: Record<string, any>[] }> {
     const script = `
       import * as logging from ${JSON.stringify(indexPath)};
       logging.configureLogging({ service: 'test', nodeEnv: 'production' });
       ${body}
     `;
-    const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+    const child = spawn(process.execPath, [...nodeFlags, '--input-type=module', '-e', script], {
       env: { ...process.env, NODE_ENV: 'production' },
     });
     const lines: Record<string, any>[] = [];
@@ -658,6 +659,30 @@ describe('process handlers', () => {
     assert.equal(lines[0].level, 60);
     assert.equal(lines[0].event, 'process.unhandled_rejection');
     assert.equal(lines[0].err.message, 'nobody caught me');
+  });
+
+  it('an unhandled rejection is still fatal when another unhandledRejection listener exists', async () => {
+    // e.g. a library or Sentry — this disables Node's rejection → uncaughtException conversion
+    const { code, lines } = await runScript(`
+      process.on('unhandledRejection', () => undefined);
+      logging.installProcessHandlers();
+      Promise.reject(new Error('nobody caught me'));
+    `);
+    assert.equal(code, 1);
+    assert.deepEqual(lines.map((line) => [line.level, line.event]), [[60, 'process.unhandled_rejection']]);
+  });
+
+  it('an unhandled rejection is still fatal under --unhandled-rejections=warn', async () => {
+    const { code, lines } = await runScript(
+      `
+      logging.installProcessHandlers();
+      Promise.reject(new Error('nobody caught me'));
+    `,
+      undefined,
+      ['--unhandled-rejections=warn'],
+    );
+    assert.equal(code, 1);
+    assert.deepEqual(lines.map((line) => [line.level, line.event]), [[60, 'process.unhandled_rejection']]);
   });
 
   it('an uncaught exception logs one fatal line and exits 1', async () => {
@@ -697,6 +722,50 @@ describe('process handlers', () => {
     assert.deepEqual(
       lines.map((line) => line.event),
       ['app.ready', 'process.shutdown_started', 'app.closed'],
+    );
+  });
+
+  it('a second signal of the other kind exits 1 without closing twice', async () => {
+    const { code, lines } = await runScript(
+      `
+      const logger = new logging.Logger('App');
+      logging.installShutdownHandler({
+        close: () => {
+          logger.info({ event: 'app.closing' }, 'closing');
+          return new Promise(() => undefined); // an in-flight job that won't finish
+        },
+      });
+      setInterval(() => undefined, 1000);
+      logger.info({ event: 'app.ready' }, 'ready');
+    `,
+      (line, child) => {
+        if (line.event === 'app.ready') child.kill('SIGTERM');
+        if (line.event === 'app.closing') child.kill('SIGINT');
+      },
+    );
+    assert.equal(code, 1);
+    assert.deepEqual(
+      lines.map((line) => line.event),
+      ['app.ready', 'process.shutdown_started', 'app.closing', 'process.shutdown_forced'],
+    );
+  });
+
+  it('a close() that never finishes logs process.shutdown_timed_out and exits 1', async () => {
+    const { code, lines } = await runScript(
+      `
+      const logger = new logging.Logger('App');
+      logging.installShutdownHandler({ close: () => new Promise(() => undefined) }, { timeoutMs: 50 });
+      setInterval(() => undefined, 1000);
+      logger.info({ event: 'app.ready' }, 'ready');
+    `,
+      (line, child) => {
+        if (line.event === 'app.ready') child.kill('SIGTERM');
+      },
+    );
+    assert.equal(code, 1);
+    assert.deepEqual(
+      lines.map((line) => [line.level, line.event]),
+      [[30, 'app.ready'], [30, 'process.shutdown_started'], [60, 'process.shutdown_timed_out']],
     );
   });
 });

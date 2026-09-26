@@ -179,18 +179,26 @@ once, as structured JSON, wherever it happens:
 - **`installProcessHandlers()`** — an uncaught exception or unhandled rejection logs one
   `fatal` line (`process.uncaught_exception` / `process.unhandled_rejection`), flushes, then
   exits 1. The process still crashes, same as Node's default. The difference is that the last
-  thing in the log is now a line an alarm can match.
+  thing in the log is now a line an alarm can match. Both events have their own listener, so
+  this keeps working when something else (a library, Sentry) also listens for
+  `unhandledRejection`, or under `--unhandled-rejections=warn`.
 - **`bootstrap().catch((err) => exitOnFatal(err, 'app.boot_failed'))`** — the same path for a
   failed boot (the worker crash-at-boot incident used to leave only a raw stderr trace).
+- **`parseEnv`** (`packages/config`) — an invalid environment is also a failed boot, but it's
+  caught on import, before the handlers above are installed. So `parseEnv` logs its own `fatal`
+  `app.boot_failed` line, with `issues: [{ path, message }]` (the variable names, never their
+  values), and exits 1.
 - **`installShutdownHandler(app)`** — on SIGTERM (an ECS deploy or scale-in) or SIGINT, it:
   1. logs `process.shutdown_started`;
   2. calls `app.close()`, which runs every shutdown hook (the worker's BullMQ consumers let the
      in-flight job finish);
   3. flushes the logs and exits 0.
 
-  A second signal kills immediately. Use this instead of `app.enableShutdownHooks()`: Nest's
-  version re-raises the signal after closing, and that kills the process before the log
-  stream is flushed.
+  A second signal of either kind logs `process.shutdown_forced` and exits 1 immediately, so
+  `close()` never runs twice. If `close()` hasn't finished within 25s, it logs `fatal`
+  `process.shutdown_timed_out` and exits 1, before ECS's SIGKILL at the 30s stop timeout would
+  end it silently. Use this instead of `app.enableShutdownHooks()`: Nest's version re-raises
+  the signal after closing, and that kills the process before the log stream is flushed.
 
 Worker job failures log from the `failed` handlers:
 

@@ -476,46 +476,61 @@ export async function exitOnFatal(err: unknown, event: string): Promise<never> {
 
 let processHandlersInstalled = false;
 
-// Call once at the top of each main.ts, before bootstrap(). Node's default
-// (--unhandled-rejections=throw) already turns an unhandled rejection into an
-// uncaught exception with origin 'unhandledRejection', so one listener covers
-// both — and keeps Node's crash-on-unhandled-rejection behaviour: this only
-// makes the crash legible, it doesn't swallow it.
+// Call once at the top of each main.ts, before bootstrap(). Both listeners are
+// explicit: leaning on Node's --unhandled-rejections=throw conversion breaks
+// silently the moment anything else (a library, Sentry) adds its own
+// unhandledRejection listener, or the flag changes. Either way the process
+// still exits 1 — this makes the crash legible, it doesn't swallow it.
 export function installProcessHandlers(): void {
   if (processHandlersInstalled) return;
   processHandlersInstalled = true;
-  process.on('uncaughtException', (err, origin) => {
-    void exitOnFatal(
-      err,
-      origin === 'unhandledRejection' ? 'process.unhandled_rejection' : 'process.uncaught_exception',
-    );
-  });
+  process.on('uncaughtException', (err) => void exitOnFatal(err, 'process.uncaught_exception'));
+  process.on('unhandledRejection', (reason) => void exitOnFatal(reason, 'process.unhandled_rejection'));
 }
 
 type ClosableApp = { close(): Promise<void> };
+
+type ShutdownOptions = {
+  // ECS sends SIGKILL at the task's stopTimeout (30s by default); give up a
+  // little before that so the last line is ours, not a silent kill
+  timeoutMs?: number;
+};
 
 // Replaces app.enableShutdownHooks(): on the first SIGTERM/SIGINT, close the
 // app (runs every onModuleDestroy / onApplicationShutdown hook — BullMQ workers
 // finish their active job, pools close), flush the logs, exit. Nest's own
 // version re-raises the signal after closing, which kills the process before
-// the log stream can flush. A second signal falls through to Node's default and
-// kills immediately (a double Ctrl-C in dev).
-export function installShutdownHandler(app: ClosableApp): void {
+// the log stream can flush. Any second signal — SIGTERM or SIGINT — exits 1
+// immediately (a double Ctrl-C in dev) instead of starting a second close().
+export function installShutdownHandler(app: ClosableApp, options: ShutdownOptions = {}): void {
   const logger = new Logger('Process');
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-    process.once(signal, () => {
-      logger.info({ event: 'process.shutdown_started', signal }, 'Shutting down');
-      void (async () => {
-        try {
-          await app.close();
-        } catch (err) {
-          await exitOnFatal(err, 'process.shutdown_failed');
-        }
-        await flushLogs();
-        process.exit(0);
-      })();
-    });
-  }
+  const timeoutMs = options.timeoutMs ?? 25_000;
+  let shuttingDown = false;
+  const onSignal = (signal: NodeJS.Signals) => {
+    if (shuttingDown) {
+      // stdout is synchronous in production, so this line lands before exit
+      logger.warn({ event: 'process.shutdown_forced', signal }, 'Second signal, exiting now');
+      process.exit(1);
+    }
+    shuttingDown = true;
+    logger.info({ event: 'process.shutdown_started', signal }, 'Shutting down');
+    const timer = setTimeout(() => {
+      const err = new Error(`app.close() did not finish within ${timeoutMs}ms`);
+      void exitOnFatal(err, 'process.shutdown_timed_out');
+    }, timeoutMs);
+    void (async () => {
+      try {
+        await app.close();
+      } catch (err) {
+        await exitOnFatal(err, 'process.shutdown_failed');
+      }
+      clearTimeout(timer);
+      await flushLogs();
+      process.exit(0);
+    })();
+  };
+  process.on('SIGTERM', onSignal);
+  process.on('SIGINT', onSignal);
 }
 
 // 4xx that are worth a warn: someone is being turned away (auth, rate limits).

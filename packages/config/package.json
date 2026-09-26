@@ -1,7 +1,7 @@
 {
   "name": "config",
   "version": "1.0.0",
-  "description": "Shared env parsing — parseEnv(service, zodSchema): validate process.env at boot, fail fast",
+  "description": "Shared env parsing \u2014 parseEnv(service, zodSchema): validate process.env at boot, fail fast",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "exports": {
@@ -12,7 +12,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.spec.ts"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +24,7 @@
   },
   "dependencies": {
     "dotenv": "^17.4.2",
+    "logging": "*",
     "zod": "^4.4.3"
   }
 }
