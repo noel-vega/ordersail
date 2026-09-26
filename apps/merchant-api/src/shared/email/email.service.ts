@@ -32,10 +32,10 @@ export class EmailService {
         5000,
         'enqueue invite email',
       );
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.error(
+        { err, event: 'email_job.enqueue_failed', jobName: 'staff-invite' },
         'Failed to enqueue invite email',
-        err instanceof Error ? err.stack : err,
       );
     }
   }
@@ -55,10 +55,10 @@ export class EmailService {
         5000,
         'enqueue verification email',
       );
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.error(
+        { err, event: 'email_job.enqueue_failed', jobName: 'verify-email' },
         'Failed to enqueue verification email',
-        err instanceof Error ? err.stack : err,
       );
     }
   }
@@ -78,10 +78,10 @@ export class EmailService {
         5000,
         'enqueue password reset email',
       );
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.error(
+        { err, event: 'email_job.enqueue_failed', jobName: 'password-reset' },
         'Failed to enqueue password reset email',
-        err instanceof Error ? err.stack : err,
       );
     }
   }

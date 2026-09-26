@@ -100,6 +100,10 @@ Each row is added by its issue's PR. `→` is the topic the alarm notifies.
 A customer paid via Stripe and no order was created. The job's data is persisted in the
 `failed_orders` table (independent of Redis). Reconcile from there:
 
+The worker also logs one `error` line with `alert: true` /
+`event: "order_job.dead_lettered"` carrying `checkoutSessionId`, `paymentIntentId` and the
+unresolved count (`failedOrderRecorded: false` if the row write failed too).
+
 1. merchant-web → the failed-orders view (OS-116) shows the row and a **Retry** action.
 2. Once the root cause is fixed, retry re-drives the order from the persisted
    `OrderJobData` — it does not touch Redis/BullMQ.

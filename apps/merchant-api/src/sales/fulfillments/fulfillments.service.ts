@@ -85,10 +85,10 @@ export class FulfillmentsService {
         ],
         async: false,
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         this.logger.error(
-          `Shippo shipment creation failed for order ${dto.orderId}`,
-          err,
+          { err, event: 'shippo.shipment_create_failed', orderId: dto.orderId },
+          'Shippo shipment creation failed',
         );
         return null;
       });
@@ -123,10 +123,15 @@ export class FulfillmentsService {
 
     const transaction = await shippo.transactions
       .create({ rate: dto.rateObjectId, labelFileType: 'PDF', async: false })
-      .catch((err) => {
+      .catch((err: unknown) => {
         this.logger.error(
-          `Shippo transaction creation failed for order ${dto.orderId}`,
-          err,
+          {
+            err,
+            event: 'shippo.label_purchase_failed',
+            orderId: dto.orderId,
+            fulfillmentId,
+          },
+          'Shippo label purchase failed',
         );
         return null;
       });
@@ -136,9 +141,19 @@ export class FulfillmentsService {
         ?.map((m) => m.text)
         .filter(Boolean)
         .join('; ');
-      this.logger.error(
-        `Shippo transaction for order ${dto.orderId} did not succeed: status=${transaction?.status ?? 'none'} ${reason ?? ''}`,
-      );
+      // a thrown create() was already logged with its err above
+      if (transaction) {
+        this.logger.error(
+          {
+            event: 'shippo.label_purchase_failed',
+            orderId: dto.orderId,
+            fulfillmentId,
+            shippoStatus: transaction.status,
+            shippoMessages: reason || null,
+          },
+          'Shippo label purchase did not succeed',
+        );
+      }
       // release the reservation — nothing was actually shipped, so this
       // quantity is available for a retry or a different fulfillment
       await this.db
@@ -161,6 +176,10 @@ export class FulfillmentsService {
         updatedAt: new Date(),
       })
       .where(eq(fulfillmentsTable.id, fulfillmentId));
+    this.logger.info(
+      { event: 'fulfillment.created', orderId: dto.orderId, fulfillmentId },
+      'Fulfillment created',
+    );
 
     return (await this.ordersService.findOne(dto.orderId, accountId))!;
   }

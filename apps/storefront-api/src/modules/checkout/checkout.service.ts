@@ -3,9 +3,9 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Logger } from 'logging';
 import { DRIZZLE } from '../../database/database.constants';
 import {
   and,
@@ -140,6 +140,14 @@ export class CheckoutService {
     if (!session.client_secret) {
       throw new BadRequestException('Failed to create checkout session');
     }
+    this.logger.info(
+      {
+        event: 'checkout.session_created',
+        checkoutSessionId: session.id,
+        itemCount: cart.items.length,
+      },
+      'Checkout session created',
+    );
     return { clientSecret: session.client_secret };
   }
 
@@ -167,7 +175,12 @@ export class CheckoutService {
       })
       .catch((err: unknown) => {
         this.logger.warn(
-          `shipping-options: could not retrieve session ${dto.checkoutSessionId}: ${(err as Error).message}`,
+          {
+            err,
+            event: 'checkout.session_retrieve_failed',
+            checkoutSessionId: dto.checkoutSessionId,
+          },
+          'Could not retrieve checkout session for shipping options',
         );
         return null;
       });
@@ -231,7 +244,12 @@ export class CheckoutService {
       })
       .catch((err: unknown) => {
         this.logger.warn(
-          `shipping-options: Shippo rate request failed: ${(err as Error).message}`,
+          {
+            err,
+            event: 'shippo.rate_request_failed',
+            checkoutSessionId: dto.checkoutSessionId,
+          },
+          'Shippo rate request failed',
         );
         return null;
       });
@@ -239,7 +257,16 @@ export class CheckoutService {
     if (!shipment || shipment.rates.length === 0) {
       if (shipment) {
         this.logger.warn(
-          `shipping-options: Shippo returned 0 rates for shipment ${shipment.objectId} — messages: ${JSON.stringify(shipment.messages ?? [])}`,
+          {
+            event: 'shippo.no_rates_returned',
+            checkoutSessionId: dto.checkoutSessionId,
+            shipmentId: shipment.objectId,
+            shippoMessages: (shipment.messages ?? [])
+              .map((m) => m.text)
+              .filter(Boolean)
+              .join('; '),
+          },
+          'Shippo returned no rates',
         );
       }
       return {

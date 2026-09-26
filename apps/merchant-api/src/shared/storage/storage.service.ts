@@ -26,9 +26,10 @@ export class StorageService implements OnModuleInit {
   async onModuleInit() {
     try {
       await this.client.ensureBucket();
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.warn(
-        `Failed to ensure storage bucket exists: ${err instanceof Error ? err.message : err}`,
+        { err, event: 'storage.bucket_ensure_failed' },
+        'Failed to ensure storage bucket exists',
       );
     }
   }
@@ -47,9 +48,10 @@ export class StorageService implements OnModuleInit {
   async deleteObject(key: string) {
     try {
       await this.client.deleteObject(key);
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.warn(
-        `Failed to delete storage object ${key}: ${err instanceof Error ? err.message : err}`,
+        { err, event: 'storage.object_delete_failed', key },
+        'Failed to delete storage object',
       );
     }
   }

@@ -58,8 +58,8 @@ const eventsFor = (orderId: number) =>
 describe('DisputesService.recordDisputeEvent', () => {
   it('notes a created dispute on the order and raises an alert', async () => {
     const s = await seedOrderWithPayment();
-    const warn = jest
-      .spyOn(Logger.prototype, 'warn')
+    const error = jest
+      .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
     const service = await build();
 
@@ -77,15 +77,21 @@ describe('DisputesService.recordDisputeEvent', () => {
       },
     });
     expect(events[0].message).toContain('Payment disputed');
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('[alert] Payment disputed'),
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alert: true,
+        event: 'dispute.opened',
+        disputeId: 'dp_1',
+        orderId: s.orderId,
+      }),
+      expect.stringContaining('Payment disputed'),
     );
-    warn.mockRestore();
+    error.mockRestore();
   });
 
   it('does not double-note a redelivered event', async () => {
     const s = await seedOrderWithPayment();
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const service = await build();
 
     await service.recordDisputeEvent(event());
@@ -95,22 +101,25 @@ describe('DisputesService.recordDisputeEvent', () => {
   });
 
   it('alerts even when no order matches, without writing a note', async () => {
-    const warn = jest
-      .spyOn(Logger.prototype, 'warn')
+    const error = jest
+      .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
     const service = await build();
 
     await service.recordDisputeEvent(event({ paymentIntentId: 'pi_nope' }));
 
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('no matching order'),
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ alert: true, orderId: null }),
+      expect.any(String),
     );
-    warn.mockRestore();
+    error.mockRestore();
   });
 
   it('words a lost closed dispute', async () => {
     const s = await seedOrderWithPayment();
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
     const service = await build();
 
     await service.recordDisputeEvent(
@@ -119,5 +128,11 @@ describe('DisputesService.recordDisputeEvent', () => {
 
     const [note] = await eventsFor(s.orderId);
     expect(note.message).toBe('Dispute lost — $25.99 withdrawn.');
+    // a closed dispute is a record, not a page
+    expect(warn).toHaveBeenCalledWith(
+      expect.not.objectContaining({ alert: true }),
+      'Dispute lost — $25.99 withdrawn.',
+    );
+    warn.mockRestore();
   });
 });

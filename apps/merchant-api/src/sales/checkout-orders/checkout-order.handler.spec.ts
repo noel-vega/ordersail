@@ -85,7 +85,7 @@ describe('CheckoutOrderHandler (unit)', () => {
 
 describe('checkout.session.paid → order job (integration)', () => {
   async function build() {
-    const ordersQueue = { add: jest.fn() };
+    const ordersQueue = { add: jest.fn().mockResolvedValue({ id: '1' }) };
     const ref = await Test.createTestingModule({
       imports: [EventEmitterModule.forRoot()],
       providers: [

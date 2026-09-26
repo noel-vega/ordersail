@@ -80,10 +80,42 @@ export class DisputesService {
       });
     }
 
-    this.logger.warn(
-      `[alert] ${message} (dispute ${input.disputeId}, charge ${input.chargeId}` +
-        (tender ? `, order ${tender.orderId})` : ', no matching order)'),
-    );
+    const fields = {
+      event: disputeEvent(input),
+      disputeId: input.disputeId,
+      chargeId: input.chargeId,
+      orderId: tender?.orderId ?? null,
+      disputeStatus: input.status,
+      disputeReason: input.reason,
+      amountCents: input.amountCents,
+    };
+    // only a newly opened dispute needs a human (respond before the evidence
+    // deadline) — the later lifecycle events are a record, not a page
+    if (input.eventType === 'charge.dispute.created') {
+      this.logger.error({ ...fields, alert: true }, message);
+    } else if (
+      input.eventType === 'charge.dispute.closed' &&
+      input.status !== 'won'
+    ) {
+      this.logger.warn(fields, message);
+    } else {
+      this.logger.info(fields, message);
+    }
+  }
+}
+
+function disputeEvent(d: ChargeDisputeUpdatedPayload): string {
+  switch (d.eventType) {
+    case 'charge.dispute.created':
+      return 'dispute.opened';
+    case 'charge.dispute.closed':
+      return 'dispute.closed';
+    case 'charge.dispute.funds_withdrawn':
+      return 'dispute.funds_withdrawn';
+    case 'charge.dispute.funds_reinstated':
+      return 'dispute.funds_reinstated';
+    default:
+      return 'dispute.updated';
   }
 }
 

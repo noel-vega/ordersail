@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { Logger, setLogContext } from "logging";
 import {
   and,
   eq,
@@ -23,6 +24,8 @@ import { PosOrder, PosOrderItem } from "./entities/pos-order.entity";
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: typeof Db) {}
 
   async createOrder(
@@ -209,6 +212,18 @@ export class OrdersService {
 
       return { order: createdOrder, items: createdItems };
     });
+    // after the commit — a rolled-back order ID must never reach the log
+    setLogContext({ orderId: order.id });
+    this.logger.info(
+      {
+        event: "order.created",
+        channel: "pos",
+        paymentMethod: method,
+        amountTotalCents: totalCents,
+        itemCount: items.length,
+      },
+      "Order created",
+    );
 
     return {
       id: order.id,

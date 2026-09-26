@@ -18,7 +18,7 @@ import { CheckoutOrderService } from './checkout-order.service';
 const db = useTestDb();
 
 async function build() {
-  const ordersQueue = { add: jest.fn() };
+  const ordersQueue = { add: jest.fn().mockResolvedValue({ id: '1' }) };
   const ref = await Test.createTestingModule({
     providers: [
       CheckoutOrderService,

@@ -36,7 +36,11 @@ export class CheckoutOrderService {
     const cart = await this.carts.findByToken(event.cartToken, event.accountId);
     if (!cart || cart.items.length === 0) {
       this.logger.warn(
-        `checkout.session.paid ${event.checkoutSessionId}: cart is gone or empty — no order created`,
+        {
+          event: 'checkout.cart_missing',
+          checkoutSessionId: event.checkoutSessionId,
+        },
+        'Paid checkout session has no cart (gone or empty) — no order created',
       );
       return null;
     }
@@ -91,15 +95,25 @@ export class CheckoutOrderService {
         ),
       );
     if (existing) {
-      this.logger.log(
-        `checkout ${payload.stripeCheckoutSessionId}: order already exists — skipping enqueue`,
+      this.logger.info(
+        {
+          event: 'order_job.enqueue_skipped',
+          checkoutSessionId: payload.stripeCheckoutSessionId,
+        },
+        'Order already exists — skipping enqueue',
       );
       return;
     }
 
-    await this.ordersQueue.add('checkout-completed', payload);
-    this.logger.log(
-      `checkout ${payload.stripeCheckoutSessionId}: order job enqueued`,
+    const job = await this.ordersQueue.add('checkout-completed', payload);
+    this.logger.info(
+      {
+        event: 'order_job.enqueued',
+        queue: QUEUE_NAMES.ORDERS,
+        jobId: job.id,
+        checkoutSessionId: payload.stripeCheckoutSessionId,
+      },
+      'Order job enqueued',
     );
   }
 }

@@ -32,10 +32,14 @@ export class EmailService {
         5000,
         'enqueue thank-you email',
       );
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.error(
+        {
+          err,
+          event: 'email_job.enqueue_failed',
+          jobName: 'customer-thank-you',
+        },
         'Failed to enqueue thank-you email',
-        err instanceof Error ? err.stack : err,
       );
     }
   }
