@@ -24,19 +24,15 @@ Inside this monorepo it's consumed via the npm workspace protocol instead
 ```ts
 import { StorefrontClient, ApiError } from "@ordersail/storefront-sdk";
 
-const storefrontApi = new StorefrontClient(
+const storefront = new StorefrontClient(
   "https://api.your-storefront-api-host.com",
   "sfk_...", // your account's app key — see "Auth model" below
 );
 
-// reads return the data directly — most throw ApiError on failure just
-// like mutations; a few return undefined for one specific, expected
-// outcome (see "Resources" below)
-const products = await storefrontApi.products.list({ limit: 20 });
+const products = await storefront.products.list({ limit: 20 });
 
-// mutations throw a typed ApiError on failure
 try {
-  await storefrontApi.cart.addItem({ variantId: 123, quantity: 1 });
+  await storefront.cart.addItem({ variantId: 123, quantity: 1 });
 } catch (error) {
   if (error instanceof ApiError) {
     console.error(`${error.status}: ${error.message}`);
@@ -46,49 +42,27 @@ try {
 
 ## Resources
 
-| Resource                      | Method                                  | Throws `ApiError`? |
-| ------------------------------ | ---------------------------------------- | ------------------- |
-| `storefrontApi.products`      | `list(query?)`                          | **yes**              |
-|                                | `getById(id)`                           | only unexpectedly¹   |
-| `storefrontApi.cart`          | `get()`                                  | only unexpectedly¹   |
-|                                | `addItem(body)`                         | **yes**              |
-|                                | `updateItem(variantId, body)`           | **yes**              |
-|                                | `removeItem(variantId)`                 | **yes**              |
-|                                | `clear()`                                | **yes**              |
-| `storefrontApi.checkout`      | `getConfig()`                            | **yes**              |
-|                                | `createSession(body)`                    | **yes**              |
-|                                | `getSessionStatus(sessionId)`            | only unexpectedly¹   |
-|                                | `getShippingOptions(body)`               | **yes**              |
-| `storefrontApi.customer`      | `get()`                                  | only unexpectedly²   |
-|                                | `update(params)`                         | **yes**              |
-|                                | `orders.list(query?)`                    | **yes**              |
-|                                | `orders.getById(id)`                     | only unexpectedly¹   |
-| `storefrontApi` (top level)   | `signUp(dto)`                            | **yes**              |
-|                                | `signIn(credentials)`                    | **yes**              |
-|                                | `refreshAccessToken()`                   | only unexpectedly²   |
-|                                | `logout()`                               | no                   |
-
-The convention throughout: a mutation always throws `ApiError` on a non-2xx
-response. A read does too, *unless* it has exactly one well-understood "no
-data" outcome, in which case it returns `undefined` for that one status and
-still throws for everything else:
-
-¹ `getById`/`cart.get`/`getSessionStatus` return `undefined` only on a `404`
-(a genuine lookup miss — no such product, no cart yet for this token, no
-such session, no such order for the signed-in customer) — a bad app-key, a
-`500`, or a network failure throws instead of looking identical to "not
-found."
-
-² `customer.get()`/`refreshAccessToken()` return `undefined` only on a `401`
-(not currently signed in — the everyday case for most visitors) — anything
-else, including a `404` (a customer row missing despite a valid token, which
-would be an anomaly, not a normal state), throws instead.
-
-`customer.orders.list()`/`getById()` throw on a `401` rather than returning
-`undefined`: call them only once `customer.get()` has told you someone is
-signed in.
-
-Not yet supported: **webhooks/real-time events** (no plans yet).
+| Resource                 | Method                        | Throws `ApiError`? |
+| ------------------------ | ----------------------------- | ------------------ |
+| `storefront.products`    | `list(query?)`                | **yes**            |
+|                          | `getById(id)`                 | only unexpectedly¹ |
+| `storefront.cart`        | `get()`                       | only unexpectedly¹ |
+|                          | `addItem(body)`               | **yes**            |
+|                          | `updateItem(variantId, body)` | **yes**            |
+|                          | `removeItem(variantId)`       | **yes**            |
+|                          | `clear()`                     | **yes**            |
+| `storefront.checkout`    | `getConfig()`                 | **yes**            |
+|                          | `createSession(body)`         | **yes**            |
+|                          | `getSessionStatus(sessionId)` | only unexpectedly¹ |
+|                          | `getShippingOptions(body)`    | **yes**            |
+| `storefront.customer`    | `get()`                       | only unexpectedly² |
+|                          | `update(params)`              | **yes**            |
+|                          | `orders.list(query?)`         | **yes**            |
+|                          | `orders.getById(id)`          | only unexpectedly¹ |
+| `storefront` (top level) | `signUp(dto)`                 | **yes**            |
+|                          | `signIn(credentials)`         | **yes**            |
+|                          | `refreshAccessToken()`        | only unexpectedly² |
+|                          | `logout()`                    | no                 |
 
 ## Error handling
 
@@ -122,15 +96,15 @@ Two independent layers, both handled for you by `StorefrontClient`:
   `client.accessToken`/`client.refreshToken`.
 
 The refresh token is **single-use**: every `refreshAccessToken()` call
-rotates it — the response carries a *new* refresh token alongside the new
+rotates it — the response carries a _new_ refresh token alongside the new
 access token, and the one you presented stops working immediately.
 Presenting an already-used (rotated-out) refresh token again isn't just
 rejected — the server treats that as a sign the token was copied or stolen
-and revokes the customer's *entire* session, so even a different,
+and revokes the customer's _entire_ session, so even a different,
 still-unused refresh token from the same login is dead afterward too. In
 practice this means you can't read `client.refreshToken` once after
 `signIn()` and keep reusing that same string — you need to track whichever
-value is *current* the whole time a session is alive.
+value is _current_ the whole time a session is alive.
 
 Do that with the `onTokensChanged` constructor option, called after every
 `signUp()`/`signIn()`/`refreshAccessToken()`/`logout()` with the tokens'
@@ -138,7 +112,7 @@ current values — this is the mechanism to persist a session across a page
 reload, not `client.refreshToken` read once:
 
 ```ts
-const storefrontApi = new StorefrontClient(
+const storefront = new StorefrontClient(
   "https://api.your-storefront-api-host.com",
   "sfk_...",
   undefined, // cartToken — restore the same way if you have one saved
@@ -152,7 +126,7 @@ const storefrontApi = new StorefrontClient(
 );
 
 // on app start, if a refreshToken was restored above:
-await storefrontApi.refreshAccessToken();
+await storefront.refreshAccessToken();
 ```
 
 Neither token is persisted by the SDK itself: a storefront can be hosted on
