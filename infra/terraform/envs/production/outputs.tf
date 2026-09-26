@@ -25,12 +25,14 @@ output "pos_api_url" {
   value = "https://${aws_route53_record.pos_api_alias.fqdn}"
 }
 
+# Both report the alias a user actually visits, not the generated CloudFront
+# name behind it — see the module's `public_url`.
 output "merchant_web_url" {
-  value = "https://${module.frontend_merchant_web.distribution_domain_name}"
+  value = module.frontend_merchant_web.public_url
 }
 
 output "website_url" {
-  value = "https://${module.frontend_website.distribution_domain_name}"
+  value = module.frontend_website.public_url
 }
 
 output "ecr_repository_urls" {
