@@ -268,7 +268,7 @@ so API → worker hops show up in one timeline. Pick the time range, edit the pl
 |---|---|---|
 | `ordersail/Request timeline` | everything for one request, API and the jobs it enqueued | `correlationId` |
 | `ordersail/Account activity` | one tenant's lines | `accountId` |
-| `ordersail/Order history` | every line naming an order — creation, fulfillment, refunds, emails | `orderId` |
+| `ordersail/Order history` | every line naming an order — creation, fulfillment, refunds (email jobs carry no `orderId`; follow them via `correlationId`) | `orderId` |
 | `ordersail/POS device activity` | one paired POS device (pos-api) | `deviceId` |
 | `ordersail/Errors by service` | `error` + `fatal` lines, counted by `service`, `event` | — |
 | `ordersail/Alerts` | `alert: true` lines — what the alert-lines alarm fired on | — |

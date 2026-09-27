@@ -145,6 +145,13 @@ Each sends a one-time confirmation email from `no-reply@sns.amazonaws.com` that
 must be clicked — **check Spam / the Promotions tab**. `sms` stays `[]` until the
 SNS SMS sandbox is exited. Full runbook: `docs/runbooks/alerts.md`.
 
+## Logs Insights saved queries (OS-98)
+
+`envs/production/log-queries.tf` saves the Logs Insights queries in the
+`ordersail/` folder, each over all four service log groups. Add or change a query
+there and apply; the list and what each is for is in `docs/observability.md` →
+"Tracing a bug", so update that table too.
+
 ## Runbooks
 
 ### Changing an RDS identity attribute (`db_name`, `identifier`, `engine`, …)

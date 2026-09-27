@@ -32,7 +32,8 @@ locals {
     EOT
 
     "Order history" = <<-EOT
-      # every line that names the order: creation, fulfillment, refunds, emails
+      # every line that names the order: creation, fulfillment, refunds. Email jobs
+      # don't carry orderId — take a line's correlationId to Request timeline for those
       fields @timestamp, service, level, event, msg, correlationId
       | filter orderId = 0
       | sort @timestamp asc
@@ -61,14 +62,14 @@ locals {
     EOT
 
     "Slow requests" = <<-EOT
-      # access-log lines over 1s, by route
+      # access-log lines over 1s, by route (requests matching no route group under an empty route)
       filter event = "http.request" and responseTime > 1000
       | stats count() as requests, pct(responseTime, 95) as p95_ms, max(responseTime) as max_ms by service, route
       | sort requests desc
     EOT
 
     "4xx-5xx by route" = <<-EOT
-      # failed requests by route and status
+      # failed requests by route and status (unmatched 404 scans group under an empty route)
       filter event = "http.request" and res.statusCode >= 400
       | stats count() as requests by service, route, res.statusCode
       | sort requests desc
@@ -76,7 +77,7 @@ locals {
   }
 }
 
-resource "aws_cloudwatch_query_definition" "this" {
+resource "aws_cloudwatch_query_definition" "saved" {
   for_each = local.log_queries
 
   name            = "${var.name_prefix}/${each.key}"
