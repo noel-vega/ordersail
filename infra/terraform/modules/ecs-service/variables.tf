@@ -80,7 +80,7 @@ variable "task_role_policy_json" {
 }
 
 variable "alarm_critical_topic_arns" {
-  description = "SNS topic ARNs for the running-below-desired alarm (OS-76). Empty = alarm still created, just no notification."
+  description = "SNS topic ARNs for the running-below-desired (OS-76) and alert-lines (OS-99) alarms. Empty = alarms still created, just no notification."
   type        = list(string)
   default     = []
 }
@@ -89,4 +89,16 @@ variable "alarm_running_below_desired_minutes" {
   description = "Consecutive minutes RunningTaskCount must stay below desired before the alarm fires."
   type        = number
   default     = 3
+}
+
+variable "alarm_warning_topic_arns" {
+  description = "SNS topic ARNs for the error-line volume alarm (OS-99). Empty = alarm still created, just no notification."
+  type        = list(string)
+  default     = []
+}
+
+variable "alarm_error_lines_threshold" {
+  description = "Error-level (level >= 50) log lines in 5 min above which the error-lines alarm fires (OS-99)."
+  type        = number
+  default     = 10
 }
