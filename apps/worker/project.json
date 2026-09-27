@@ -2,5 +2,15 @@
   "name": "worker",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "projectType": "application",
-  "sourceRoot": "apps/worker/src"
+  "sourceRoot": "apps/worker/src",
+  "targets": {
+    "test": {
+      "inputs": [
+        "default",
+        "^production",
+        "{workspaceRoot}/packages/test-support/src/**/*",
+        "productionTaskDefs"
+      ]
+    }
+  }
 }

@@ -207,17 +207,24 @@ For a Secrets Manager **key** rename: rename it in the JSON
 
 ### Adding a required env var (checklist)
 
-A new required variable has to land in four places. CI enforces only the first
-two, and missing either of the last two crash-loops the service at its next
-restart (OS-652: `MFA_ENCRYPTION_KEY`).
+A new required variable has to land in four places. Missing the mapping or the
+secret key crash-loops the service at its next restart (OS-652:
+`MFA_ENCRYPTION_KEY`), so both are now checked. The mapping is checked on every
+PR and the secret key before every deploy. Only `.env.example` is still
+convention.
 
-1. **The app's zod schema** (`apps/<app>/src/**/env.ts`). Don't give it a
-   `localhost`-style default that could silently reach production.
+1. **The app's zod schema** (`env.schema.ts`, next to the app's `env.ts`).
+   Don't give it a `localhost`-style default that could silently reach
+   production.
 2. **`.env.example`** for the app, so `npm run setup` gives local dev a value.
 3. **The task-def mapping** in `envs/production/main.tf` (migrator:
    `migrator.tf`). Put secrets under `secrets` as
    `"${module.secrets.app_secret_arns["<app>"]}:<JSON_KEY>::"` and plain config under
    `environment`. Then `terraform apply` so the SSM contract picks it up.
+   **Enforced on every PR (OS-655):** each app's `env.mappings.spec.ts` fails
+   if a schema key has no mapping in its `module "ecs_service_<app>"` block.
+   If the var is genuinely fine unset in production, add it to that spec's
+   `FINE_UNSET_IN_PRODUCTION` allowlist with the reason instead.
 4. **The key inside the Secrets Manager secret**, for a secret. Terraform
    never writes secret values, so add it out-of-band:
    `aws secretsmanager get-secret-value` → add the key to the JSON →

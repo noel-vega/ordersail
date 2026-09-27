@@ -54,6 +54,7 @@
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
+    "test-support": "*",
     "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
@@ -66,11 +67,28 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "module": "CommonJS",
+            "moduleResolution": "node10",
+            "resolvePackageJsonExports": false
+          }
+        }
+      ]
     },
     "collectCoverageFrom": ["**/*.(t|j)s"],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
-    "setupFiles": ["<rootDir>/../../../test/jest.env-setup.cjs"]
+    "setupFiles": ["<rootDir>/../../../test/jest.env-setup.cjs"],
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1",
+      "^config$": "<rootDir>/../../../packages/config/src/index.ts",
+      "^logging$": "<rootDir>/../../../packages/logging/src/index.ts",
+      "^db$": "<rootDir>/../../../packages/db/src/index.ts",
+      "^db/(.*)$": "<rootDir>/../../../packages/db/src/$1",
+      "^test-support$": "<rootDir>/../../../packages/test-support/src/index.ts"
+    }
   }
 }

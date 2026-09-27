@@ -17,7 +17,8 @@
     "sharedGlobals": [
       "{workspaceRoot}/package-lock.json",
       "{workspaceRoot}/nx.json"
-    ]
+    ],
+    "productionTaskDefs": ["{workspaceRoot}/infra/terraform/envs/production/main.tf"]
   },
   "targetDefaults": {
     "build": {

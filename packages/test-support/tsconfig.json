@@ -8,6 +8,9 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true,
+    // node --test runs the .spec.ts sources directly (type stripping), so
+    // specs import siblings by their real .ts name
+    "allowImportingTsExtensions": true,
     "types": ["jest", "node"]
   },
   "include": ["src"]
