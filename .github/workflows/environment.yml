@@ -122,8 +122,31 @@ jobs:
           EOF
 
   # ---------------------------------------------------------------- UP
+  # `up` registers fresh revisions from the SSM contracts, exactly as a deploy
+  # does, so it gets the same gate (OS-653) — before anything is mutated. A
+  # contract edited while parked would otherwise crash-loop here instead.
+  up-verify-contracts:
+    if: ${{ inputs.action == 'up' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify task-definition contracts are deployable
+        run: node scripts/verify-taskdef-contracts.mjs
+
   up-cluster:
     if: ${{ inputs.action == 'up' }}
+    needs: up-verify-contracts
     runs-on: ubuntu-latest
     environment: production
     steps:
