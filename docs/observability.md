@@ -4,11 +4,10 @@ How the backend services log, and how to use those logs to trace a bug. Applies 
 NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anything in
 `packages/` that logs.
 
-> **Status:** this is the target contract for the **M1b — Structured logging** milestone
-> (Observability & alerting project). It lands incrementally:
-> pino (OS-478) → redaction (OS-81) → request logs (OS-82) → request context (OS-479) →
-> error handling (OS-480) → call-site migration (OS-481) → log alarms (OS-99) →
-> saved queries (OS-98).
+> **Status:** in place — the **M1b — Structured logging** milestone (Observability & alerting
+> project) landed as pino (OS-478) → redaction (OS-81) → request logs (OS-82) → request
+> context (OS-479) → error handling (OS-480) → call-site migration (OS-481) → log alarms
+> (OS-99) → saved queries (OS-98). Traces (`trace_id`/`span_id`) are M3 (OS-94).
 
 ## Roles of each tool
 
@@ -259,43 +258,23 @@ npm run dev 2>&1 | tee dev.log          # in one terminal
 grep 0b7e6c1e-2f7a-4c1a-9a55-3f0f1b1d2c3e dev.log
 ```
 
-**Production** — CloudWatch Logs Insights over the service log groups
-`/ecs/ordersail-merchant-api`, `/ecs/ordersail-storefront-api`, `/ecs/ordersail-pos-api`,
-`/ecs/ordersail-worker` (select all four so API → worker hops show up in one timeline).
-Saved versions of these queries land with OS-98.
+**Production** — CloudWatch Logs Insights → **Saved queries** → the `ordersail/` folder
+(`infra/terraform/envs/production/log-queries.tf`, OS-98). Each one is pre-set to all four
+service log groups — `/ecs/ordersail-merchant-api`, `-storefront-api`, `-pos-api`, `-worker` —
+so API → worker hops show up in one timeline. Pick the time range, edit the placeholder on the
+`filter` line where there is one (`"PASTE-CORRELATION-ID"`, or `0` for a numeric ID), run.
 
-Everything for one request (API and the jobs it enqueued):
+| Saved query | Use it for | Edit |
+|---|---|---|
+| `ordersail/Request timeline` | everything for one request, API and the jobs it enqueued | `correlationId` |
+| `ordersail/Account activity` | one tenant's lines | `accountId` |
+| `ordersail/Order history` | every line naming an order — creation, fulfillment, refunds, emails | `orderId` |
+| `ordersail/POS device activity` | one paired POS device (pos-api) | `deviceId` |
+| `ordersail/Errors by service` | `error` + `fatal` lines, counted by `service`, `event` | — |
+| `ordersail/Alerts` | `alert: true` lines — what the alert-lines alarm fired on | — |
+| `ordersail/Slow requests` | access lines over 1s: count, p95, max by `route` | — |
+| `ordersail/4xx-5xx by route` | failed requests by `route` and status | — |
 
-```
-fields @timestamp, service, level, event, msg, err.message
-| filter correlationId = "0b7e6c1e-2f7a-4c1a-9a55-3f0f1b1d2c3e"
-| sort @timestamp asc
-```
-
-Everything for one account in a window:
-
-```
-fields @timestamp, service, event, msg, userId, correlationId
-| filter accountId = 42
-| sort @timestamp desc
-| limit 200
-```
-
-Errors by service and event:
-
-```
-filter level >= 50
-| stats count() by service, event
-| sort count() desc
-```
-
-Lines that need a human:
-
-```
-fields @timestamp, service, event, msg, orderId, disputeId
-| filter alert = 1
-| sort @timestamp desc
-```
-
-(`= 1`, not `= true`: Logs Insights exposes JSON booleans as 1/0 and filters must compare
-against 1/0.)
+The query text lives in Terraform only; change it there and apply. Writing your own: filter on
+booleans with `= 1`, not `= true` (Logs Insights exposes JSON booleans as 1/0), and nested
+fields with a dot (`res.statusCode`, `err.message`).
