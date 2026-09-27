@@ -53,6 +53,12 @@ jobs:
       matrix:
         app: ${{ fromJSON(inputs.service == 'all' && '["merchant-api","storefront-api","worker","pos-api"]' || format('["{0}"]', inputs.service)) }}
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
@@ -89,6 +95,15 @@ jobs:
             || { echo "::error::$TARGET_ARN is not ACTIVE"; exit 1; }
           TARGET_IMG=$(img "$TARGET_ARN")
           echo "rollback: $FAMILY:$TARGET_REV   $TARGET_IMG"
+
+          # the target revision may map a secret (or JSON key) that no longer
+          # exists — ECS would fail every task at start with
+          # ResourceInitializationError. Every pre-OS-658 worker revision reads
+          # the deleted ordersail/production/worker secret. Fails rather than
+          # walking further back: rolling back past more than one deploy should
+          # be a deliberate to_revision, not a side effect.
+          node scripts/verify-taskdef-contracts.mjs --taskdef "$TARGET_ARN" \
+            || { echo "::error::$FAMILY:$TARGET_REV can't start — its task def maps a secret that's gone. Fix forward, or pass an explicit to_revision that passes this check"; exit 1; }
 
           # the target revision's image may have been ECR-lifecycle-expired (keep-last-15)
           aws ecr describe-images --repository-name "ordersail-${{ matrix.app }}" \

@@ -2,12 +2,19 @@ data "aws_caller_identity" "current" {}
 
 # --- app secret shells -------------------------------------------------
 # Terraform creates the shell only, never a secret_version — real values
-# (JWT secrets, Stripe/Shippo keys, SES SMTP creds) never touch git or TF
-# state. Populate once per secret via:
+# (JWT secrets, Stripe/Shippo keys) never touch git or TF state. Populate once
+# per secret via:
 #   aws secretsmanager put-secret-value --secret-id <name> --secret-string '{...}'
+#
+# No worker secret: it only ever held the SES SMTP credentials, and the worker
+# now sends through the SES API with its task role (OS-658). Re-add "worker"
+# here if it needs a secret again. Deleting it left ordersail/production/worker
+# in Secrets Manager's 30-day recovery window, so re-adding it within that
+# window fails on the name; restore the old secret and `terraform import` it
+# instead.
 
 locals {
-  app_secret_names = ["merchant-api", "storefront-api", "worker"]
+  app_secret_names = ["merchant-api", "storefront-api"]
 }
 
 resource "aws_secretsmanager_secret" "app" {
