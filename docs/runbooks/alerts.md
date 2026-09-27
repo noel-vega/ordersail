@@ -118,15 +118,8 @@ the backstop for when the worker's own SNS publish fails.
 ## When "alert lines" fires
 
 Alarm `ordersail-<service>-alert-lines`. The service logged a line with `alert: true` — a
-human has to act. Find it in Logs Insights on `/ecs/ordersail-<service>` (the "Lines that need a
-human" query in [Tracing a bug](../observability.md#tracing-a-bug); saved versions land with
-OS-98):
-
-```
-fields @timestamp, event, msg, orderId, disputeId, checkoutSessionId
-| filter alert = 1
-| sort @timestamp desc
-```
+human has to act. Find it with the saved Logs Insights query **`ordersail/Alerts`** (see
+[Tracing a bug](../observability.md#tracing-a-bug)); the `service` column shows which one.
 
 Then follow the `event`:
 
@@ -141,18 +134,11 @@ notification doesn't mean the problem is fixed — only that no new line was log
 ## When "error lines" fires
 
 Alarm `ordersail-<service>-error-lines`, warning topic. More than 10 error-level lines in 5
-minutes — something is failing repeatedly, but nothing asked for a page. Group them (the
-"Errors by service and event" query in [Tracing a bug](../observability.md#tracing-a-bug),
-saved with OS-98):
+minutes — something is failing repeatedly, but nothing asked for a page. Group them with the
+saved query **`ordersail/Errors by service`**.
 
-```
-filter level >= 50
-| stats count() by event
-| sort count() desc
-```
-
-Take one line's `correlationId` and pull the whole request (see "Tracing a bug" in
-`docs/observability.md`). If a service is legitimately noisy, raise its
+Take one line's `correlationId` and pull the whole request with **`ordersail/Request
+timeline`**. If a service is legitimately noisy, raise its
 `alarm_error_lines_threshold` on the `ecs_service_*` module call in
 `infra/terraform/envs/production/main.tf` rather than silencing the alarm.
 
