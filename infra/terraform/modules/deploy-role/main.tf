@@ -224,6 +224,25 @@ data "aws_iam_policy_document" "deploy" {
     }
   }
 
+  # Read-only, so cd.yml can verify each task definition's secret mappings
+  # resolve to JSON keys that exist before a service is ever updated — the
+  # failure that crash-looped merchant-api (OS-652) is invisible to
+  # `terraform plan`, which validates the mapping but never the contents.
+  #
+  # Not a meaningful privilege escalation: this role already holds
+  # EcsTaskDefs + PassEcsRoles + EcsDeploy, so it can register a task
+  # definition that injects any of these secrets into a container it controls.
+  # This just lets it read the key names directly instead.
+  dynamic "statement" {
+    for_each = var.include_secret_verification ? [1] : []
+    content {
+      sid       = "ReadAppSecretsForVerification"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = ["arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:${var.name_prefix}/production/*"]
+    }
+  }
+
   statement {
     sid       = "ReadSsmOutputs"
     effect    = "Allow"

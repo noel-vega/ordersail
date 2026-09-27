@@ -76,6 +76,8 @@ Off-state run-rate ≈ **$50/mo**.
 
 2. **Bring the services back.**
    Actions → **Environment** → `action: up`. The run:
+   - checks every task-def contract will boot (`scripts/verify-taskdef-contracts.mjs`,
+     OS-653) before touching anything; a failure names the variable and secret;
    - re-enables Container Insights;
    - per service, re-registers a task-def revision from the SSM contract at the
      last-shipped image tag (so the new Redis hostname lands), `desired-count 1`,

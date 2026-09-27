@@ -205,6 +205,37 @@ For a Secrets Manager **key** rename: rename it in the JSON
 (`aws secretsmanager put-secret-value`) *and* update the `valueFrom` suffix in
 `main.tf` in the same change, so the next deploy's task def points at the new key.
 
+### Adding a required env var (checklist)
+
+A new required variable has to land in four places. CI enforces only the first
+two, and missing either of the last two crash-loops the service at its next
+restart (OS-652: `MFA_ENCRYPTION_KEY`).
+
+1. **The app's zod schema** (`apps/<app>/src/**/env.ts`). Don't give it a
+   `localhost`-style default that could silently reach production.
+2. **`.env.example`** for the app, so `npm run setup` gives local dev a value.
+3. **The task-def mapping** in `envs/production/main.tf` (migrator:
+   `migrator.tf`). Put secrets under `secrets` as
+   `"${module.secrets.app_secret_arns["<app>"]}:<JSON_KEY>::"` and plain config under
+   `environment`. Then `terraform apply` so the SSM contract picks it up.
+4. **The key inside the Secrets Manager secret**, for a secret. Terraform
+   never writes secret values, so add it out-of-band:
+   `aws secretsmanager get-secret-value` → add the key to the JSON →
+   `aws secretsmanager put-secret-value`.
+
+Then prove the contract will boot. Run this with AWS credentials:
+
+```bash
+npm run verify:contracts   # node scripts/verify-taskdef-contracts.mjs
+```
+
+It checks every contract (the four services plus the migrator). It fails if any
+`valueFrom` names a JSON key its secret doesn't have. It also fails if any
+`environment` value points at `localhost` or at a raw `*.cloudfront.net` /
+`*.elb.amazonaws.com` host. `cd.yml` (`verify-contracts`) and
+`environment.yml` (`up-verify-contracts`) run the same check before they start
+anything. Running it yourself tells you before merge instead of at deploy time.
+
 ### First-time image bootstrap
 
 ECR is `IMMUTABLE` and `cd.yml` only pushes `:<git-sha>` — there is no `:latest`.

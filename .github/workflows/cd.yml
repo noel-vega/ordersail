@@ -127,8 +127,32 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
 
+  # Fails before the production approval gate and before anything is mutated:
+  # a task-definition contract can be well-formed yet undeployable, and
+  # terraform plan can't see it. Ungated (no `environment:`) so it runs
+  # immediately alongside build-and-push — deploy_role_platform trusts both the
+  # branch-ref and environment-scoped OIDC sub claims (see its Terraform).
+  verify-contracts:
+    needs: guard
+    if: needs.guard.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify task-definition contracts are deployable
+        run: node scripts/verify-taskdef-contracts.mjs
+
   migrate:
-    needs: build-and-push
+    needs: [build-and-push, verify-contracts]
     uses: ./.github/workflows/migrate.yml
     with:
       image_tag: ${{ github.sha }}

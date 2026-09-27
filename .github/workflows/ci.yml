@@ -59,6 +59,12 @@ jobs:
       # with the target branch
       - uses: nrwl/nx-set-shas@v4
 
+      # Proves the deploy-time contract guard still catches the defects it was
+      # written for (OS-652 / OS-654 / OS-560). Pure fixtures — no AWS, no
+      # network — so it belongs on every PR, not just in CD.
+      - name: Verify the task-def contract guard still catches its regressions
+        run: node scripts/verify-taskdef-contracts.mjs --self-test
+
       - name: Verify (build, lint, typecheck, test)
         # `test` boots a throwaway Postgres via Testcontainers (jest
         # globalSetup in packages/test-support) — ubuntu-latest has Docker.
