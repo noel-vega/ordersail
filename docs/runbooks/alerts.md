@@ -178,3 +178,94 @@ and complaint handling without touching the reputation rates.
 All four alarms treat missing data as OK. With no mail flowing, including while the environment
 is parked by the on/off switch (OS-380), there's no rate and they never fire, so they don't need
 disarming in `environment.yml`.
+
+## Email (SES)
+
+How mail leaves production: an API enqueues an email job, and `apps/worker` renders it and
+calls the **SES API with its ECS task role** (no SMTP, no credentials, OS-658). It sends
+`From: Ordersail <no-reply@ordersail.com>`, a verified domain identity with DKIM, MAIL FROM
+`bounce.ordersail.com` and DMARC (OS-657), through the configuration set
+`ordersail-transactional` (OS-659). Local dev sends over SMTP to Mailpit instead
+(`EMAIL_TRANSPORT=smtp`, http://localhost:8025).
+
+> **The account is still in the SES sandbox** (deliberately, until ~3 weeks before launch,
+> OS-61). Only verified addresses receive mail. See
+> [Adding a test inbox](#while-in-the-sandbox-adding-a-test-inbox).
+
+A failing email is quiet: two `email_job.*` lines per email don't reach the
+[error lines](#when-error-lines-fires) threshold, and no alarm watches email failures yet
+(OS-87). On 2026-09-27 a lapsed identity verification silently stopped all prod email. Start
+here when someone says an email never arrived.
+
+### 1. Did the worker send it?
+
+Logs Insights, all four service log groups (or `ordersail/Request timeline` with the
+request's `x-request-id`):
+
+```
+fields @timestamp, event, jobName, err.message, correlationId
+| filter event like /^email/
+| sort @timestamp desc
+```
+
+- **`email.sent`**: SES accepted it. Check the recipient's spam folder, then whether the
+  address is suppressed (step 4).
+- **`email_job.attempt_failed` → `email_job.failed`**: SES refused it. The `err.message`
+  says why (step 2). A job is tried 5 times (backoff 5s → 40s), then gives up.
+- **Nothing at all**: the job never ran. Check the worker is up: the
+  `ordersail-worker-running-below-desired` alarm, `aws ecs describe-services`, and a boot
+  failure (`event = "app.boot_failed"`). A worker that dies at boot stops all email while
+  everything else looks healthy.
+
+`jobName` is one of `verify-email`, `password-reset`, `staff-invite`, `order-confirmation`,
+`customer-thank-you`.
+
+### 2. Why SES refused it
+
+| `err.message` contains | Cause | Fix |
+|---|---|---|
+| `Email address is not verified. … identities failed the check: <addr>` | Sandbox: `<addr>` isn't a verified identity, or its verification lapsed (`FAILED`) | `aws sesv2 get-email-identity --email-identity <addr>`, then re-send the link with `aws ses verify-email-identity --email-address <addr>` and click it within 24 h |
+| `not authorized to perform 'ses:SendRawEmail' on resource '…:identity/<addr>'` | Sandbox: the worker task role can't send to that recipient | Add `identity/<addr>` to the worker task-role SES statement (`data.aws_iam_policy_document.worker_task`, `envs/production/main.tf`) and apply |
+| `… on resource '…:configuration-set/ordersail-transactional'` | The task-role policy lost the configuration-set ARN. The identity's default configuration set is authorized on every send | Restore it in the same statement |
+| `… on resource '…:identity/ordersail.com'` | The task-role policy lost the domain identity | Same statement |
+| quota / rate limit (`LimitExceeded`, `TooManyRequests`) | Sandbox limits: 200/day, 1/s | Wait for the 24 h window; the real fix is production access (OS-61) |
+| sending paused / account suspended | SES reputation enforcement | [When "SES bounce/complaint rate" fires](#when-ses-bouncecomplaint-rate-fires) |
+
+### 3. Account and identity health
+
+```bash
+aws sesv2 get-account \
+  --query '{production:ProductionAccessEnabled,sending:SendingEnabled,status:EnforcementStatus,quota:SendQuota}'
+aws sesv2 list-email-identities
+aws sesv2 get-email-identity --email-identity ordersail.com \
+  --query '[VerifiedForSendingStatus,DkimAttributes.Status,MailFromAttributes.MailFromDomainStatus,ConfigurationSetName]'
+```
+
+Healthy is `sending: true`, `status: HEALTHY`, and
+`True SUCCESS SUCCESS ordersail-transactional` for the domain. A DKIM or MAIL FROM status
+other than `SUCCESS` means a DNS record in the `ordersail.com` zone changed. They're all in
+`envs/production/ses.tf`, and `terraform plan` shows the drift.
+
+### 4. Is the address suppressed?
+
+```bash
+aws sesv2 get-suppressed-destination --email-address <addr>
+```
+
+SES silently skips an address that hard-bounced or complained. Remove it only when you know
+it's good now: `aws sesv2 delete-suppressed-destination --email-address <addr>`.
+
+### While in the sandbox: adding a test inbox
+
+Each test recipient needs **both** of these, or its emails fail:
+
+1. Verify it: `aws ses verify-email-identity --email-address <addr>`, and click the link AWS
+   emails within 24 h. Check with `aws sesv2 get-email-identity --email-identity <addr>`.
+2. Let the worker send to it: add
+   `"arn:${data.aws_partition.current.partition}:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/<addr>"`
+   to the worker task-role SES statement in `envs/production/main.tf`, then plan and apply
+   **from an up-to-date `main`**. In the sandbox, SES authorizes a send against the
+   recipient's identity as well as the sender's.
+
+Once production access is granted (OS-61), neither step is needed, and the extra identities
+and ARNs get removed.
