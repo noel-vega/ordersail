@@ -13,36 +13,6 @@ resource "aws_ses_email_identity" "sender" {
   email = var.ses_verified_email
 }
 
-# --- Legacy SMTP credentials (being removed) ------------------------------
-# The worker no longer uses these: since OS-658 it calls the SES API with its
-# ECS task role (see `data.aws_iam_policy_document.worker_task` in main.tf).
-# They stay only until the OS-658 worker is live, because tasks still running
-# the old task definition authenticate over SMTP with SMTP_USER/SMTP_PASS.
-# The follow-up deletes this user, its policy and key, the `ses_smtp_*`
-# outputs, and the SMTP_USER/SMTP_PASS keys in the worker secret.
-
-resource "aws_iam_user" "ses_smtp" {
-  name = "${var.name_prefix}-ses-smtp"
-}
-
-resource "aws_iam_user_policy" "ses_smtp" {
-  name = "ses-send"
-  user = aws_iam_user.ses_smtp.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["ses:SendRawEmail", "ses:SendEmail"]
-      Resource = "*"
-    }]
-  })
-}
-
-resource "aws_iam_access_key" "ses_smtp" {
-  user = aws_iam_user.ses_smtp.name
-}
-
 # --- ordersail.com domain identity (OS-657) --------------------------------
 # Transactional mail is sent as no-reply@ordersail.com. Three records make it
 # authenticate under DMARC:

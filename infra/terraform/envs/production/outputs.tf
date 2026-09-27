@@ -51,14 +51,3 @@ output "app_secret_arns" {
   description = "Populate these via `aws secretsmanager put-secret-value` before the first deploy."
   value       = module.secrets.app_secret_arns
 }
-
-output "ses_smtp_user" {
-  description = "SMTP username for apps/worker — write into the worker secret's SMTP_USER."
-  value       = aws_iam_access_key.ses_smtp.id
-}
-
-output "ses_smtp_password" {
-  description = "SMTP password for apps/worker — write into the worker secret's SMTP_PASS."
-  value       = aws_iam_access_key.ses_smtp.ses_smtp_password_v4
-  sensitive   = true
-}

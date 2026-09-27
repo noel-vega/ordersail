@@ -378,7 +378,6 @@ module "ecs_service_worker" {
 
   secrets_manager_secret_arns = [
     module.secrets.database_url_secret_arn,
-    module.secrets.app_secret_arns["worker"],
   ]
 }
 
