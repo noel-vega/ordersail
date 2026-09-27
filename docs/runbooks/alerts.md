@@ -96,6 +96,8 @@ Each row is added by its issue's PR. `→` is the topic the alarm notifies.
 | _Order-job dead-letter_ | OS-73 `apps/worker` | an `orders` job exhausts all 8 attempts | critical |
 | _Alert lines_ | OS-99 `modules/ecs-service` | the service logs any `alert: true` line (≥1 in 5 min) | critical |
 | _Error lines_ | OS-99 `modules/ecs-service` | > 10 `level >= 50` lines in 5 min (per service, `alarm_error_lines_threshold`) | warning |
+| _SES bounce rate_ | OS-659 `envs/production/ses.tf` | account `Reputation.BounceRate` > 2% (warning) / > 4% (critical) | warning / critical |
+| _SES complaint rate_ | OS-659 `envs/production/ses.tf` | account `Reputation.ComplaintRate` > 0.05% (warning) / > 0.08% (critical) | warning / critical |
 
 ## When "order-job dead-letter" fires
 
@@ -145,3 +147,30 @@ timeline`**. If a service is legitimately noisy, raise its
 Both log alarms treat missing data as OK, so a service with no log lines — including one
 parked by the environment on/off switch (OS-380) — never fires them. They don't need
 disarming in `environment.yml`.
+
+## When "SES bounce/complaint rate" fires
+
+Alarms `ordersail-ses-bounce-rate-{warning,critical}` and
+`ordersail-ses-complaint-rate-{warning,critical}`. The account's rolling bounce or complaint
+rate is climbing toward the level where SES **reviews** the account (5% bounce, 0.1% complaint)
+and then **pauses sending** (10%, 0.5%). A pause stops every email: verification, reset,
+invites and order confirmations.
+
+1. See where it stands: `aws sesv2 get-account` (`EnforcementStatus`, `Details`), and the SES
+   console's **Reputation metrics** page.
+2. See who's bouncing or complaining. SES has already stopped sending to them (the account
+   suppression list, `BOUNCE` + `COMPLAINT`):
+
+   ```bash
+   aws sesv2 list-suppressed-destinations --start-date "$(date -u -d '-2 days' +%FT%TZ)"
+   ```
+3. Look for the source: a burst of signups with fake or typo'd addresses, a staff member
+   inviting a bad list, or order confirmations to guest-checkout typos. The worker's
+   `email.sent` lines carry `jobName`. Use `ordersail/Request timeline` on one to see which flow
+   sent it.
+4. Fix the source rather than the list. Remove an address from suppression only when you know
+   it's good again: `aws sesv2 delete-suppressed-destination --email-address <addr>`.
+
+Mailbox-simulator addresses (`bounce@simulator.amazonses.com`, `complaint@…`) exercise bounce
+and complaint handling without touching the reputation rates.
+
