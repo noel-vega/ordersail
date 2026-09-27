@@ -86,6 +86,57 @@ module "ecs_service_demo_api" {
     assert.deepEqual([...taskDefEnvNames(hcl, 'ecs_service_demo_api')], ['MINE']);
   });
 
+  it('treats $${ and %%{ as literal text, not interpolations (would run on into the next module)', () => {
+    const hcl = `
+module "ecs_service_demo_api" {
+  policy = "arn:aws:s3:::bucket/$\${aws:username}/*"
+  note   = "%%{ not a directive"
+  environment = [
+    { name = "MINE", value = "x" },
+  ]
+}
+
+module "ecs_service_other_api" {
+  environment = [
+    { name = "ONLY_IN_OTHER", value = "x" },
+  ]
+}
+`;
+    assert.deepEqual([...taskDefEnvNames(hcl, 'ecs_service_demo_api')], ['MINE']);
+  });
+
+  it('fails loudly when the brace walk overruns into the next top-level block', () => {
+    // a heredoc's unbalanced brace isn't modelled; the guard must catch the
+    // overrun rather than credit this module with ONLY_IN_OTHER
+    const hcl = `
+module "ecs_service_demo_api" {
+  script = <<EOT
+if ready {
+EOT
+  environment = [
+    { name = "MINE", value = "x" },
+  ]
+}
+
+module "ecs_service_other_api" {
+  environment = [
+    { name = "ONLY_IN_OTHER", value = "x" },
+  ]
+}
+`;
+    assert.throws(() => taskDefEnvNames(hcl, 'ecs_service_demo_api'), /could not find where .* ends — the brace walk ran into "module"/);
+  });
+
+  it('fails loudly when the block never closes', () => {
+    const hcl = `
+module "ecs_service_demo_api" {
+  environment = [
+    { name = "MINE", value = "x" },
+  ]
+`;
+    assert.throws(() => taskDefEnvNames(hcl, 'ecs_service_demo_api'), /hit end of file/);
+  });
+
   it('throws on an unknown module rather than reporting everything unmapped', () => {
     assert.throws(() => taskDefEnvNames(HCL, 'ecs_service_missing'), /no module "ecs_service_missing"/);
   });

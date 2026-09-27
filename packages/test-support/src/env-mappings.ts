@@ -17,19 +17,29 @@ const TASKDEF_FILE = 'infra/terraform/envs/production/main.tf';
 /**
  * If a `"…"` string literal opens at `i`, the index just past it; otherwise `i`.
  * Steps over escapes and `${…}` interpolations, which may nest their own quotes
- * (`"${module.secrets.app_secret_arns["demo-api"]}:KEY::"`).
+ * (`"${module.secrets.app_secret_arns["demo-api"]}:KEY::"`). `$${` and `%%{`
+ * are HCL's escapes for a literal `${` / `%{` (common in IAM policy strings),
+ * not interpolations, so they open nothing.
  */
 function skipString(hcl: string, i: number): number {
   if (hcl[i] !== '"') return i;
   for (let j = i + 1; j < hcl.length; j++) {
     if (hcl[j] === '\\') j++;
     else if (hcl[j] === '"') return j + 1;
-    else if (hcl.startsWith('${', j)) j = skipBlock(hcl, j + 2) - 1;
+    else if (hcl.startsWith('$${', j) || hcl.startsWith('%%{', j)) j += 2;
+    else if (hcl.startsWith('${', j)) {
+      const close = skipBlock(hcl, j + 2);
+      if (close === -1) return hcl.length;
+      j = close - 1;
+    }
   }
   return hcl.length;
 }
 
-/** From just inside an opening brace, the index just past its matching close. Braces in strings don't count. */
+/**
+ * From just inside an opening brace, the index just past its matching close,
+ * or -1 if it never closes. Braces in strings don't count.
+ */
 function skipBlock(hcl: string, i: number): number {
   let depth = 1;
   while (i < hcl.length) {
@@ -42,7 +52,7 @@ function skipBlock(hcl: string, i: number): number {
     else if (hcl[i] === '}' && --depth === 0) return i + 1;
     i++;
   }
-  return i;
+  return -1;
 }
 
 /**
@@ -85,7 +95,19 @@ export function taskDefEnvNames(hcl: string, moduleName: string): Set<string> {
   const start = code.indexOf(header);
   if (start === -1) throw new Error(`no ${header} block`);
 
-  const block = code.slice(start, skipBlock(code, start + header.length));
+  const end = skipBlock(code, start + header.length);
+  const block = end === -1 ? code.slice(start) : code.slice(start, end);
+
+  // The brace walk doesn't model everything HCL can hold (heredocs, say). If
+  // it overshoots, the block swallows the next top-level block, and a key
+  // mapped only *there* would count as mapped here — a silent pass. terraform
+  // fmt keeps top-level blocks at column 0 and everything inside indented, so
+  // a column-0 block header inside the slice means the walk went wrong: fail
+  // loudly instead.
+  const overran = /\n(?:module|resource|data|locals|variable|output|provider|terraform)\b/.exec(block);
+  if (end === -1 || overran) {
+    throw new Error(`could not find where ${header} ends — the brace walk ${overran ? `ran into "${overran[0].trim()}"` : 'hit end of file'}; see taskDefEnvNames`);
+  }
 
   const names = new Set<string>();
   for (const m of block.matchAll(/\{\s*name\s*=\s*"([A-Za-z0-9_]+)"\s*,\s*value(?:From)?\s*=/g)) {
