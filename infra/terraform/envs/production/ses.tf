@@ -54,8 +54,8 @@ resource "aws_iam_access_key" "ses_smtp" {
 #              feedback endpoint) and SPF, so SPF aligns too instead of
 #              checking amazonses.com.
 #   DMARC      p=none — monitor only. No `rua`: ordersail.com receives no mail
-#              yet. Tighten to p=quarantine once real traffic is clean
-#              (OS-662).
+#              yet (OS-661 adds a report destination). Tighten to
+#              p=quarantine once real traffic is clean (OS-662).
 #
 # The gmail identity above stays until OS-658 moves SMTP_FROM off it; OS-61
 # deletes it after production access is granted.
