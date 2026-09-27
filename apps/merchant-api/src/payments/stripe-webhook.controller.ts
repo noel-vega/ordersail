@@ -154,7 +154,7 @@ export class StripeWebhookController {
         } else {
           this.logger.warn(
             {
-              event: 'refund.charge_unmapped',
+              event: 'refund.charge_not_mapped',
               chargeId: event.data.object.id,
             },
             'Refunded charge has no payment_intent — cannot map to an order',

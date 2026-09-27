@@ -11,6 +11,7 @@ import {
   Logger,
   logContextOf,
   runWithLogContext,
+  serializeError,
   setLogContext,
 } from 'logging';
 import {
@@ -388,6 +389,13 @@ export class OrdersProcessor extends WorkerHost {
       // duplicates), emit one `alert: true` line carrying the unresolved
       // count, and page out-of-band via SNS (OS-73). The BullMQ job itself
       // also stays in Redis (ORDER_JOB_OPTIONS has no removeOnFail).
+      const deadLettered = {
+        ...fields,
+        alert: true,
+        event: 'order_job.dead_lettered',
+        checkoutSessionId: data.stripeCheckoutSessionId,
+        paymentIntentId: data.stripePaymentIntentId,
+      };
       let unresolvedCount: number | undefined;
       try {
         await this.db
@@ -419,27 +427,18 @@ export class OrdersProcessor extends WorkerHost {
         unresolvedCount = row?.count;
 
         this.logger.error(
-          {
-            ...fields,
-            alert: true,
-            event: 'order_job.dead_lettered',
-            checkoutSessionId: data.stripeCheckoutSessionId,
-            paymentIntentId: data.stripePaymentIntentId,
-            unresolvedCount,
-          },
+          { ...deadLettered, unresolvedCount },
           'Order NOT created — paid checkout exhausted all retries',
         );
       } catch (recordErr: unknown) {
-        // still an alert line: the order is lost AND so is its durable record
+        // still an alert line: the order is lost AND so is its durable record.
+        // `err` stays the job error (why the order was lost, same as the line
+        // above); the row-write error rides alongside, serialized by hand
+        // since pino only runs the error serializer on `err`.
         this.logger.error(
           {
-            ...fields,
-            err: recordErr,
-            orderJobError: err.message,
-            alert: true,
-            event: 'order_job.dead_lettered',
-            checkoutSessionId: data.stripeCheckoutSessionId,
-            paymentIntentId: data.stripePaymentIntentId,
+            ...deadLettered,
+            recordErr: serializeError(recordErr),
             failedOrderRecorded: false,
           },
           'Order NOT created — and recording the failed order also failed',

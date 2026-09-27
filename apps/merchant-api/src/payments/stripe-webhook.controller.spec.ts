@@ -359,7 +359,7 @@ describe('StripeWebhookController', () => {
       expect(emitAsync).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(
         expect.objectContaining({
-          event: 'refund.charge_unmapped',
+          event: 'refund.charge_not_mapped',
           chargeId: 'ch_2',
         }),
         expect.any(String),

@@ -37,7 +37,7 @@ export class CheckoutOrderService {
     if (!cart || cart.items.length === 0) {
       this.logger.warn(
         {
-          event: 'checkout.cart_missing',
+          event: 'checkout.cart_not_found',
           checkoutSessionId: event.checkoutSessionId,
         },
         'Paid checkout session has no cart (gone or empty) — no order created',

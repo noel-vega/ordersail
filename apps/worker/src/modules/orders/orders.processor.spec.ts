@@ -641,18 +641,20 @@ describe('OrdersProcessor.onFailed', () => {
     // accountId 999999 → FK violation on the failed_orders insert
     const j = jobAt({ ...(await seedScenario()), accountId: 999_999 }, 8);
 
-    await expect(
-      processor.onFailed(j, new Error('boom')),
-    ).resolves.toBeUndefined();
-    expect(errSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        alert: true,
-        event: 'order_job.dead_lettered',
-        failedOrderRecorded: false,
-        orderJobError: 'boom',
-      }),
-      expect.any(String),
-    );
+    const jobErr = new Error('boom');
+
+    await expect(processor.onFailed(j, jobErr)).resolves.toBeUndefined();
+    // both stacks survive: the job error as `err`, the row-write error beside it
+    const [line] = errSpy.mock.lastCall as [Record<string, unknown>];
+    expect(line).toMatchObject({
+      alert: true,
+      event: 'order_job.dead_lettered',
+      failedOrderRecorded: false,
+      err: jobErr,
+    });
+    const recordErr = line.recordErr as { message?: unknown; stack?: unknown };
+    expect(typeof recordErr.message).toBe('string');
+    expect(typeof recordErr.stack).toBe('string');
     // a failed row write makes the page more urgent, not less
     const [[alert]] = alerts.publishCritical.mock.calls as CriticalAlert[][];
     expect(alert.message).toContain('failed_orders write also failed');
