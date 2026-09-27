@@ -96,8 +96,10 @@ flowchart TB
   `storefront-api` both call Stripe directly (Connect onboarding vs. Checkout Sessions
   respectively), and both browser apps also load Stripe's JS SDK directly for card entry —
   that's the one place a frontend talks to a third party without going through its own backend.
-- `email` (SMTP transport) and `email-templates` (rendering) are only ever imported by `worker`.
-  The two APIs only ever *enqueue* email jobs via `queue` — they never touch SMTP.
+- `email` (transport: the SES API with the worker's ECS task role in production, SMTP to Mailpit
+  in local dev, chosen by `EMAIL_TRANSPORT`) and `email-templates` (rendering) are only ever
+  imported by `worker`. The two APIs only ever *enqueue* email jobs via `queue` — they never send
+  mail themselves.
 
 ## Order + email job flow
 
@@ -120,7 +122,7 @@ sequenceDiagram
     participant redis as Redis (BullMQ)
     participant worker
     participant pg as Postgres
-    participant mail as SMTP
+    participant mail as SES API (prod) / Mailpit (dev)
 
     Stripe->>pay: checkout.session.completed webhook<br/>POST /webhooks/stripe
     pay->>pay: verify signature, narrow to<br/>CheckoutSessionPaidPayload

@@ -13,14 +13,13 @@ resource "aws_ses_email_identity" "sender" {
   email = var.ses_verified_email
 }
 
-# --- SMTP credentials for apps/worker's nodemailer transport --------------
-# SES SMTP auth is an IAM access key pair run through a region-specific HMAC
-# (the `ses_smtp_password_v4` attribute does that conversion). The user is
-# send-only. The raw access-key secret lands in Terraform state like any
-# IAM key — the derived password is surfaced as a sensitive output and
-# written into the worker Secrets Manager secret out-of-band:
-#   aws secretsmanager put-secret-value --secret-id ordersail/production/worker \
-#     --secret-string "{\"SMTP_USER\":\"$(terraform output -raw ses_smtp_user)\",\"SMTP_PASS\":\"$(terraform output -raw ses_smtp_password)\"}"
+# --- Legacy SMTP credentials (being removed) ------------------------------
+# The worker no longer uses these: since OS-658 it calls the SES API with its
+# ECS task role (see `data.aws_iam_policy_document.worker_task` in main.tf).
+# They stay only until the OS-658 worker is live, because tasks still running
+# the old task definition authenticate over SMTP with SMTP_USER/SMTP_PASS.
+# The follow-up deletes this user, its policy and key, the `ses_smtp_*`
+# outputs, and the SMTP_USER/SMTP_PASS keys in the worker secret.
 
 resource "aws_iam_user" "ses_smtp" {
   name = "${var.name_prefix}-ses-smtp"
@@ -57,8 +56,9 @@ resource "aws_iam_access_key" "ses_smtp" {
 #              yet. Tighten to p=quarantine once real traffic is clean
 #              (OS-662).
 #
-# The gmail identity above stays until OS-658 moves SMTP_FROM off it; OS-61
-# deletes it after production access is granted.
+# The worker sends from this identity (EMAIL_FROM, OS-658). The gmail identity
+# above is no longer a sender; OS-61 deletes it after production access is
+# granted.
 
 resource "aws_sesv2_email_identity" "domain" {
   email_identity = var.domain_name

@@ -217,6 +217,25 @@ data "aws_iam_policy_document" "worker_task" {
     # and a "known after apply" ARN makes that count unresolvable at plan time.
     resources = [local.alerts_critical_topic_arn]
   }
+
+  # OS-658: mail goes out through the SES API as the task role — no SMTP user,
+  # no credentials. Scoped to the ordersail.com identity (sending as
+  # no-reply@ordersail.com is authorized against the domain identity). ARNs
+  # built from plan-known parts for the same count reason as above.
+  #
+  # While SES is in the sandbox it also authorizes against each *recipient's*
+  # identity, so the verified gmail recipient must be listed too; without it
+  # every send fails AccessDenied on identity/<recipient>. OS-61 drops that ARN
+  # when it deletes var.ses_verified_email after production access. SESv2
+  # SendEmail with raw content is authorized as ses:SendRawEmail — keep both.
+  statement {
+    effect  = "Allow"
+    actions = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain_name}",
+      "arn:${data.aws_partition.current.partition}:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/${var.ses_verified_email}",
+    ]
+  }
 }
 
 module "ecs_service_merchant_api" {
@@ -347,18 +366,14 @@ module "ecs_service_worker" {
     # dead-letter pager for permanently-failed order jobs (OS-73); unset ⇒
     # AlertsService is a no-op and only the [alert] log line fires
     { name = "ALERTS_CRITICAL_TOPIC_ARN", value = local.alerts_critical_topic_arn },
-    # interim SES SMTP config (Phase 9) — sandbox mode until AWS approves
-    # production access; SMTP_FROM must exactly match the verified identity
-    { name = "SMTP_HOST", value = "email-smtp.${var.region}.amazonaws.com" },
-    { name = "SMTP_PORT", value = "587" },
-    { name = "SMTP_SECURE", value = "false" },
-    { name = "SMTP_FROM", value = var.ses_verified_email },
+    # SES API with the task role (OS-658) — sent as the verified ordersail.com
+    # domain identity (OS-657); no SMTP host or credentials in production
+    { name = "EMAIL_TRANSPORT", value = "ses" },
+    { name = "EMAIL_FROM", value = "Ordersail <no-reply@${var.domain_name}>" },
   ]
 
   secrets = [
     { name = "DATABASE_URL", valueFrom = module.secrets.database_url_secret_arn },
-    { name = "SMTP_USER", valueFrom = "${module.secrets.app_secret_arns["worker"]}:SMTP_USER::" },
-    { name = "SMTP_PASS", valueFrom = "${module.secrets.app_secret_arns["worker"]}:SMTP_PASS::" },
   ]
 
   secrets_manager_secret_arns = [

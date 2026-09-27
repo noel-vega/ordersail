@@ -29,5 +29,5 @@ Object.assign(process.env, {
 
   // worker
   SMTP_HOST: 'localhost',
-  SMTP_FROM: 'Ordersail <no-reply@ordersail.local>',
+  EMAIL_FROM: 'Ordersail <no-reply@ordersail.local>',
 });
