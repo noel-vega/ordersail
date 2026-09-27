@@ -1,11 +1,11 @@
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 
-export interface MailerConfig {
-  host: string;
-  port: number;
-  secure?: boolean;
-  auth?: { user: string; pass: string };
-}
+// Two ways out. Production sends through the SES API with the process's own
+// AWS credentials (the ECS task role) — no SMTP user or password anywhere
+// (OS-658). Local dev sends over plain SMTP to Mailpit.
+export type MailerConfig =
+  | { transport: "ses" }
+  | { transport: "smtp"; host: string; port: number };
 
 export interface SendMailParams {
   to: string;
@@ -19,17 +19,39 @@ export interface SendMailParams {
   html: string;
 }
 
-export function createMailer(config: MailerConfig) {
-  const transport = nodemailer.createTransport({
+// `@aws-sdk/client-sesv2` is imported on first send, not at module load, so a
+// missing or broken SDK install fails that send (logged, retried) instead of
+// crashing the worker at boot and silently stopping every email — the same
+// reason AlertsService loads the SNS SDK lazily.
+async function createTransport(config: MailerConfig): Promise<Transporter> {
+  if (config.transport === "ses") {
+    const { SESv2Client, SendEmailCommand } = await import(
+      "@aws-sdk/client-sesv2"
+    );
+    // region + credentials come from the environment (AWS_REGION and the
+    // task role on ECS)
+    return nodemailer.createTransport({
+      SES: { sesClient: new SESv2Client({}), SendEmailCommand },
+    });
+  }
+  return nodemailer.createTransport({
     host: config.host,
     port: config.port,
-    secure: config.secure ?? false,
-    auth: config.auth,
+    secure: false,
   });
+}
+
+export function createMailer(config: MailerConfig) {
+  let transport: Promise<Transporter> | undefined;
+  const getTransport = () =>
+    (transport ??= createTransport(config).catch((err: unknown) => {
+      transport = undefined; // let the next send retry the import
+      throw err;
+    }));
 
   return {
-    sendMail: (params: SendMailParams) =>
-      transport.sendMail({
+    sendMail: async (params: SendMailParams) =>
+      (await getTransport()).sendMail({
         from: params.from,
         to: params.to,
         subject: params.subject,

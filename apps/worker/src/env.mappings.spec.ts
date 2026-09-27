@@ -7,6 +7,10 @@ import { envSchema } from './env.schema';
 // green and only fails at boot. Checklist: infra/terraform/README.md.
 const FINE_UNSET_IN_PRODUCTION: Record<string, string> = {
   LOG_LEVEL: 'unset → info in production (docs/observability.md)',
+  SMTP_HOST:
+    'read only when EMAIL_TRANSPORT=smtp (local Mailpit); production is ses',
+  SMTP_PORT:
+    'read only when EMAIL_TRANSPORT=smtp (local Mailpit); production is ses',
 };
 
 describe('worker env → production task def', () => {

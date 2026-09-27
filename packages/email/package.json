@@ -23,6 +23,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1141.0",
     "nodemailer": "^9.0.5"
   }
 }
