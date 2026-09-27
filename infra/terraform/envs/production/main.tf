@@ -220,12 +220,21 @@ data "aws_iam_policy_document" "worker_task" {
 
   # OS-658: mail goes out through the SES API as the task role — no SMTP user,
   # no credentials. Scoped to the ordersail.com identity (sending as
-  # no-reply@ordersail.com is authorized against the domain identity). ARN
+  # no-reply@ordersail.com is authorized against the domain identity). ARNs
   # built from plan-known parts for the same count reason as above.
+  #
+  # While SES is in the sandbox it also authorizes against each *recipient's*
+  # identity, so the verified gmail recipient must be listed too; without it
+  # every send fails AccessDenied on identity/<recipient>. OS-61 drops that ARN
+  # when it deletes var.ses_verified_email after production access. SESv2
+  # SendEmail with raw content is authorized as ses:SendRawEmail — keep both.
   statement {
-    effect    = "Allow"
-    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
-    resources = ["arn:${data.aws_partition.current.partition}:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain_name}"]
+    effect  = "Allow"
+    actions = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain_name}",
+      "arn:${data.aws_partition.current.partition}:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/${var.ses_verified_email}",
+    ]
   }
 }
 
