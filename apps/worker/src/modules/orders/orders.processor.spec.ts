@@ -495,7 +495,8 @@ describe('OrdersProcessor — checkout-completed', () => {
       .mockImplementation(() => undefined);
     const s = await seedScenario();
     const { processor, emailQueue } = await build();
-    emailQueue.add.mockRejectedValue(new Error('redis down'));
+    const redisDown = new Error('redis down');
+    emailQueue.add.mockRejectedValue(redisDown);
 
     await expect(processor.process(job(s))).resolves.toBeUndefined();
 
@@ -503,7 +504,11 @@ describe('OrdersProcessor — checkout-completed', () => {
     expect(order).toBeDefined(); // committed
     expect(order.confirmationEmailQueuedAt).toBeNull(); // never reached the stamp
     expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining('failed to enqueue its confirmation email'),
+      expect.objectContaining({
+        event: 'email_job.enqueue_failed',
+        err: redisDown,
+      }),
+      expect.any(String),
     );
     errSpy.mockRestore();
   });
@@ -576,7 +581,7 @@ describe('OrdersProcessor.onFailed', () => {
     warnSpy.mockRestore();
   });
 
-  it('records a failed_orders row and an [alert] line once retries are exhausted', async () => {
+  it('records a failed_orders row and an alert line once retries are exhausted', async () => {
     const errSpy = jest
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
@@ -603,7 +608,14 @@ describe('OrdersProcessor.onFailed', () => {
     });
     expect(row.payload).toMatchObject({ type: 'checkout-completed' });
     expect(errSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/\[alert].*1 unresolved failed order/s),
+      expect.objectContaining({
+        alert: true,
+        event: 'order_job.dead_lettered',
+        jobId: 'j-1',
+        checkoutSessionId: j.data.stripeCheckoutSessionId,
+        unresolvedCount: 1,
+      }),
+      expect.any(String),
     );
     errSpy.mockRestore();
   });
@@ -629,12 +641,20 @@ describe('OrdersProcessor.onFailed', () => {
     // accountId 999999 → FK violation on the failed_orders insert
     const j = jobAt({ ...(await seedScenario()), accountId: 999_999 }, 8);
 
-    await expect(
-      processor.onFailed(j, new Error('boom')),
-    ).resolves.toBeUndefined();
-    expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining('recording the failed_orders row failed'),
-    );
+    const jobErr = new Error('boom');
+
+    await expect(processor.onFailed(j, jobErr)).resolves.toBeUndefined();
+    // both stacks survive: the job error as `err`, the row-write error beside it
+    const [line] = errSpy.mock.lastCall as [Record<string, unknown>];
+    expect(line).toMatchObject({
+      alert: true,
+      event: 'order_job.dead_lettered',
+      failedOrderRecorded: false,
+      err: jobErr,
+    });
+    const recordErr = line.recordErr as { message?: unknown; stack?: unknown };
+    expect(typeof recordErr.message).toBe('string');
+    expect(typeof recordErr.stack).toBe('string');
     // a failed row write makes the page more urgent, not less
     const [[alert]] = alerts.publishCritical.mock.calls as CriticalAlert[][];
     expect(alert.message).toContain('failed_orders write also failed');

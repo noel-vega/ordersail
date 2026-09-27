@@ -178,7 +178,15 @@ export class EmailProcessor extends WorkerHost {
   @OnWorkerEvent('completed')
   onCompleted(job: Job<EmailJobData>) {
     runWithLogContext(logContextOf(job.data), () => {
-      this.logger.log(`Job ${job.id} (${job.name}) sent`);
+      this.logger.info(
+        {
+          event: 'email.sent',
+          queue: QUEUE_NAMES.EMAIL,
+          jobId: job.id,
+          jobName: job.name,
+        },
+        'Email sent',
+      );
     });
   }
 }

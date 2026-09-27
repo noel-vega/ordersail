@@ -11,6 +11,7 @@ import {
   Logger,
   logContextOf,
   runWithLogContext,
+  serializeError,
   setLogContext,
 } from 'logging';
 import {
@@ -258,6 +259,15 @@ export class OrdersProcessor extends WorkerHost {
     // after the commit, not inside the transaction — a rolled-back order ID
     // would point every later line at an order that doesn't exist
     setLogContext({ orderId });
+    this.logger.info(
+      {
+        event: 'order.created',
+        channel: 'web',
+        checkoutSessionId: data.stripeCheckoutSessionId,
+        amountTotalCents: data.amountTotalCents,
+      },
+      'Order created',
+    );
 
     await this.enqueueOrderConfirmationEmail(orderId, data);
   }
@@ -307,9 +317,14 @@ export class OrdersProcessor extends WorkerHost {
         .update(ordersTable)
         .set({ confirmationEmailQueuedAt: new Date() })
         .where(eq(ordersTable.id, orderId));
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.error(
-        `Order ${orderId} was created but failed to enqueue its confirmation email: ${err instanceof Error ? err.message : err}`,
+        {
+          err,
+          event: 'email_job.enqueue_failed',
+          jobName: 'order-confirmation',
+        },
+        'Order created but its confirmation email could not be enqueued',
       );
     }
   }
@@ -371,9 +386,16 @@ export class OrdersProcessor extends WorkerHost {
       // All retries used up — a paid customer with no order, the worst
       // failure this system has. Record it as a first-class row (keyed on the
       // checkout session, so a replay that fails again updates rather than
-      // duplicates), emit one [alert]-shaped line carrying the unresolved
+      // duplicates), emit one `alert: true` line carrying the unresolved
       // count, and page out-of-band via SNS (OS-73). The BullMQ job itself
       // also stays in Redis (ORDER_JOB_OPTIONS has no removeOnFail).
+      const deadLettered = {
+        ...fields,
+        alert: true,
+        event: 'order_job.dead_lettered',
+        checkoutSessionId: data.stripeCheckoutSessionId,
+        paymentIntentId: data.stripePaymentIntentId,
+      };
       let unresolvedCount: number | undefined;
       try {
         await this.db
@@ -405,14 +427,21 @@ export class OrdersProcessor extends WorkerHost {
         unresolvedCount = row?.count;
 
         this.logger.error(
-          `[alert] Job ${job.id} (${job.name}) failed permanently after ${job.attemptsMade} attempts — ` +
-            `order NOT created for checkout ${data.stripeCheckoutSessionId}: ${err.message}. ` +
-            `${unresolvedCount ?? '?'} unresolved failed order(s).`,
+          { ...deadLettered, unresolvedCount },
+          'Order NOT created — paid checkout exhausted all retries',
         );
-      } catch (recordErr) {
+      } catch (recordErr: unknown) {
+        // still an alert line: the order is lost AND so is its durable record.
+        // `err` stays the job error (why the order was lost, same as the line
+        // above); the row-write error rides alongside, serialized by hand
+        // since pino only runs the error serializer on `err`.
         this.logger.error(
-          `Job ${job.id}: order creation failed AND recording the failed_orders row failed: ` +
-            `${recordErr instanceof Error ? recordErr.message : recordErr} (original: ${err.message})`,
+          {
+            ...deadLettered,
+            recordErr: serializeError(recordErr),
+            failedOrderRecorded: false,
+          },
+          'Order NOT created — and recording the failed order also failed',
         );
       }
 
@@ -451,8 +480,14 @@ export class OrdersProcessor extends WorkerHost {
         job.data.type === 'checkout-completed'
           ? job.data.stripeCheckoutSessionId
           : '';
-      this.logger.log(
-        `Job ${job.id} (${job.name}) created order for session ${sessionId}`,
+      this.logger.info(
+        {
+          event: 'order_job.completed',
+          queue: QUEUE_NAMES.ORDERS,
+          jobId: job.id,
+          jobName: job.name,
+        },
+        'Order job completed',
       );
 
       if (!sessionId) return;
@@ -476,14 +511,25 @@ export class OrdersProcessor extends WorkerHost {
           )
           .returning({ id: failedOrdersTable.id });
         if (resolved) {
-          this.logger.log(
-            `Resolved failed_orders row ${resolved.id} — checkout ${sessionId} now has an order`,
+          this.logger.info(
+            {
+              event: 'failed_order.resolved',
+              failedOrderId: resolved.id,
+              checkoutSessionId: sessionId,
+            },
+            'Failed order resolved — checkout now has an order',
           );
         }
-      } catch (err) {
+      } catch (err: unknown) {
         this.logger.error(
-          `Job ${job.id}: order created but failed to resolve the failed_orders row for ${sessionId}: ` +
-            `${err instanceof Error ? err.message : err}`,
+          {
+            err,
+            event: 'failed_order.resolve_failed',
+            queue: QUEUE_NAMES.ORDERS,
+            jobId: job.id,
+            checkoutSessionId: sessionId,
+          },
+          'Order created but its failed_orders row could not be resolved',
         );
       }
     });

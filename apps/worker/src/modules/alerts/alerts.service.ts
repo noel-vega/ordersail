@@ -12,7 +12,7 @@ export interface CriticalAlert {
 // Out-of-band pager for failures the app can't recover from on its own. The
 // SNS topic (ordersail-alerts-critical, OS-80) fans out to email today, SMS
 // later. With no topic ARN configured — local dev, tests, CI — every method
-// is a no-op: the [alert]-shaped log line stays the only channel.
+// is a no-op: the caller's `alert: true` log line stays the only channel.
 //
 // `@aws-sdk/client-sns` is a prod-only dependency and is imported lazily
 // (dynamic import inside publishCritical) so a missing/uninstalled SDK can't
@@ -45,9 +45,10 @@ export class AlertsService {
           Message: alert.message,
         }),
       );
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.error(
-        `Failed to publish critical alert to SNS: ${err instanceof Error ? err.message : err}`,
+        { err, event: 'alert.publish_failed' },
+        'Failed to publish critical alert to SNS',
       );
     }
   }

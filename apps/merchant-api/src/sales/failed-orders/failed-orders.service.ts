@@ -94,15 +94,26 @@ export class FailedOrdersService {
         })
         .where(eq(failedOrdersTable.id, id))
         .returning();
-      this.logger.log(
-        `failed_orders ${id}: order for checkout ${row.stripeCheckoutSessionId} already exists — resolved by staff ${userId}`,
+      // userId is already on the line via the request's log context
+      this.logger.info(
+        {
+          event: 'failed_order.resolved',
+          failedOrderId: id,
+          checkoutSessionId: row.stripeCheckoutSessionId,
+        },
+        'Order already exists — failed order marked resolved',
       );
       return toEntity(resolved);
     }
 
     await this.checkoutOrders.enqueue(row.payload as OrderJobData);
-    this.logger.log(
-      `failed_orders ${id}: re-enqueued checkout ${row.stripeCheckoutSessionId} (staff ${userId})`,
+    this.logger.info(
+      {
+        event: 'failed_order.retried',
+        failedOrderId: id,
+        checkoutSessionId: row.stripeCheckoutSessionId,
+      },
+      'Failed order re-enqueued',
     );
     return toEntity(row);
   }

@@ -2,6 +2,7 @@
 import eslint from '@eslint/js';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
+import { logCallSelectors } from 'logging/eslint';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -27,6 +28,8 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+      // docs/observability.md log-line contract
+      'no-restricted-syntax': ['error', ...logCallSelectors],
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
       // rest-siblings are the standard "omit this key" destructure idiom

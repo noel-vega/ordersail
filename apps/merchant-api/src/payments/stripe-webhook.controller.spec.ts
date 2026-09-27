@@ -275,7 +275,14 @@ describe('StripeWebhookController', () => {
 
       await expect(controller.handle(REQ)).resolves.toEqual({ received: true });
       expect(emitAsync).not.toHaveBeenCalled();
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('cs_test_1'));
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'checkout.async_payment_failed',
+          checkoutSessionId: 'cs_test_1',
+          paymentIntentId: 'pi_test_1',
+        }),
+        expect.any(String),
+      );
       warn.mockRestore();
     });
 
@@ -350,7 +357,13 @@ describe('StripeWebhookController', () => {
       await controller.handle(REQ);
 
       expect(emitAsync).not.toHaveBeenCalled();
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('ch_2'));
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'refund.charge_not_mapped',
+          chargeId: 'ch_2',
+        }),
+        expect.any(String),
+      );
       warn.mockRestore();
     });
   });

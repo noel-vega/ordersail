@@ -61,10 +61,12 @@ select status from orders where id = 1;
 
 - writes a `note` `order_events` row on the matched order (deduped per
   dispute id + event type, so a redelivery doesn't double-note)
-- logs an `[alert]`-shaped line (`grep '\[alert\]'` — same convention as the
-  order-job dead-letter, see `alerts.md`). OS-481 moves this to a structured
-  `alert: true` / `event: "dispute.opened"` line that pages via a CloudWatch
-  alarm (OS-99) — see `docs/observability.md`
+- logs one structured line per event (`docs/observability.md`). Only
+  `charge.dispute.created` needs a human: it logs at `error` with
+  `alert: true` / `event: "dispute.opened"` — the same convention as the
+  order-job dead-letter (`alerts.md`), and what the OS-99 log alarm pages on.
+  The later events log `dispute.closed` (`warn` when lost, else `info`),
+  `dispute.funds_withdrawn` and `dispute.funds_reinstated` without `alert`
 - **does not** touch the money. The merchant responds with evidence in the
   Stripe Dashboard. Full chargeback accounting (reversing the collected amount,
   the platform fee) is OS-141 / Payments M4.

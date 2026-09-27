@@ -261,7 +261,11 @@ export class RefundsService {
       );
     if (!tender) {
       this.logger.warn(
-        `charge.refunded: no order for payment intent ${input.paymentIntentId}`,
+        {
+          event: 'refund.order_not_found',
+          paymentIntentId: input.paymentIntentId,
+        },
+        'External refund has no matching order',
       );
       return;
     }
@@ -296,8 +300,13 @@ export class RefundsService {
         });
       }
     });
-    this.logger.log(
-      `charge.refunded: recorded ${missing.length} external refund(s) on order ${tender.orderId}`,
+    this.logger.info(
+      {
+        event: 'refund.external_recorded',
+        orderId: tender.orderId,
+        refundCount: missing.length,
+      },
+      'External refund(s) recorded',
     );
   }
 }

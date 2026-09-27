@@ -53,6 +53,16 @@ export class StripeWebhookController {
       req.headers['stripe-signature'],
       env.STRIPE_WEBHOOK_SECRET,
     );
+    // the one line per delivery — outcome is the access line's status code
+    this.logger.info(
+      {
+        event: 'stripe.webhook_received',
+        stripeEventId: event.id,
+        stripeEventType: event.type,
+        stripeAccountId: event.account ?? null,
+      },
+      'Stripe webhook received',
+    );
 
     switch (event.type) {
       case 'account.updated': {
@@ -82,8 +92,13 @@ export class StripeWebhookController {
             payload,
           );
         } else {
-          this.logger.log(
-            `${event.type} ${event.data.object.id}: not paid or missing accountId/cartToken metadata — ignored`,
+          this.logger.info(
+            {
+              event: 'checkout.session_ignored',
+              stripeEventType: event.type,
+              checkoutSessionId: event.data.object.id,
+            },
+            'Checkout session not paid or missing accountId/cartToken metadata — ignored',
           );
         }
         break;
@@ -100,10 +115,15 @@ export class StripeWebhookController {
         const paymentIntentId =
           typeof session.payment_intent === 'string'
             ? session.payment_intent
-            : (session.payment_intent?.id ?? 'none');
+            : (session.payment_intent?.id ?? null);
         this.logger.warn(
-          `${event.type} ${session.id}: async payment did not settle ` +
-            `(payment_status=${session.payment_status}, payment_intent=${paymentIntentId}) — no order created`,
+          {
+            event: 'checkout.async_payment_failed',
+            checkoutSessionId: session.id,
+            paymentIntentId,
+            paymentStatus: session.payment_status,
+          },
+          'Async payment did not settle — no order created',
         );
         break;
       }
@@ -112,8 +132,12 @@ export class StripeWebhookController {
       // The cart is untouched, so they can start over — nothing to do beyond
       // recording that it happened.
       case 'checkout.session.expired': {
-        this.logger.log(
-          `${event.type} ${event.data.object.id}: session expired unpaid — cart left intact`,
+        this.logger.info(
+          {
+            event: 'checkout.session_expired',
+            checkoutSessionId: event.data.object.id,
+          },
+          'Checkout session expired unpaid — cart left intact',
         );
         break;
       }
@@ -129,7 +153,11 @@ export class StripeWebhookController {
           await this.events.emitAsync(DOMAIN_EVENTS.CHARGE_REFUNDED, payload);
         } else {
           this.logger.warn(
-            `${event.type} ${event.data.object.id}: no payment_intent — cannot map to an order`,
+            {
+              event: 'refund.charge_not_mapped',
+              chargeId: event.data.object.id,
+            },
+            'Refunded charge has no payment_intent — cannot map to an order',
           );
         }
         break;

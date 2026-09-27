@@ -60,8 +60,10 @@ export class StripeRefundsService {
           'This payment has already been fully refunded in Stripe',
         );
       }
+      // cause: the exception filter logs it, so the Stripe stack survives
       throw new BadGatewayException(
         `Stripe refund failed: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
       );
     }
   }

@@ -1,4 +1,5 @@
-import { BadRequestException, Logger } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
+import { Logger } from 'logging';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   firstCall,
@@ -412,7 +413,12 @@ describe('CheckoutService.getShippingOptions', () => {
       errorMessage: "We can't calculate shipping to that address",
     });
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('invalid destination zip'),
+      expect.objectContaining({
+        event: 'shippo.no_rates_returned',
+        shipmentId: 'shp_2',
+        shippoMessages: 'invalid destination zip',
+      }),
+      expect.any(String),
     );
     warn.mockRestore();
   });

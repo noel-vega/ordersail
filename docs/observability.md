@@ -8,8 +8,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 > (Observability & alerting project). It lands incrementally:
 > pino (OS-478) → redaction (OS-81) → request logs (OS-82) → request context (OS-479) →
 > error handling (OS-480) → call-site migration (OS-481) → log alarms (OS-99) →
-> saved queries (OS-98). Until OS-481 merges, older call sites still log interpolated
-> strings and `[alert]`-prefixed lines. New code follows this doc now.
+> saved queries (OS-98).
 
 ## Roles of each tool
 
@@ -141,8 +140,11 @@ this.logger.warn(
 underscores within a segment. Stable: dashboards and alarms key off them, so rename deliberately.
 
 Examples: `order.created`, `order_job.dead_lettered`, `checkout.session_created`,
-`checkout.webhook_received`, `checkout.webhook_signature_failed`, `email.sent`,
-`email_job.failed`, `dispute.opened`, `http.unhandled_error`.
+`stripe.webhook_received`, `email.sent`, `email_job.failed`, `dispute.opened`,
+`fulfillment.created`, `http.unhandled_error`.
+
+`alert: true` lines today: `order_job.dead_lettered` (a paid checkout with no order) and
+`dispute.opened`. Both log at `error`. Grep the code for `alert: true` for the current list.
 
 ## Levels
 
