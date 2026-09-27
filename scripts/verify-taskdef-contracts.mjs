@@ -32,7 +32,10 @@
 
 import { execFileSync } from 'node:child_process';
 
-const APPS = ['merchant-api', 'storefront-api', 'worker', 'pos-api'];
+// Every contract published under SSM_PREFIX (ssm.tf `ssm_ecs_taskdef`). The
+// migrator counts: migrate.yml registers it from its contract and runs it
+// before any service deploys, so it is the first thing CD starts.
+const APPS = ['merchant-api', 'storefront-api', 'worker', 'pos-api', 'migrator'];
 const SSM_PREFIX = '/ordersail/production/ecs';
 
 // Hostnames AWS generates for edge/load-balancing resources that always have a
