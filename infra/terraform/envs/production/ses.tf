@@ -4,9 +4,10 @@
 # confirmation link to var.ses_verified_email that must be clicked manually
 # (re-send with `aws ses verify-email-identity --email-address <addr>`).
 #
-# Also submit AWS's SES "request production access" support case once this
-# is verified — sandbox mode restricts sending to verified recipients only
-# (OS-61).
+# Sandbox mode restricts sending to verified recipients only. The SES
+# "request production access" support case (OS-61) goes in once the
+# ordersail.com domain identity is verified and the worker sends from it
+# (OS-658), not on this identity.
 
 resource "aws_ses_email_identity" "sender" {
   email = var.ses_verified_email
