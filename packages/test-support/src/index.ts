@@ -1,3 +1,5 @@
+export { checkEnvMappings, taskDefEnvNames, envMappingProblems } from './env-mappings.js';
+export type { EnvMappingProblem } from './env-mappings.js';
 export { firstCall } from './first-call.js';
 export { lockWaiters } from './lock-waiters.js';
 export { raceForUserRow } from './race-for-user-row.js';

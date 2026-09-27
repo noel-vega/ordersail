@@ -161,7 +161,9 @@ counter. A missing `stripe_accounts` row simply means "not connected yet".
   `packages/test-support` rather than copy-pasting them per spec.
 - When mocking a library boundary, fixtures must use the **real wire encoding** — a fixture in the
   wrong encoding produces a green suite that agrees with the bug.
-- **Adding a required env var** touches four places and CI only checks two. Follow the checklist in
+- **Adding an env var** touches four places: the schema, `.env.example`, the task-def mapping and
+  the secret's key. Every schema key, defaulted ones included, needs a task-def mapping or an
+  allowlist entry in the app's `env.mappings.spec.ts`. Follow the checklist in
   [infra/terraform/README.md](./infra/terraform/README.md#adding-a-required-env-var-checklist), then
   `npm run verify:contracts`.
 - Pre-launch, with no real users: prefer the correct design over backward compatibility. Breaking
