@@ -118,7 +118,9 @@ the backstop for when the worker's own SNS publish fails.
 ## When "alert lines" fires
 
 Alarm `ordersail-<service>-alert-lines`. The service logged a line with `alert: true` — a
-human has to act. Find it in Logs Insights on `/ecs/ordersail-<service>`:
+human has to act. Find it in Logs Insights on `/ecs/ordersail-<service>` (the "Lines that need a
+human" query in [Tracing a bug](../observability.md#tracing-a-bug); saved versions land with
+OS-98):
 
 ```
 fields @timestamp, event, msg, orderId, disputeId, checkoutSessionId
@@ -139,7 +141,9 @@ notification doesn't mean the problem is fixed — only that no new line was log
 ## When "error lines" fires
 
 Alarm `ordersail-<service>-error-lines`, warning topic. More than 10 error-level lines in 5
-minutes — something is failing repeatedly, but nothing asked for a page. Group them:
+minutes — something is failing repeatedly, but nothing asked for a page. Group them (the
+"Errors by service and event" query in [Tracing a bug](../observability.md#tracing-a-bug),
+saved with OS-98):
 
 ```
 filter level >= 50
