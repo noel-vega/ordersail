@@ -15,24 +15,77 @@ import { dirname, join } from 'node:path';
 const TASKDEF_FILE = 'infra/terraform/envs/production/main.tf';
 
 /**
+ * If a `"…"` string literal opens at `i`, the index just past it; otherwise `i`.
+ * Steps over escapes and `${…}` interpolations, which may nest their own quotes
+ * (`"${module.secrets.app_secret_arns["demo-api"]}:KEY::"`).
+ */
+function skipString(hcl: string, i: number): number {
+  if (hcl[i] !== '"') return i;
+  for (let j = i + 1; j < hcl.length; j++) {
+    if (hcl[j] === '\\') j++;
+    else if (hcl[j] === '"') return j + 1;
+    else if (hcl.startsWith('${', j)) j = skipBlock(hcl, j + 2) - 1;
+  }
+  return hcl.length;
+}
+
+/** From just inside an opening brace, the index just past its matching close. Braces in strings don't count. */
+function skipBlock(hcl: string, i: number): number {
+  let depth = 1;
+  while (i < hcl.length) {
+    const next = skipString(hcl, i);
+    if (next > i) {
+      i = next;
+      continue;
+    }
+    if (hcl[i] === '{') depth++;
+    else if (hcl[i] === '}' && --depth === 0) return i + 1;
+    i++;
+  }
+  return i;
+}
+
+/**
+ * `hcl` with its `#`, `//` and `/* … *\/` comments removed, string literals
+ * intact. A commented-out mapping must read as unmapped, and a stray brace in
+ * a comment must not move a block's end.
+ */
+function stripComments(hcl: string): string {
+  let out = '';
+  let i = 0;
+  while (i < hcl.length) {
+    const next = skipString(hcl, i);
+    if (next > i) {
+      out += hcl.slice(i, next);
+      i = next;
+    } else if (hcl[i] === '#' || hcl.startsWith('//', i)) {
+      const eol = hcl.indexOf('\n', i);
+      i = eol === -1 ? hcl.length : eol;
+    } else if (hcl.startsWith('/*', i)) {
+      const close = hcl.indexOf('*/', i + 2);
+      i = close === -1 ? hcl.length : close + 2;
+      out += ' ';
+    } else {
+      out += hcl[i++];
+    }
+  }
+  return out;
+}
+
+/**
  * Env var names mapped in a `module "<moduleName>" { … }` block — every
  * `{ name = "X", value = … }` (environment) and `{ name = "X", valueFrom = … }`
  * (secrets) entry. Matching the `, value` / `, valueFrom` tail keeps the
- * module's own `name = "merchant-api"` attribute out.
+ * module's own `name = "merchant-api"` attribute out. Comments are stripped
+ * first, so a commented-out entry reads as unmapped.
  */
 export function taskDefEnvNames(hcl: string, moduleName: string): Set<string> {
+  const code = stripComments(hcl);
   const header = `module "${moduleName}" {`;
-  const start = hcl.indexOf(header);
+  const start = code.indexOf(header);
   if (start === -1) throw new Error(`no ${header} block`);
 
-  // walk to the block's matching close brace
-  let depth = 0;
-  let end = start + header.length - 1;
-  for (; end < hcl.length; end++) {
-    if (hcl[end] === '{') depth++;
-    else if (hcl[end] === '}' && --depth === 0) break;
-  }
-  const block = hcl.slice(start, end);
+  const block = code.slice(start, skipBlock(code, start + header.length));
 
   const names = new Set<string>();
   for (const m of block.matchAll(/\{\s*name\s*=\s*"([A-Za-z0-9_]+)"\s*,\s*value(?:From)?\s*=/g)) {
@@ -51,7 +104,7 @@ export interface EnvMappingProblem {
  * allowlist entries (a key since mapped, or no longer in the schema), so the
  * allowlist can't quietly outlive its reasons.
  */
-export function unmappedEnvKeys(
+export function envMappingProblems(
   schemaKeys: Iterable<string>,
   mapped: Set<string>,
   allow: Record<string, string>,
@@ -92,5 +145,5 @@ export function checkEnvMappings(opts: {
   allow: Record<string, string>;
 }): EnvMappingProblem[] {
   const mapped = taskDefEnvNames(readTaskDefHcl(), opts.moduleName);
-  return unmappedEnvKeys(opts.schemaKeys, mapped, opts.allow);
+  return envMappingProblems(opts.schemaKeys, mapped, opts.allow);
 }

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { z } from 'zod';
-import { taskDefEnvNames, unmappedEnvKeys } from './env-mappings.ts';
+import { taskDefEnvNames, envMappingProblems } from './env-mappings.ts';
 
 // The guard is only worth having if it still catches what it was written for,
 // so these replay each case against the same functions the app specs use.
@@ -42,23 +42,67 @@ describe('taskDefEnvNames', () => {
     assert.ok(!taskDefEnvNames(HCL, 'ecs_service_demo_api').has('demo-api'));
   });
 
+  it('reads a commented-out entry as unmapped, whatever the comment style', () => {
+    const hcl = `
+module "ecs_service_demo_api" {
+  environment = [
+    { name = "LIVE", value = "x" },
+    # { name = "HASH", value = "x" },
+    // { name = "SLASHES", value = "x" },
+    /* { name = "BLOCK", value = "x" }, */
+  ]
+}
+`;
+    assert.deepEqual([...taskDefEnvNames(hcl, 'ecs_service_demo_api')], ['LIVE']);
+  });
+
+  it('ignores an unclosed brace in a comment (would run on into the next module)', () => {
+    const hcl = `
+module "ecs_service_demo_api" {
+  # see \${var
+  environment = [
+    { name = "MINE", value = "x" },
+  ]
+}
+
+module "ecs_service_other_api" {
+  environment = [
+    { name = "ONLY_IN_OTHER", value = "x" },
+  ]
+}
+`;
+    assert.deepEqual([...taskDefEnvNames(hcl, 'ecs_service_demo_api')], ['MINE']);
+  });
+
+  it('ignores a close brace inside a string (would end the block early)', () => {
+    const hcl = `
+module "ecs_service_demo_api" {
+  description = "closes early? }"
+  environment = [
+    { name = "MINE", value = "x" },
+  ]
+}
+`;
+    assert.deepEqual([...taskDefEnvNames(hcl, 'ecs_service_demo_api')], ['MINE']);
+  });
+
   it('throws on an unknown module rather than reporting everything unmapped', () => {
     assert.throws(() => taskDefEnvNames(HCL, 'ecs_service_missing'), /no module "ecs_service_missing"/);
   });
 });
 
-describe('unmappedEnvKeys', () => {
+describe('envMappingProblems', () => {
   const mapped = taskDefEnvNames(HCL, 'ecs_service_demo_api');
 
   it('catches an unmapped required key (the OS-652 shape, one step earlier)', () => {
     const schema = z.object({ DATABASE_URL: z.url(), NEW_REQUIRED_KEY: z.string() });
-    const found = unmappedEnvKeys(Object.keys(schema.shape), mapped, {});
+    const found = envMappingProblems(Object.keys(schema.shape), mapped, {});
     assert.deepEqual(found.map((p) => p.variable), ['NEW_REQUIRED_KEY']);
   });
 
   it('catches an unmapped key with a localhost default (dev default reaching production)', () => {
     const schema = z.object({ SMTP_HOST: z.string().default('localhost') });
-    const found = unmappedEnvKeys(Object.keys(schema.shape), mapped, {});
+    const found = envMappingProblems(Object.keys(schema.shape), mapped, {});
     assert.deepEqual(found.map((p) => p.variable), ['SMTP_HOST']);
   });
 
@@ -68,11 +112,11 @@ describe('unmappedEnvKeys', () => {
       API_SECRET: z.string(),
       LOG_LEVEL: z.string().optional(),
     });
-    assert.deepEqual(unmappedEnvKeys(Object.keys(schema.shape), mapped, { LOG_LEVEL: 'unset → info' }), []);
+    assert.deepEqual(envMappingProblems(Object.keys(schema.shape), mapped, { LOG_LEVEL: 'unset → info' }), []);
   });
 
   it('flags a stale allowlist entry — one since mapped, or gone from the schema', () => {
-    const found = unmappedEnvKeys(['NODE_ENV'], mapped, { NODE_ENV: 'stale', REMOVED_KEY: 'stale' });
+    const found = envMappingProblems(['NODE_ENV'], mapped, { NODE_ENV: 'stale', REMOVED_KEY: 'stale' });
     assert.deepEqual(found.map((p) => p.variable).sort(), ['NODE_ENV', 'REMOVED_KEY']);
   });
 });

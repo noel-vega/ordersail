@@ -1,4 +1,4 @@
-export { checkEnvMappings, taskDefEnvNames, unmappedEnvKeys } from './env-mappings.js';
+export { checkEnvMappings, taskDefEnvNames, envMappingProblems } from './env-mappings.js';
 export type { EnvMappingProblem } from './env-mappings.js';
 export { firstCall } from './first-call.js';
 export { lockWaiters } from './lock-waiters.js';
