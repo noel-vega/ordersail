@@ -162,6 +162,7 @@ invites and order confirmations.
    suppression list, `BOUNCE` + `COMPLAINT`):
 
    ```bash
+   # GNU date; on macOS use: date -u -v-2d +%FT%TZ
    aws sesv2 list-suppressed-destinations --start-date "$(date -u -d '-2 days' +%FT%TZ)"
    ```
 3. Look for the source: a burst of signups with fake or typo'd addresses, a staff member
@@ -174,3 +175,6 @@ invites and order confirmations.
 Mailbox-simulator addresses (`bounce@simulator.amazonses.com`, `complaint@…`) exercise bounce
 and complaint handling without touching the reputation rates.
 
+All four alarms treat missing data as OK. With no mail flowing, including while the environment
+is parked by the on/off switch (OS-380), there's no rate and they never fire, so they don't need
+disarming in `environment.yml`.

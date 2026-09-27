@@ -98,14 +98,19 @@ resource "aws_route53_record" "dmarc" {
 #   reputation alarms  the account's BounceRate / ComplaintRate → the existing
 #                      alert topics, well below SES's review thresholds.
 #
-# Runbook: docs/runbooks/alerts.md → "When SES bounce/complaint rate fires".
+# Runbook: docs/runbooks/alerts.md → When "SES bounce/complaint rate" fires.
 
 resource "aws_sesv2_account_suppression_attributes" "this" {
   suppressed_reasons = ["BOUNCE", "COMPLAINT"]
 }
 
+locals {
+  # also in the worker task role's SES policy (main.tf)
+  ses_configuration_set_name = "${var.name_prefix}-transactional"
+}
+
 resource "aws_sesv2_configuration_set" "transactional" {
-  configuration_set_name = "${var.name_prefix}-transactional"
+  configuration_set_name = local.ses_configuration_set_name
 
   reputation_options {
     reputation_metrics_enabled = true
@@ -119,12 +124,14 @@ resource "aws_sesv2_configuration_set" "transactional" {
 locals {
   # AWS/SES Reputation.* metrics are account-wide rates (0.02 = 2%), no
   # dimensions. SES's own review / pause lines are 5% / 10% bounce and
-  # 0.1% / 0.5% complaint.
+  # 0.1% / 0.5% complaint. Thresholds are written as percentages so the alarm
+  # description renders them exactly — Terraform's arbitrary-precision
+  # 0.02 * 100 prints as 1.9999…%.
   ses_reputation_alarms = {
-    "bounce-rate-warning"     = { metric = "Reputation.BounceRate", threshold = 0.02, topic = local.alerts_warning_topic_arn }
-    "bounce-rate-critical"    = { metric = "Reputation.BounceRate", threshold = 0.04, topic = local.alerts_critical_topic_arn }
-    "complaint-rate-warning"  = { metric = "Reputation.ComplaintRate", threshold = 0.0005, topic = local.alerts_warning_topic_arn }
-    "complaint-rate-critical" = { metric = "Reputation.ComplaintRate", threshold = 0.0008, topic = local.alerts_critical_topic_arn }
+    "bounce-rate-warning"     = { metric = "Reputation.BounceRate", threshold_pct = 2, severity = "warning" }
+    "bounce-rate-critical"    = { metric = "Reputation.BounceRate", threshold_pct = 4, severity = "critical" }
+    "complaint-rate-warning"  = { metric = "Reputation.ComplaintRate", threshold_pct = 0.05, severity = "warning" }
+    "complaint-rate-critical" = { metric = "Reputation.ComplaintRate", threshold_pct = 0.08, severity = "critical" }
   }
 }
 
@@ -132,7 +139,7 @@ resource "aws_cloudwatch_metric_alarm" "ses_reputation" {
   for_each = local.ses_reputation_alarms
 
   alarm_name        = "${var.name_prefix}-ses-${each.key}"
-  alarm_description = "SES ${each.value.metric} above ${each.value.threshold * 100}% — SES reviews the account at 5% bounce / 0.1% complaint."
+  alarm_description = "SES ${each.value.metric} above ${each.value.threshold_pct}% — SES reviews the account at 5% bounce / 0.1% complaint."
 
   namespace   = "AWS/SES"
   metric_name = each.value.metric
@@ -141,11 +148,11 @@ resource "aws_cloudwatch_metric_alarm" "ses_reputation" {
   period              = 3600 # the rate moves slowly; SES publishes it at most a few times an hour
   evaluation_periods  = 1
   comparison_operator = "GreaterThanThreshold"
-  threshold           = each.value.threshold
+  threshold           = each.value.threshold_pct / 100
   treat_missing_data  = "notBreaching" # no sends yet = no rate
 
-  alarm_actions = [each.value.topic]
-  ok_actions    = [each.value.topic]
+  alarm_actions = [local.alert_topic_arns[each.value.severity]]
+  ok_actions    = [local.alert_topic_arns[each.value.severity]]
 
   depends_on = [aws_sns_topic.alerts_critical, aws_sns_topic.alerts_warning]
 }
