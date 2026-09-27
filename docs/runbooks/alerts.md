@@ -94,6 +94,8 @@ Each row is added by its issue's PR. `→` is the topic the alarm notifies.
 | _ElastiCache evictions_ | OS-79 | `Evictions` > 0 for 5 min | critical |
 | _ElastiCache CPU / swap / connections_ | OS-79 | sustained high | warning |
 | _Order-job dead-letter_ | OS-73 `apps/worker` | an `orders` job exhausts all 8 attempts | critical |
+| _Alert lines_ | OS-99 `modules/ecs-service` | the service logs any `alert: true` line (≥1 in 5 min) | critical |
+| _Error lines_ | OS-99 `modules/ecs-service` | > 10 `level >= 50` lines in 5 min (per service, `alarm_error_lines_threshold`) | warning |
 
 ## When "order-job dead-letter" fires
 
@@ -108,3 +110,48 @@ unresolved count (`failedOrderRecorded: false` if the row write failed too).
 2. Once the root cause is fixed, retry re-drives the order from the persisted
    `OrderJobData` — it does not touch Redis/BullMQ.
 3. Cross-check the Stripe payment intent to confirm the charge before/after.
+
+A dead-letter also trips **alert lines** on the worker (`ordersail-worker-alert-lines`), so
+it arrives twice: the worker's direct SNS page with the details, and the alarm. The alarm is
+the backstop for when the worker's own SNS publish fails.
+
+## When "alert lines" fires
+
+Alarm `ordersail-<service>-alert-lines`. The service logged a line with `alert: true` — a
+human has to act. Find it in Logs Insights on `/ecs/ordersail-<service>`:
+
+```
+fields @timestamp, event, msg, orderId, disputeId, checkoutSessionId
+| filter alert = 1
+| sort @timestamp desc
+```
+
+Then follow the `event`:
+
+| `event` | Service | Runbook |
+|---|---|---|
+| `order_job.dead_lettered` | worker | [When "order-job dead-letter" fires](#when-order-job-dead-letter-fires) above |
+| `dispute.opened` | merchant-api | `docs/runbooks/refunds-disputes.md` |
+
+The alarm returns to OK after a 5-minute window with no `alert: true` lines, so an OK
+notification doesn't mean the problem is fixed — only that no new line was logged.
+
+## When "error lines" fires
+
+Alarm `ordersail-<service>-error-lines`, warning topic. More than 10 error-level lines in 5
+minutes — something is failing repeatedly, but nothing asked for a page. Group them:
+
+```
+filter level >= 50
+| stats count() by event
+| sort count() desc
+```
+
+Take one line's `correlationId` and pull the whole request (see "Tracing a bug" in
+`docs/observability.md`). If a service is legitimately noisy, raise its
+`alarm_error_lines_threshold` on the `ecs_service_*` module call in
+`infra/terraform/envs/production/main.tf` rather than silencing the alarm.
+
+Both log alarms treat missing data as OK, so a service with no log lines — including one
+parked by the environment on/off switch (OS-380) — never fires them. They don't need
+disarming in `environment.yml`.

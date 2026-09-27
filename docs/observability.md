@@ -146,6 +146,12 @@ Examples: `order.created`, `order_job.dead_lettered`, `checkout.session_created`
 `alert: true` lines today: `order_job.dead_lettered` (a paid checkout with no order) and
 `dispute.opened`. Both log at `error`. Grep the code for `alert: true` for the current list.
 
+In production, any `alert: true` line pages: a CloudWatch metric filter on each service's
+log group feeds the `ordersail-<service>-alert-lines` alarm → critical topic (OS-99). A
+sustained run of `error`/`fatal` lines trips `ordersail-<service>-error-lines` → warning.
+So `alert: true` is a paging decision — set it only when a human must act now. Runbook:
+`docs/runbooks/alerts.md`.
+
 ## Levels
 
 | Level | Use for | In prod? |
