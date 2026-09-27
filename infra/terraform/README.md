@@ -228,6 +228,9 @@ convention.
    `migrator.tf`). Put secrets under `secrets` as
    `"${module.secrets.app_secret_arns["<app>"]}:<JSON_KEY>::"` and plain config under
    `environment`. Then `terraform apply` so the SSM contract picks it up.
+   Not every app has an app secret (worker and pos-api don't): for an app's
+   first secret, add it to `app_secret_names` in `modules/secrets/main.tf` and
+   its ARN to the service's `secrets_manager_secret_arns`.
    **Enforced on every PR (OS-655):** each app's `env.mappings.spec.ts` fails
    if a schema key has no mapping in its `module "ecs_service_<app>"` block.
    If the var is genuinely fine unset in production, add it to that spec's
@@ -249,6 +252,8 @@ It checks every contract (the four services plus the migrator). It fails if any
 `*.elb.amazonaws.com` host. `cd.yml` (`verify-contracts`) and
 `environment.yml` (`up-verify-contracts`) run the same check before they start
 anything. Running it yourself tells you before merge instead of at deploy time.
+`rollback.yml` runs it with `--taskdef <arn>` against the target revision, so
+it won't roll back to a revision that maps a secret that has since been deleted.
 
 ### First-time image bootstrap
 

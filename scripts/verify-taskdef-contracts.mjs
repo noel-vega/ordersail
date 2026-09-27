@@ -24,9 +24,15 @@
 //      a wrong `storefront_api_url` output and months of `curl -k` in the
 //      deploy workflows (OS-560).
 //
+// The same checks guard rollback.yml, against an already-registered revision
+// instead of the SSM contract: an old revision can reference a secret that has
+// since been deleted (OS-658 removed the worker's SMTP secret, so every
+// pre-OS-658 worker revision fails at task start with ResourceInitializationError).
+//
 // Usage:
-//   node scripts/verify-taskdef-contracts.mjs              # check real production (needs AWS creds)
-//   node scripts/verify-taskdef-contracts.mjs --self-test  # prove the checks catch each defect (no AWS)
+//   node scripts/verify-taskdef-contracts.mjs                    # check real production (needs AWS creds)
+//   node scripts/verify-taskdef-contracts.mjs --taskdef <arn>    # check one registered revision (needs AWS creds)
+//   node scripts/verify-taskdef-contracts.mjs --self-test        # prove the checks catch each defect (no AWS)
 //
 // Never prints a secret value — only key names.
 
@@ -138,6 +144,14 @@ function selfTest() {
       expect: 'SOME_API_URL',
     },
     {
+      name: 'OS-658 — rollback target maps a deleted secret (worker would fail at task start)',
+      container: {
+        secrets: [{ name: 'SMTP_PASS', valueFrom: 'arn:aws:secretsmanager:us-east-1:1:secret:ordersail/production/worker-CCCC:SMTP_PASS::' }],
+      },
+      resolveKeys: () => undefined,
+      expect: 'SMTP_PASS',
+    },
+    {
       name: 'dev default reaching production',
       container: { environment: [{ name: 'REDIS_HOST', value: 'localhost' }] },
       resolveKeys: () => new Set(),
@@ -179,14 +193,14 @@ function selfTest() {
 
 // ----------------------------------------------------------------------- main
 
-function checkProduction() {
-  const aws = (...args) =>
-    execFileSync('aws', args, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }).trim();
+const aws = (...args) =>
+  execFileSync('aws', args, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }).trim();
 
-  // Secret contents are fetched once per secret and reduced to key names
-  // immediately — values are never retained or logged.
+// Secret contents are fetched once per secret and reduced to key names
+// immediately — values are never retained or logged.
+function secretKeyResolver() {
   const cache = new Map();
-  const resolveKeys = (secretArn) => {
+  return (secretArn) => {
     if (cache.has(secretArn)) return cache.get(secretArn);
     let keys;
     try {
@@ -200,7 +214,10 @@ function checkProduction() {
     cache.set(secretArn, keys);
     return keys;
   };
+}
 
+function checkProduction() {
+  const resolveKeys = secretKeyResolver();
   const problems = [];
   for (const app of APPS) {
     let contract;
@@ -221,4 +238,19 @@ function checkProduction() {
   return report(problems, APPS.length);
 }
 
-process.exit(process.argv.includes('--self-test') ? selfTest() : checkProduction());
+function checkTaskDef(taskDefArn) {
+  const taskDef = JSON.parse(aws('ecs', 'describe-task-definition', '--task-definition', taskDefArn, '--query', 'taskDefinition', '--output', 'json'));
+  const container = taskDef.containerDefinitions?.[0];
+  const label = `${taskDef.family}:${taskDef.revision}`;
+  if (!container) {
+    return report([{ app: label, variable: '(task def)', detail: 'task definition has no containerDefinitions[0]', fix: 'pick another revision' }], 1);
+  }
+  return report(checkContract(label, container, secretKeyResolver()), 1);
+}
+
+const taskDefArg = process.argv.indexOf('--taskdef');
+process.exit(
+  process.argv.includes('--self-test') ? selfTest()
+  : taskDefArg !== -1 ? checkTaskDef(process.argv[taskDefArg + 1])
+  : checkProduction(),
+);

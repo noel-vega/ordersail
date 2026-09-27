@@ -8,7 +8,10 @@ data "aws_caller_identity" "current" {}
 #
 # No worker secret: it only ever held the SES SMTP credentials, and the worker
 # now sends through the SES API with its task role (OS-658). Re-add "worker"
-# here if it needs a secret again.
+# here if it needs a secret again. Deleting it left ordersail/production/worker
+# in Secrets Manager's 30-day recovery window, so re-adding it within that
+# window fails on the name; restore the old secret and `terraform import` it
+# instead.
 
 locals {
   app_secret_names = ["merchant-api", "storefront-api"]
