@@ -234,6 +234,10 @@ data "aws_iam_policy_document" "worker_task" {
     resources = [
       "arn:${data.aws_partition.current.partition}:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain_name}",
       "arn:${data.aws_partition.current.partition}:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/${var.ses_verified_email}",
+      # the identity's default configuration set (OS-659) is authorized on
+      # every send too. Built from the name, not the resource's arn, so the
+      # policy stays plan-known (its hash feeds a count downstream).
+      "arn:${data.aws_partition.current.partition}:ses:${var.region}:${data.aws_caller_identity.current.account_id}:configuration-set/${local.ses_configuration_set_name}",
     ]
   }
 }

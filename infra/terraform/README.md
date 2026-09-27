@@ -127,8 +127,9 @@ curl -sI https://merchant.ordersail.com/api/                # not the Basic real
 
 `envs/production/monitoring.tf` creates two SNS topics
 (`ordersail-alerts-{critical,warning}`) and the CloudWatch alarm suite
-(`modules/{ecs-service,alb,rds,elasticache}/alarms.tf`, plus the worker's
-order-job dead-letter page) routes to them.
+(`modules/{ecs-service,alb,rds,elasticache}/alarms.tf`, the worker's
+order-job dead-letter page, and the SES bounce/complaint-rate alarms in
+`envs/production/ses.tf`) routes to them.
 
 **Prerequisite — the recipients secret must exist before `terraform apply`**
 (the `alerts-recipients.tf` data source fails if it's absent, same as the

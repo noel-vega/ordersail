@@ -32,6 +32,9 @@ resource "aws_ses_email_identity" "sender" {
 
 resource "aws_sesv2_email_identity" "domain" {
   email_identity = var.domain_name
+  # every send from this identity goes through the configuration set below
+  # (OS-659) without the app naming it
+  configuration_set_name = aws_sesv2_configuration_set.transactional.configuration_set_name
 
   dkim_signing_attributes {
     next_signing_key_length = "RSA_2048_BIT"
@@ -81,3 +84,76 @@ resource "aws_route53_record" "dmarc" {
   ttl     = 1800
   records = ["v=DMARC1; p=none;"]
 }
+
+# --- bounce / complaint handling (OS-659) -----------------------------------
+# SES puts an account under review at a 5% bounce or 0.1% complaint rate and
+# can pause sending at 10% / 0.5%. Three layers keep us clear of that:
+#
+#   suppression list   SES itself stops sending to an address that hard-bounced
+#                      or complained — account-wide, no app code. (Already the
+#                      account default; managed here so it can't drift.)
+#   configuration set  the ordersail.com identity's default, with reputation
+#                      metrics on. The place per-message event destinations go
+#                      if merchants ever need to see a bounced invite.
+#   reputation alarms  the account's BounceRate / ComplaintRate → the existing
+#                      alert topics, well below SES's review thresholds.
+#
+# Runbook: docs/runbooks/alerts.md → When "SES bounce/complaint rate" fires.
+
+resource "aws_sesv2_account_suppression_attributes" "this" {
+  suppressed_reasons = ["BOUNCE", "COMPLAINT"]
+}
+
+locals {
+  # also in the worker task role's SES policy (main.tf)
+  ses_configuration_set_name = "${var.name_prefix}-transactional"
+}
+
+resource "aws_sesv2_configuration_set" "transactional" {
+  configuration_set_name = local.ses_configuration_set_name
+
+  reputation_options {
+    reputation_metrics_enabled = true
+  }
+
+  sending_options {
+    sending_enabled = true
+  }
+}
+
+locals {
+  # AWS/SES Reputation.* metrics are account-wide rates (0.02 = 2%), no
+  # dimensions. SES's own review / pause lines are 5% / 10% bounce and
+  # 0.1% / 0.5% complaint. Thresholds are written as percentages so the alarm
+  # description renders them exactly — Terraform's arbitrary-precision
+  # 0.02 * 100 prints as 1.9999…%.
+  ses_reputation_alarms = {
+    "bounce-rate-warning"     = { metric = "Reputation.BounceRate", threshold_pct = 2, severity = "warning" }
+    "bounce-rate-critical"    = { metric = "Reputation.BounceRate", threshold_pct = 4, severity = "critical" }
+    "complaint-rate-warning"  = { metric = "Reputation.ComplaintRate", threshold_pct = 0.05, severity = "warning" }
+    "complaint-rate-critical" = { metric = "Reputation.ComplaintRate", threshold_pct = 0.08, severity = "critical" }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "ses_reputation" {
+  for_each = local.ses_reputation_alarms
+
+  alarm_name        = "${var.name_prefix}-ses-${each.key}"
+  alarm_description = "SES ${each.value.metric} above ${each.value.threshold_pct}% — SES reviews the account at 5% bounce / 0.1% complaint."
+
+  namespace   = "AWS/SES"
+  metric_name = each.value.metric
+  statistic   = "Maximum"
+
+  period              = 3600 # the rate moves slowly; SES publishes it at most a few times an hour
+  evaluation_periods  = 1
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = each.value.threshold_pct / 100
+  treat_missing_data  = "notBreaching" # no sends yet = no rate
+
+  alarm_actions = [local.alert_topic_arns[each.value.severity]]
+  ok_actions    = [local.alert_topic_arns[each.value.severity]]
+
+  depends_on = [aws_sns_topic.alerts_critical, aws_sns_topic.alerts_warning]
+}
+
