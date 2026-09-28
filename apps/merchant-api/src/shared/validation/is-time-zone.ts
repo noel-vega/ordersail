@@ -1,19 +1,36 @@
+import { Transform } from 'class-transformer';
 import { registerDecorator, type ValidationOptions } from 'class-validator';
 
-// true for any IANA zone name the runtime's ICU data knows ("UTC",
-// "America/New_York"); Intl throws a RangeError on anything else
-export function isValidTimeZone(value: unknown): value is string {
-  if (typeof value !== 'string' || value.length === 0) return false;
+// the runtime ICU's canonical name for a zone ("utc" -> "UTC", "US/Eastern"
+// -> "America/New_York"), or null when it isn't a named zone. Intl also
+// accepts bare UTC offsets ("+05:00"); those are rejected, because Postgres
+// reads an offset in AT TIME ZONE with the POSIX sign, i.e. flipped
+export function canonicalTimeZone(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  let zone: string;
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value });
-    return true;
+    zone = new Intl.DateTimeFormat('en-US', {
+      timeZone: value,
+    }).resolvedOptions().timeZone;
   } catch {
-    return false;
+    return null;
   }
+  return /^[+-]/.test(zone) ? null : zone;
 }
 
+export function isValidTimeZone(value: unknown): value is string {
+  return canonicalTimeZone(value) !== null;
+}
+
+// validates an IANA zone name and, under the transforming ValidationPipe,
+// stores its canonical spelling. Canonical follows this runtime's ICU, which
+// may be the legacy link ("Asia/Calcutta" for "Asia/Kolkata"); Postgres knows
+// both, so normalise rather than 400 a zone a newer browser reports
 export function IsTimeZone(options?: ValidationOptions) {
-  return (target: object, propertyName: string) =>
+  return (target: object, propertyName: string) => {
+    Transform(
+      ({ value }: { value: unknown }) => canonicalTimeZone(value) ?? value,
+    )(target, propertyName);
     registerDecorator({
       name: 'isTimeZone',
       target: target.constructor,
@@ -24,4 +41,5 @@ export function IsTimeZone(options?: ValidationOptions) {
       },
       validator: { validate: isValidTimeZone },
     });
+  };
 }

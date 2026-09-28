@@ -17,4 +17,17 @@ describe('UpdateAccountDto timezone (OS-667)', () => {
     const errors = await validate(dto);
     expect(errors.map((e) => e.property)).toEqual(['timezone']);
   });
+
+  // plainToInstance is the transform half of the ValidationPipe
+  it('stores the canonical spelling of an alias', async () => {
+    const dto = plainToInstance(UpdateAccountDto, { timezone: 'us/eastern' });
+    await expect(validate(dto)).resolves.toHaveLength(0);
+    expect(dto.timezone).toBe('America/New_York');
+  });
+
+  it('rejects a bare UTC offset', async () => {
+    const dto = plainToInstance(UpdateAccountDto, { timezone: '+05:00' });
+    const errors = await validate(dto);
+    expect(errors.map((e) => e.property)).toEqual(['timezone']);
+  });
 });

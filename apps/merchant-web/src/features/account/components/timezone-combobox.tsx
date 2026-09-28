@@ -18,6 +18,12 @@ function timeZoneOptions(current: string): string[] {
   return [...zones].sort()
 }
 
+// "America/New_York" -> "America/New York". The combobox filters on and fills
+// its input with this label too, so typing "New York" finds the zone
+function timeZoneLabel(zone: string): string {
+  return zone.replaceAll("_", " ")
+}
+
 export function TimezoneCombobox(props: {
   value: string
   onValueChange: (value: string) => void
@@ -30,6 +36,7 @@ export function TimezoneCombobox(props: {
       autoHighlight
       items={items}
       value={props.value}
+      itemToStringLabel={timeZoneLabel}
       onValueChange={(value: string | null) => {
         if (value) props.onValueChange(value)
       }}
@@ -41,7 +48,7 @@ export function TimezoneCombobox(props: {
         <ComboboxList>
           {(zone: string) => (
             <ComboboxItem key={zone} value={zone}>
-              {zone.replaceAll("_", " ")}
+              {timeZoneLabel(zone)}
             </ComboboxItem>
           )}
         </ComboboxList>
