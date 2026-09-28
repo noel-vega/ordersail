@@ -1,6 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { signupUrl } from '../lib/urls';
+import SignupCta from '../components/SignupCta.astro';
 
 const capabilities = [
 	{
@@ -85,8 +85,7 @@ const capabilities = [
 
 	<section class="cta">
 		<h2>Start selling with OrderSail.</h2>
-		<p>Free while in beta. No credit card.</p>
-		<a class="btn-primary" href={signupUrl}>Create your account →</a>
+		<SignupCta label="Create your account →" note="Free while in beta. No credit card." />
 	</section>
 </Layout>
 

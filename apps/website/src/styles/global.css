@@ -70,6 +70,21 @@ a {
 	color: var(--bg);
 }
 
+.btn-soon {
+	/* The pre-launch stand-in for .btn-primary (OS-663): same footprint,
+	   outlined instead of filled, and not a link. */
+	display: inline-block;
+	font-family: ui-monospace, monospace;
+	font-size: 0.86rem;
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+	padding: 14px 25px;
+	border: 1px solid var(--line);
+	color: var(--ink-dim);
+	cursor: default;
+	user-select: none;
+}
+
 .btn-line {
 	text-decoration: none;
 	font-family: ui-monospace, monospace;

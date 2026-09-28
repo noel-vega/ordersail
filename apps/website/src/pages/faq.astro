@@ -1,6 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { signupUrl } from '../lib/urls';
+import SignupCta from '../components/SignupCta.astro';
 
 type QA = { q: string; a: string };
 type Group = { title: string; items: QA[] };
@@ -11,7 +11,7 @@ const groups: Group[] = [
 		items: [
 			{
 				q: 'What do I need to start?',
-				a: 'An email address. Signup is free while we’re in beta and doesn’t ask for a card. To take payments you’ll connect a Stripe account, which you can create during <a href="/how-it-works">setup</a>.',
+				a: 'An email address. Signup is free during the beta and doesn’t ask for a card. To take payments you’ll connect a Stripe account, which you can create during <a href="/how-it-works">setup</a>.',
 			},
 			{
 				q: 'Is there a contract or a minimum?',
@@ -121,8 +121,7 @@ const groups: Group[] = [
 
 	<section class="cta">
 		<h2>Still deciding?</h2>
-		<p>Signup is free while in beta — you can look around before committing.</p>
-		<a class="btn-primary" href={signupUrl}>Create your account →</a>
+		<SignupCta label="Create your account →" note="Signup is free while in beta — you can look around before committing." />
 	</section>
 </Layout>
 

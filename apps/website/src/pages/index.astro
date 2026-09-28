@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { signupUrl } from '../lib/urls';
+import SignupCta from '../components/SignupCta.astro';
+import { signupOpen } from '../lib/urls';
 
 const problems = [
 	{
@@ -34,7 +35,7 @@ const features = [
 			payouts — no separate tools, no duct-taped integrations.
 		</p>
 		<div class="actions">
-			<a class="btn-primary" href={signupUrl}>Sign up — free</a>
+			<SignupCta label="Sign up — free" bare />
 			<a class="btn-line" href="/features">See what it does</a>
 		</div>
 	</section>
@@ -89,9 +90,8 @@ const features = [
 	</section>
 
 	<section class="final">
-		<h2>Set sail today.</h2>
-		<p>Free while in beta. No credit card.</p>
-		<a class="btn-primary" href={signupUrl}>Create your account →</a>
+		<h2>{signupOpen ? 'Set sail today.' : 'Set sail soon.'}</h2>
+		<SignupCta label="Create your account →" note="Free while in beta. No credit card." />
 	</section>
 </Layout>
 
@@ -257,6 +257,7 @@ const features = [
 	.final {
 		padding: 90px 0;
 		text-align: center;
+		--cta-note-gap: 32px;
 	}
 	.final h2 {
 		font-size: clamp(2rem, 4vw, 2.8rem);

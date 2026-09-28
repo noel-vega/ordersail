@@ -1,0 +1,47 @@
+---
+// The one place a signup call-to-action is decided (OS-663). Open: the usual
+// button into merchant signup, with an optional line above it. Closed (the
+// pre-launch default): a "Coming soon" pill that goes nowhere, plus a pointer
+// to /contact — so the public site has no route into the merchant app.
+import { signupOpen, signupUrl } from '../lib/urls';
+
+interface Props {
+	/** Button text while signup is open, e.g. "Create your account →". */
+	label: string;
+	/** Line shown above the button while open (the CTA sections' subline). */
+	note?: string;
+	/** Just the button/pill, no line in either state (hero, pricing card). */
+	bare?: boolean;
+}
+
+const { label, note, bare = false } = Astro.props;
+---
+
+{
+	signupOpen ? (
+		<>
+			{!bare && note && <p class="cta-note">{note}</p>}
+			<a class="btn-primary" href={signupUrl}>{label}</a>
+		</>
+	) : (
+		<>
+			{!bare && (
+				<p class="cta-note">
+					Signups open at launch. Questions? <a href="/contact">Contact us</a>.
+				</p>
+			)}
+			<span class="btn-soon">Coming soon</span>
+		</>
+	)
+}
+
+<style>
+	/* Matches the pages' own CTA-section paragraph (their `.cta p` rules are
+	   scoped to the page, so they don't reach this component's elements). A
+	   page can widen the gap with --cta-note-gap. */
+	.cta-note {
+		font-family: system-ui, sans-serif;
+		color: var(--ink-dim);
+		margin: 0 0 var(--cta-note-gap, 28px);
+	}
+</style>

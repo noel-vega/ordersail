@@ -1,11 +1,11 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { signupUrl } from '../lib/urls';
+import SignupCta from '../components/SignupCta.astro';
 
 const setup = [
 	{
 		title: 'Create your account',
-		body: 'Sign up with an email address. Free while in beta, no card. You land in the dashboard with an empty catalog and one location.',
+		body: 'Sign up with an email address — free during the beta, no card. You land in the dashboard with an empty catalog and one location.',
 	},
 	{
 		title: 'Add your products',
@@ -85,8 +85,7 @@ const journey = [
 
 	<section class="cta">
 		<h2>Open your shop.</h2>
-		<p>Free while in beta. No credit card.</p>
-		<a class="btn-primary" href={signupUrl}>Create your account →</a>
+		<SignupCta label="Create your account →" note="Free while in beta. No credit card." />
 	</section>
 </Layout>
 
