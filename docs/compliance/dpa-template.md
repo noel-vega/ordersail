@@ -3,8 +3,8 @@
 This is the source content for the public `/dpa` page (`apps/website/src/pages/dpa.astro`).
 Keep the two in sync. Draft from a standard controller/processor DPA template —
 **needs a lawyer review pass before launch**, in particular the Standard
-Contractual Clauses annex and the governing-law/liability terms, which mirror
-the placeholder already flagged in `/terms`.
+Contractual Clauses annex. Governing law follows the Terms of Service (New
+Jersey, OS-664); the SCCs are governed by their own terms.
 
 ## Parties
 
@@ -67,8 +67,11 @@ Where personal data is transferred outside a jurisdiction the Merchant's law
 recognizes as offering adequate protection, the transfer is governed by the
 Standard Contractual Clauses (SCCs), incorporated by reference.
 
-> **Placeholder** — the SCC module/annex text and governing-law/liability
-> terms are pending legal review before launch.
+This DPA is governed by the law that governs the Terms of Service (the State of
+New Jersey), except that the Standard Contractual Clauses, where they apply, are
+governed by their own terms. Liability under this DPA is subject to the
+limitations in the Terms. The applicable SCC module and annexes are available on
+request — email legal@ordersail.com.
 
 ## How to execute this DPA
 

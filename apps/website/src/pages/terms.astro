@@ -1,9 +1,9 @@
 ---
-// Draft ToS from a standard SaaS template (OS-293). Needs a lawyer review pass
-// before launch — see the governing-law section for the one open placeholder.
+// Draft ToS from a standard SaaS template (OS-293). Governing law is New Jersey
+// (OS-664). Still needs a lawyer review pass before launch.
 import Layout from '../layouts/Layout.astro';
 
-const lastUpdated = 'September 13, 2026';
+const lastUpdated = 'September 27, 2026';
 
 const sections = [
 	{ id: 'the-service', label: 'The service' },
@@ -21,7 +21,7 @@ const sections = [
 
 <Layout
 	title="Terms of Service — OrderSail"
-	description="The terms that govern use of OrderSail: accounts, acceptable use, payments through Stripe Connect, and how the beta service works."
+	description="The terms that govern use of OrderSail: accounts, acceptable use, payments through Stripe Connect, and how the service works while it's being built."
 >
 	<section class="head">
 		<p class="eyebrow">Legal</p>
@@ -52,9 +52,9 @@ const sections = [
 
 		<h2 id="the-service">1. The service</h2>
 		<p>
-			OrderSail is currently in <strong>beta</strong>. Features may change, break,
-			or be removed with little notice, and we don't guarantee uptime or data
-			retention during this period. We'll aim to give notice of breaking changes
+			OrderSail is under active development and has not launched yet. Features
+			may change, break, or be removed with little notice, and we don't
+			guarantee uptime or data retention during this period. We'll aim to give notice of breaking changes
 			where practical.
 		</p>
 
@@ -96,14 +96,14 @@ const sections = [
 		<p>
 			You can close your account at any time. We may suspend or terminate an
 			account for a violation of these Terms or the Acceptable Use Policy, or
-			with notice for any other reason during the beta period. On termination,
+			with notice for any other reason before the Service launches. On termination,
 			you can export your data through the API for a reasonable period
 			beforehand.
 		</p>
 
 		<h2 id="disclaimers">7. Disclaimers & limitation of liability</h2>
 		<p>
-			The Service is provided "as is," especially during beta, without
+			The Service is provided "as is," especially before launch, without
 			warranties of any kind, express or implied. To the maximum extent
 			permitted by law, OrderSail isn't liable for indirect, incidental, or
 			consequential damages arising from use of the Service, and our total
@@ -113,10 +113,11 @@ const sections = [
 
 		<h2 id="governing-law">8. Governing law</h2>
 		<p>
-			<em
-				>[Placeholder — governing law and jurisdiction to be finalized during
-				legal review before launch.]</em
-			>
+			These Terms are governed by the laws of the State of New Jersey, without
+			regard to its conflict-of-laws rules. Any dispute arising out of or
+			relating to these Terms or the Service will be brought exclusively in
+			the state or federal courts located in New Jersey, and you and OrderSail
+			consent to their jurisdiction.
 		</p>
 
 		<h2 id="changes">9. Changes to these terms</h2>
