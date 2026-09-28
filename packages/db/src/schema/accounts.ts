@@ -7,10 +7,9 @@ import z from "zod";
 export const accountsTable = pgTable("accounts", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   name: text("name").notNull(),
-  // the shipping contact carriers reach out to about a package — some
-  // carriers (e.g. USPS) reject label purchases without it, so required
-  // up front at signup rather than discovered missing at purchase time
-  phone: text("phone").notNull(),
+  // the shipping contact email given to carriers on every label. The phone
+  // lives on each location instead (locationsTable.phone, OS-688) — it's
+  // whoever the carrier reaches at that origin.
   email: text("email").notNull(),
   // null (default) -> MFA optional; set -> every staff member on this
   // account must have a confirmed TOTP factor to use gated routes

@@ -9,14 +9,12 @@ import { LoaderCircleIcon } from "lucide-react";
 import { useAccountQuery, useUpdateAccountMutation } from "../account.hooks";
 import { usePermissions } from "../../auth/permission-context";
 import { TimezoneCombobox } from "../components/timezone-combobox";
-import { formatPhone, phoneSchema } from "../../../lib/phone";
 
 const ShippingContactFormSchema = z.object({
-  phone: phoneSchema,
   email: z.email("Enter a valid email"),
 });
 
-type ShippingContactForm = z.input<typeof ShippingContactFormSchema>;
+type ShippingContactForm = z.infer<typeof ShippingContactFormSchema>;
 
 const ReportingFormSchema = z.object({
   timezone: z.string().min(1, "Required"),
@@ -44,7 +42,6 @@ export function SettingsView() {
       <h1 className="text-xl font-semibold">Settings</h1>
       {account.data && (
         <ShippingContactForm
-          phone={account.data.phone}
           email={account.data.email}
           canWrite={canWrite}
         />
@@ -65,29 +62,21 @@ export function SettingsView() {
 // remounted (via key, see below) whenever the loaded account changes, so
 // defaultValues are always a fresh snapshot
 function ShippingContactForm(props: {
-  phone: string;
   email: string;
   canWrite: boolean;
 }) {
   const updateAccount = useUpdateAccountMutation();
-  // stored as E.164; shown the way the merchant would type it
-  const phone = formatPhone(props.phone);
-  const form = useForm<
-    ShippingContactForm,
-    unknown,
-    z.output<typeof ShippingContactFormSchema>
-  >({
+  const form = useForm<ShippingContactForm>({
     resolver: zodResolver(ShippingContactFormSchema),
-    defaultValues: { phone, email: props.email },
+    defaultValues: { email: props.email },
   });
 
   useEffect(() => {
-    form.reset({ phone, email: props.email });
-  }, [phone, props.email]);
+    form.reset({ email: props.email });
+  }, [props.email]);
 
   const handleSubmit = form.handleSubmit((data) => {
-    // errors surface as a toast (react-query-client MutationCache.onError).
-    // The schema has already turned the phone into E.164.
+    // errors surface as a toast (react-query-client MutationCache.onError)
     updateAccount.mutate(data);
   });
 
@@ -96,29 +85,10 @@ function ShippingContactForm(props: {
       <div className="space-y-1">
         <h2 className="text-sm font-medium">Shipping contact</h2>
         <p className="text-sm text-muted-foreground">
-          Given to carriers as the sender's contact info when purchasing labels. Some
-          carriers, like USPS, require it.
+          Given to carriers as the sender's email when purchasing labels. The
+          phone number is set per location, under Locations.
         </p>
       </div>
-
-      <Controller
-        control={form.control}
-        name="phone"
-        render={({ field, fieldState }) => (
-          <Field data-invalid={!!fieldState.error}>
-            <FieldLabel>Phone</FieldLabel>
-            <Input
-              type="tel"
-              placeholder="(201) 555-0123"
-              disabled={!props.canWrite}
-              {...field}
-            />
-            {fieldState.error && (
-              <p className="text-sm text-destructive">{fieldState.error.message}</p>
-            )}
-          </Field>
-        )}
-      />
 
       <Controller
         control={form.control}

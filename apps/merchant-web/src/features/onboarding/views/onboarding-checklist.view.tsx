@@ -34,9 +34,9 @@ export function OnboardingChecklist() {
       permission: "payments:write",
     },
     {
-      label: "Add your location's address so shipping can be quoted",
+      label: "Add your location's address and phone so orders can ship",
       done: status.data.hasCompleteLocation,
-      cta: "Add address",
+      cta: "Add details",
       to: "/app/locations",
       permission: "locations:write",
     },

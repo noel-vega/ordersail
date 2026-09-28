@@ -1,5 +1,4 @@
 import z from "zod";
-import { phoneSchema } from "../../lib/phone";
 
 export const SignInRequestBodySchema = z.object({
   email: z.email(),
@@ -17,8 +16,6 @@ export const SignUpRequestBodySchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.email(),
-  // local-format input is fine here; the schema emits E.164 (OS-687)
-  phone: phoneSchema,
   // mirrors merchant-api's SignUpDto: @MinLength(12) + a zxcvbn/HIBP floor
   // (OS-317) the API enforces server-side — this only catches the too-short
   // case early, actual strength/breach rejection still comes from the API.

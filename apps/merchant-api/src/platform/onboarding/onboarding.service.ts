@@ -32,7 +32,8 @@ export class OnboardingService {
         .limit(1),
       // mirrors apps/storefront-api checkout.service.ts's ship-from lookup
       // (isNotNull(addressLine1)) but stricter — every field a real shipping
-      // quote needs. addressState / addressLine2 stay optional.
+      // quote needs, plus the phone a label needs (OS-688). addressState /
+      // addressLine2 stay optional.
       this.db
         .select({ one: sql`1` })
         .from(locationsTable)
@@ -43,6 +44,7 @@ export class OnboardingService {
             isNotNull(locationsTable.addressCity),
             isNotNull(locationsTable.addressPostalCode),
             isNotNull(locationsTable.addressCountry),
+            isNotNull(locationsTable.phone),
           ),
         )
         .limit(1),

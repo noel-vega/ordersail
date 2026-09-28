@@ -69,6 +69,22 @@ describe('OnboardingService.getStatus (OS-165)', () => {
     );
   });
 
+  // a label can't be bought from a location without a phone (OS-688)
+  it('hasCompleteLocation needs a phone as well as the address', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    await insertLocation(db, { accountId: account.id, phone: null });
+    expect((await service.getStatus(account.id)).hasCompleteLocation).toBe(
+      false,
+    );
+
+    await insertLocation(db, { accountId: account.id, phone: '+12015550123' });
+    expect((await service.getStatus(account.id)).hasCompleteLocation).toBe(
+      true,
+    );
+  });
+
   it('hasActiveProduct needs status = active', async () => {
     const account = await insertAccount(db);
     const service = await build();

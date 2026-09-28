@@ -46,6 +46,83 @@ describe('LocationsService.findAll (OS-162)', () => {
   });
 });
 
+describe('LocationsService.create — ship-from details (OS-688)', () => {
+  it('stores the address and phone given at creation', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    const location = await service.create(
+      {
+        name: 'Hoboken Warehouse',
+        addressLine1: '1 Hudson Pl',
+        addressCity: 'Hoboken',
+        addressState: 'NJ',
+        addressPostalCode: '07030',
+        addressCountry: 'US',
+        phone: '+12015550123',
+      },
+      account.id,
+    );
+
+    expect(location).toMatchObject({
+      accountId: account.id,
+      name: 'Hoboken Warehouse',
+      addressLine1: '1 Hudson Pl',
+      phone: '+12015550123',
+    });
+  });
+
+  it('creates a name-only location, which is still a valid stock location', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    const location = await service.create({ name: 'Back room' }, account.id);
+
+    expect(location).toMatchObject({ addressLine1: null, phone: null });
+  });
+});
+
+describe('LocationsService.update — phone (OS-688)', () => {
+  it('sets and clears the ship-from phone', async () => {
+    const account = await insertAccount(db);
+    const location = await insertLocation(db, {
+      accountId: account.id,
+      phone: null,
+    });
+    const service = await build();
+
+    const set = await service.update(
+      location.id,
+      { phone: '+12015550123' },
+      account.id,
+    );
+    expect(set?.phone).toBe('+12015550123');
+
+    const cleared = await service.update(
+      location.id,
+      { phone: null },
+      account.id,
+    );
+    expect(cleared?.phone).toBeNull();
+  });
+
+  it('leaves the phone alone when the field is absent', async () => {
+    const account = await insertAccount(db);
+    const location = await insertLocation(db, {
+      accountId: account.id,
+      phone: '+12015550123',
+    });
+    const service = await build();
+
+    const updated = await service.update(
+      location.id,
+      { addressCity: 'Hoboken' },
+      account.id,
+    );
+    expect(updated?.phone).toBe('+12015550123');
+  });
+});
+
 describe('LocationsService.remove (OS-188)', () => {
   it('deletes a location with no references', async () => {
     const account = await insertAccount(db);

@@ -8,9 +8,10 @@ export class OnboardingStatus {
   @ApiProperty({ type: Boolean })
   stripeConnected!: boolean;
 
-  // a locations row with a fully-formed ship-from address. Stricter than the
-  // storefront checkout gate (which only needs address_line1) so "done" means
-  // a complete address — the merchant location form collects all of these.
+  // a locations row with a fully-formed ship-from address and a phone — what
+  // buying a label from it needs (OS-688). Stricter than the storefront
+  // checkout gate (which only needs address_line1) so "done" means the
+  // merchant can actually ship.
   @ApiProperty({ type: Boolean })
   hasCompleteLocation!: boolean;
 

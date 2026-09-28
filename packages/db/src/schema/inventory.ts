@@ -29,6 +29,10 @@ export const locationsTable = pgTable(
     addressState: varchar("address_state", { length: 255 }),
     addressPostalCode: varchar("address_postal_code", { length: 20 }),
     addressCountry: varchar("address_country", { length: 2 }),
+    // E.164, validated at the API edge. The contact a carrier reaches at this
+    // origin — USPS rejects a label without one — so, like the address, only
+    // needed once the location ships (OS-688)
+    phone: varchar("phone", { length: 20 }),
     createdAt: timestampAt("created_at"),
     updatedAt: timestampAt("updated_at"),
   },

@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Shippo } from 'shippo';
 import { Logger } from 'logging';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { accountsTable } from 'db/identity';
@@ -24,7 +25,8 @@ import { OrderDetail } from '../orders/entities/order-detail.entity';
 import { ShippingRate } from './entities/shipping-rate.entity';
 import { GetFulfillmentRatesDto } from './dto/get-fulfillment-rates.dto';
 import { CreateFulfillmentDto } from './dto/create-fulfillment.dto';
-import { shippo } from './shippo.client';
+import { SHIPPO } from './fulfillments.constants';
+import { toShipFrom } from './ship-from';
 
 // same defaults used by storefront-api's checkout-time quoting and the old
 // orders.service.ts's getShippingRates — see that module's comment for why
@@ -39,6 +41,7 @@ export class FulfillmentsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private readonly ordersService: OrdersService,
+    @Inject(SHIPPO) private readonly shippo: Shippo,
   ) {}
 
   async getRates(
@@ -49,21 +52,21 @@ export class FulfillmentsService {
       await this.resolveRequest(dto, accountId);
 
     const [account] = await this.db
-      .select({ phone: accountsTable.phone, email: accountsTable.email })
+      .select({ email: accountsTable.email })
       .from(accountsTable)
       .where(eq(accountsTable.id, accountId));
 
-    const shipment = await shippo.shipments
+    const shipment = await this.shippo.shipments
       .create({
         addressFrom: {
           name: location.name,
-          street1: location.addressLine1!,
+          street1: location.addressLine1,
           street2: location.addressLine2 ?? undefined,
           city: location.addressCity ?? undefined,
           state: location.addressState ?? undefined,
           zip: location.addressPostalCode ?? undefined,
           country: location.addressCountry ?? 'US',
-          phone: account?.phone,
+          phone: location.phone,
           email: account?.email,
         },
         addressTo: {
@@ -121,7 +124,7 @@ export class FulfillmentsService {
     // the over-fulfillment race
     const fulfillmentId = await this.reserve(dto);
 
-    const transaction = await shippo.transactions
+    const transaction = await this.shippo.transactions
       .create({ rate: dto.rateObjectId, labelFileType: 'PDF', async: false })
       .catch((err: unknown) => {
         this.logger.error(
@@ -273,7 +276,7 @@ export class FulfillmentsService {
       );
     }
 
-    const [location] = await this.db
+    const [row] = await this.db
       .select()
       .from(locationsTable)
       .where(
@@ -282,11 +285,7 @@ export class FulfillmentsService {
           eq(locationsTable.accountId, accountId),
         ),
       );
-    if (!location?.addressLine1) {
-      throw new BadRequestException(
-        'That location has no shipping address on file',
-      );
-    }
+    const location = toShipFrom(row);
 
     const requestedIds = dto.items.map((i) => i.orderItemId);
     const items = await this.db
@@ -328,6 +327,11 @@ export class FulfillmentsService {
         (item.weightOz ?? DEFAULT_ITEM_WEIGHT_OZ) * requested.quantity;
     }
 
-    return { order, shipping, location, totalWeightOz };
+    return {
+      order,
+      shipping,
+      location,
+      totalWeightOz,
+    };
   }
 }

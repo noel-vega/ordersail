@@ -8,7 +8,6 @@ const validBase = {
   firstName: 'Dana',
   lastName: 'Scully',
   email: 'dana@cactus.test',
-  phone: '+12015550100',
 };
 
 function hibpSuffixFor(password: string): string {
@@ -131,40 +130,4 @@ describe('SignUpDto timezone (OS-667)', () => {
     const errors = await validate(dto);
     expect(errors.map((e) => e.property)).toEqual(['timezone']);
   });
-});
-
-// plainToInstance is the transform half of the ValidationPipe, validate() the
-// half that turns a failure into the 400 POST /auth/signup returns
-describe('SignUpDto phone (OS-687)', () => {
-  const originalFetch = global.fetch;
-  const strong = { ...validBase, password: 'Qr7#vNw4tKzL9pXs' };
-
-  beforeEach(() => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(''),
-    });
-  });
-
-  afterEach(() => {
-    global.fetch = originalFetch;
-  });
-
-  it('stores the E.164 form of a formatted number', async () => {
-    const dto = plainToInstance(SignUpDto, {
-      ...strong,
-      phone: '+1 (201) 555-0123',
-    });
-    await expect(validate(dto)).resolves.toHaveLength(0);
-    expect(dto.phone).toBe('+12015550123');
-  });
-
-  it.each(['asdf', '2015550123', '+15555550100', ''])(
-    'rejects %p',
-    async (phone) => {
-      const dto = plainToInstance(SignUpDto, { ...strong, phone });
-      const errors = await validate(dto);
-      expect(errors.map((e) => e.property)).toEqual(['phone']);
-    },
-  );
 });

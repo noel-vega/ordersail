@@ -1,7 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { IsStrongPassword } from 'password-policy';
-import { IsE164Phone } from 'src/shared/validation/is-e164-phone';
 import { IsTimeZone } from 'src/shared/validation/is-time-zone';
 
 export class SignUpDto {
@@ -24,11 +23,8 @@ export class SignUpDto {
   @IsEmail()
   email: string;
 
-  // the account's shipping contact, used as the addressFrom phone when
-  // purchasing carrier labels — required up front by carriers like USPS. Stored as E.164 (OS-687)
-  @ApiProperty({ example: '+12015550123' })
-  @IsE164Phone()
-  phone: string;
+  // no phone: the one carriers need is the ship-from location's, collected
+  // when the merchant sets that location up (OS-688)
 
   @ApiProperty()
   @IsString()
@@ -49,14 +45,12 @@ export class SignUpDto {
     firstName: string,
     lastName: string,
     email: string,
-    phone: string,
     password: string,
   ) {
     this.businessName = businessName;
     this.firstName = firstName;
     this.lastName = lastName;
     this.email = email;
-    this.phone = phone;
     this.password = password;
   }
 }

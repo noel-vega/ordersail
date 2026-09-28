@@ -8,18 +8,11 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { IsE164Phone } from 'src/shared/validation/is-e164-phone';
 import { IsTimeZone } from 'src/shared/validation/is-time-zone';
 
-// the shipping contact used as the addressFrom phone/email for every
-// Shippo label purchase, regardless of which location ships the order
 export class UpdateAccountDto {
-  // stored as E.164 (OS-687)
-  @ApiProperty({ required: false, example: '+12015550123' })
-  @IsOptional()
-  @IsE164Phone()
-  phone?: string;
-
+  // the shipping contact email given as addressFrom.email on every Shippo
+  // label, whichever location ships. The phone is per location (OS-688).
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()

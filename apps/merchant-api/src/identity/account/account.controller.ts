@@ -36,7 +36,7 @@ export class AccountController {
 
   // requireMfa is deliberately not folded into @RequirePermissions() here —
   // that would gate the whole endpoint (including the low-stakes
-  // phone/email fields) on the new key too. account:write stays the bar
+  // shipping email) on the new key too. account:write stays the bar
   // for ordinary settings edits; a second, narrower check below applies
   // only when the security-sensitive field is actually present, so a
   // custom role holding account:write (but not account:manage_security)

@@ -44,29 +44,3 @@ describe('UpdateAccountDto lowStockThreshold (OS-668)', () => {
     expect(errors.map((e) => e.property)).toEqual(['lowStockThreshold']);
   });
 });
-
-describe('UpdateAccountDto phone (OS-687)', () => {
-  it('stores the E.164 form of a formatted number', async () => {
-    const dto = plainToInstance(UpdateAccountDto, {
-      phone: '+1 (201) 555-0123',
-    });
-    await expect(validate(dto)).resolves.toHaveLength(0);
-    expect(dto.phone).toBe('+12015550123');
-  });
-
-  it('is optional', async () => {
-    const dto = plainToInstance(UpdateAccountDto, { email: 'a@b.test' });
-    await expect(validate(dto)).resolves.toHaveLength(0);
-  });
-
-  // unlike the profile phone, the shipping phone can't be cleared: carriers
-  // need one
-  it.each(['asdf', '2015550123', '+15555550100', ''])(
-    'rejects %p',
-    async (phone) => {
-      const dto = plainToInstance(UpdateAccountDto, { phone });
-      const errors = await validate(dto);
-      expect(errors.map((e) => e.property)).toEqual(['phone']);
-    },
-  );
-});
