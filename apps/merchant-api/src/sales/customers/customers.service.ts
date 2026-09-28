@@ -89,8 +89,7 @@ export class CustomersService {
   }
 
   // sum of amountTotalCents across every order linked to this customer via
-  // orders.customerId (OS-189) — same coalesce/sum convention as
-  // DashboardService.getOrderTotals
+  // orders.customerId (OS-189)
   private async getLifetimeValueCents(
     customerId: number,
     accountId: number,
