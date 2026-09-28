@@ -4611,6 +4611,8 @@ export interface operations {
                 from?: string;
                 /** @description last day (YYYY-MM-DD); default: today in the account's zone */
                 to?: string;
+                /** @description window length ending at `to` (default today in the account's zone) when `from` is omitted; default 30d */
+                range?: "today" | "7d" | "30d" | "90d" | "12m";
             };
             header?: never;
             path?: never;

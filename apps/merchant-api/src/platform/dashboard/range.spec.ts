@@ -103,3 +103,39 @@ describe('resolveRange (OS-669)', () => {
     ).toThrow(/at most/);
   });
 });
+
+describe('resolveRange presets (OS-193)', () => {
+  // today in New York is 2026-09-27 at `now`
+  it.each([
+    ['today', '2026-09-27', '2026-09-26', '2026-09-26'],
+    ['7d', '2026-09-21', '2026-09-14', '2026-09-20'],
+    ['30d', '2026-08-29', '2026-07-30', '2026-08-28'],
+    ['90d', '2026-06-30', '2026-04-01', '2026-06-29'],
+    ['12m', '2025-09-28', '2024-09-28', '2025-09-27'],
+  ] as const)(
+    '%s ends today in the account zone',
+    (range, from, previousFrom, previousTo) => {
+      expect(
+        resolveRange({ range, timezone: 'America/New_York', now }),
+      ).toEqual({ from, to: '2026-09-27', previousFrom, previousTo });
+    },
+  );
+
+  it('an explicit from wins over range', () => {
+    expect(
+      resolveRange({
+        range: '7d',
+        from: '2026-09-01',
+        to: '2026-09-15',
+        timezone: 'UTC',
+        now,
+      }),
+    ).toMatchObject({ from: '2026-09-01', to: '2026-09-15' });
+  });
+
+  it('range with an explicit to ends there', () => {
+    expect(
+      resolveRange({ range: '7d', to: '2026-06-30', timezone: 'UTC', now }),
+    ).toMatchObject({ from: '2026-06-24', to: '2026-06-30' });
+  });
+});

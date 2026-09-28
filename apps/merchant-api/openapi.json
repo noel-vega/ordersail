@@ -3760,6 +3760,22 @@
               "example": "2026-09-30",
               "type": "string"
             }
+          },
+          {
+            "name": "range",
+            "required": false,
+            "in": "query",
+            "description": "window length ending at `to` (default today in the account's zone) when `from` is omitted; default 30d",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "today",
+                "7d",
+                "30d",
+                "90d",
+                "12m"
+              ]
+            }
           }
         ],
         "responses": {

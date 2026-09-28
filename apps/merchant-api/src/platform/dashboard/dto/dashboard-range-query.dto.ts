@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
+import { RANGE_PRESETS, type RangePreset } from '../range';
 
 // `?from&to` for every range-scoped dashboard endpoint. Local calendar dates
 // in the account's timezone, both inclusive; parsed and bounded by
@@ -22,4 +23,14 @@ export class DashboardRangeQueryDto {
   @IsOptional()
   @IsString()
   to?: string;
+
+  @ApiProperty({
+    required: false,
+    enum: RANGE_PRESETS,
+    description:
+      "window length ending at `to` (default today in the account's zone) when `from` is omitted; default 30d",
+  })
+  @IsOptional()
+  @IsIn(RANGE_PRESETS)
+  range?: RangePreset;
 }

@@ -13,7 +13,22 @@ export interface ReportingRange {
   previousTo: string;
 }
 
-export const DEFAULT_RANGE_DAYS = 30;
+// relative ranges ending today in the account's zone, resolved here rather
+// than in the browser: the client can't know the account's "today" without
+// GET /account (account:read), which a dashboard:read role may lack (OS-193)
+export const RANGE_PRESETS = ['today', '7d', '30d', '90d', '12m'] as const;
+export type RangePreset = (typeof RANGE_PRESETS)[number];
+
+// inclusive length in days, today included
+const PRESET_DAYS: Record<RangePreset, number> = {
+  today: 1,
+  '7d': 7,
+  '30d': 30,
+  '90d': 90,
+  '12m': 365,
+};
+
+export const DEFAULT_RANGE_DAYS = PRESET_DAYS['30d'];
 // ~2 years — bounds the query cost and the timeseries point count
 export const MAX_RANGE_DAYS = 731;
 
@@ -47,25 +62,28 @@ export function todayIn(timezone: string, now: Date): string {
 }
 
 // `from`/`to` as sent by the client (either may be omitted): a missing `to`
-// is today in the account's zone, a missing `from` makes the window
-// DEFAULT_RANGE_DAYS long ending at `to`
+// is today in the account's zone, a missing `from` makes the window `range`'s
+// length (default 30 days) ending at `to`. So `?range=7d` alone is the last
+// 7 days, and an explicit `from` wins over `range`.
 export function resolveRange(input: {
   from?: string;
   to?: string;
+  range?: RangePreset;
   timezone: string;
   now: Date;
 }): ReportingRange {
   const to = parseDate(input.to ?? todayIn(input.timezone, input.now), 'to');
+  const days = input.range ? PRESET_DAYS[input.range] : DEFAULT_RANGE_DAYS;
   const from =
     input.from !== undefined
       ? parseDate(input.from, 'from')
-      : to - (DEFAULT_RANGE_DAYS - 1) * DAY_MS;
+      : to - (days - 1) * DAY_MS;
 
   if (from > to) {
     throw new BadRequestException('from must be on or before to');
   }
-  const days = (to - from) / DAY_MS + 1;
-  if (days > MAX_RANGE_DAYS) {
+  const span = (to - from) / DAY_MS + 1;
+  if (span > MAX_RANGE_DAYS) {
     throw new BadRequestException(
       `range can span at most ${MAX_RANGE_DAYS} days`,
     );
@@ -75,7 +93,7 @@ export function resolveRange(input: {
   return {
     from: formatDate(from),
     to: formatDate(to),
-    previousFrom: formatDate(previousTo - (days - 1) * DAY_MS),
+    previousFrom: formatDate(previousTo - (span - 1) * DAY_MS),
     previousTo: formatDate(previousTo),
   };
 }

@@ -1,4 +1,5 @@
-import { queryOptions, useQuery } from "@tanstack/react-query"
+import { keepPreviousData, queryOptions, useQuery } from "@tanstack/react-query"
+import type { DashboardRangeParams } from "merchant-sdk"
 import { merchantApi } from "../../lib/merchant-api-client"
 
 export function getDashboardSummaryQueryOptions() {
@@ -12,14 +13,15 @@ export function useDashboardSummaryQuery() {
   return useQuery(getDashboardSummaryQueryOptions())
 }
 
-// net sales / orders / AOV for local dates in the account's timezone;
-// omitted -> the API's default, the last 30 days (OS-669)
-export function getDashboardSalesQueryOptions(range: {
-  from?: string
-  to?: string
-} = {}) {
+// net sales / orders / AOV for a range — a preset the API resolves in the
+// account's timezone, or explicit local dates (OS-669, OS-193). Keeps the
+// previous range's figures on screen while a new one loads
+export function getDashboardSalesQueryOptions(
+  params: DashboardRangeParams = {},
+) {
   return queryOptions({
-    queryKey: ["dashboard", "sales", range],
-    queryFn: () => merchantApi.dashboard.sales(range),
+    queryKey: ["dashboard", "sales", params],
+    queryFn: () => merchantApi.dashboard.sales(params),
+    placeholderData: keepPreviousData,
   })
 }

@@ -2,6 +2,10 @@ import type { Client } from "openapi-fetch";
 import type { paths } from "../types.gen.js";
 import type { DoFn } from "../http.js";
 
+export type DashboardRangeParams = NonNullable<
+  paths["/dashboard/sales"]["get"]["parameters"]["query"]
+>;
+
 export function createDashboardResource(client: Client<paths>, doRequest: DoFn) {
   return {
     get: async () => {
@@ -11,13 +15,15 @@ export function createDashboardResource(client: Client<paths>, doRequest: DoFn) 
 
     // net sales / orders / AOV for a range of local dates in the account's
     // timezone (both inclusive), plus the equal-length previous period.
-    // Omitted -> the last 30 days ending today (OS-669)
-    sales: async (params?: { from?: string; to?: string }) => {
+    // `range` is a preset ending today in the account's zone (the server
+    // resolves it); omitted -> the last 30 days (OS-669, OS-193)
+    sales: async (params?: DashboardRangeParams) => {
       const query: NonNullable<
         paths["/dashboard/sales"]["get"]["parameters"]["query"]
       > = {
         ...(params?.from ? { from: params.from } : {}),
         ...(params?.to ? { to: params.to } : {}),
+        ...(params?.range ? { range: params.range } : {}),
       };
       const { data } = await doRequest(() =>
         client.GET("/dashboard/sales", { params: { query } }),
