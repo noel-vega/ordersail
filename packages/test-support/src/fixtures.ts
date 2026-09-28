@@ -81,7 +81,7 @@ export async function insertAccount(
       .insert(accountsTable)
       .values({
         name: over.name ?? 'Test Store',
-        phone: over.phone ?? '5555550100',
+        phone: over.phone ?? '+12015550100',
         email: over.email ?? `owner-${uniq()}@store.test`,
         timezone: over.timezone,
         lowStockThreshold: over.lowStockThreshold,

@@ -7,6 +7,7 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
+import { IsE164Phone } from 'src/shared/validation/is-e164-phone';
 
 export class CreateUserDto {
   @ApiProperty()
@@ -19,9 +20,9 @@ export class CreateUserDto {
   @MinLength(1)
   lastName: string;
 
-  @ApiProperty()
-  @IsString()
-  @MinLength(1)
+  // stored as E.164 (OS-687)
+  @ApiProperty({ example: '+12015550123' })
+  @IsE164Phone()
   phone: string;
 
   @ApiProperty()

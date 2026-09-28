@@ -9,9 +9,10 @@ import { LoaderCircleIcon } from "lucide-react";
 import { useAccountQuery, useUpdateAccountMutation } from "../account.hooks";
 import { usePermissions } from "../../auth/permission-context";
 import { TimezoneCombobox } from "../components/timezone-combobox";
+import { formatPhone, phoneSchema, toE164 } from "../../../lib/phone";
 
 const ShippingContactFormSchema = z.object({
-  phone: z.string().min(1, "Required"),
+  phone: phoneSchema,
   email: z.email("Enter a valid email"),
 });
 
@@ -69,18 +70,21 @@ function ShippingContactForm(props: {
   canWrite: boolean;
 }) {
   const updateAccount = useUpdateAccountMutation();
+  // stored as E.164; shown the way the merchant would type it
+  const phone = formatPhone(props.phone);
   const form = useForm<ShippingContactForm>({
     resolver: zodResolver(ShippingContactFormSchema),
-    defaultValues: { phone: props.phone, email: props.email },
+    defaultValues: { phone, email: props.email },
   });
 
   useEffect(() => {
-    form.reset({ phone: props.phone, email: props.email });
-  }, [props.phone, props.email]);
+    form.reset({ phone, email: props.email });
+  }, [phone, props.email]);
 
   const handleSubmit = form.handleSubmit((data) => {
-    // errors surface as a toast (react-query-client MutationCache.onError)
-    updateAccount.mutate(data);
+    // errors surface as a toast (react-query-client MutationCache.onError).
+    // The schema already proved the phone parses.
+    updateAccount.mutate({ ...data, phone: toE164(data.phone)! });
   });
 
   return (
@@ -101,7 +105,7 @@ function ShippingContactForm(props: {
             <FieldLabel>Phone</FieldLabel>
             <Input
               type="tel"
-              placeholder="(555) 555-5555"
+              placeholder="(201) 555-0123"
               disabled={!props.canWrite}
               {...field}
             />

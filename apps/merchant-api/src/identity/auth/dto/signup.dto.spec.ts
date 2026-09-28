@@ -8,7 +8,7 @@ const validBase = {
   firstName: 'Dana',
   lastName: 'Scully',
   email: 'dana@cactus.test',
-  phone: '5555550100',
+  phone: '+12015550100',
 };
 
 function hibpSuffixFor(password: string): string {

@@ -37,7 +37,7 @@ const provisionInput = {
   firstName: 'Dana',
   lastName: 'Scully',
   email: 'dana@cactus.test',
-  phone: '5555550100',
+  phone: '+12015550100',
   password: 'supersecret',
 };
 
@@ -143,10 +143,10 @@ describe('AccountService.update — requireMfa toggle (OS-473)', () => {
     const service = await build();
     await service.update(account.id, { requireMfa: true });
 
-    const result = await service.update(account.id, { phone: '5555559999' });
+    const result = await service.update(account.id, { phone: '+12015559999' });
 
     expect(result.requireMfaAt).not.toBeNull();
-    expect(result.phone).toBe('5555559999');
+    expect(result.phone).toBe('+12015559999');
   });
 
   it('still updates phone/email alongside the toggle', async () => {
@@ -155,12 +155,12 @@ describe('AccountService.update — requireMfa toggle (OS-473)', () => {
 
     const result = await service.update(account.id, {
       requireMfa: true,
-      phone: '5555551234',
+      phone: '+12015551234',
       email: 'new@store.test',
     });
 
     expect(result.requireMfaAt).not.toBeNull();
-    expect(result.phone).toBe('5555551234');
+    expect(result.phone).toBe('+12015551234');
     expect(result.email).toBe('new@store.test');
 
     const [row] = await db

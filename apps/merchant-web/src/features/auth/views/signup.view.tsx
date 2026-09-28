@@ -14,6 +14,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { InfoIcon } from "lucide-react";
 import { appConfig } from "../../../config";
 import { detectTimeZone } from "../../account/timezone";
+import { toE164 } from "../../../lib/phone";
 
 export function SignUpView() {
   const signUpMutation = useSignUpMutation();
@@ -35,7 +36,9 @@ export function SignUpView() {
   async function handleSubmit(formData: SignUpRequestBody) {
     // the account's reporting timezone starts as this browser's (OS-667);
     // editable later in Settings
-    signUpMutation.mutate({ ...formData, timezone: detectTimeZone() }, {
+    // the schema already proved the phone parses; the API takes only E.164
+    const phone = toE164(formData.phone)!;
+    signUpMutation.mutate({ ...formData, phone, timezone: detectTimeZone() }, {
       onError: () => {
         setErrorMessage(
           "Unable to create account. This email may already be in use.",
@@ -110,10 +113,13 @@ export function SignUpView() {
           <Controller
             control={form.control}
             name="phone"
-            render={({ field }) => (
-              <Field>
+            render={({ field, fieldState }) => (
+              <Field data-invalid={!!fieldState.error}>
                 <FieldLabel>Phone</FieldLabel>
-                <Input type="tel" placeholder="(555) 555-5555" {...field} />
+                <Input type="tel" placeholder="(201) 555-0123" {...field} />
+                {fieldState.error && (
+                  <p className="text-sm text-destructive">{fieldState.error.message}</p>
+                )}
               </Field>
             )}
           />

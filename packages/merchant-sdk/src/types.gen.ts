@@ -1426,6 +1426,7 @@ export interface components {
             firstName: string;
             lastName: string;
             email: string;
+            /** @example +12015550123 */
             phone: string;
             password: string;
             /** @example America/New_York */
@@ -1466,6 +1467,7 @@ export interface components {
         UpdateUserProfileDto: {
             firstName?: string;
             lastName?: string;
+            /** @example +12015550123 */
             phone?: string | null;
         };
         ChangePasswordDto: {
@@ -1516,6 +1518,7 @@ export interface components {
         CreateUserDto: {
             firstName: string;
             lastName: string;
+            /** @example +12015550123 */
             phone: string;
             email: string;
             roleIds?: number[];
@@ -1574,6 +1577,7 @@ export interface components {
             updatedAt: string;
         };
         UpdateAccountDto: {
+            /** @example +12015550123 */
             phone?: string;
             email?: string;
             requireMfa?: boolean;

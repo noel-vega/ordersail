@@ -210,7 +210,7 @@ async function ensureAccount() {
   return await db.transaction(async (tx) => {
     const [account] = await tx
       .insert(accountsTable)
-      .values({ name: 'Sneaker Depot', phone: '5555550100', email: OWNER_EMAIL })
+      .values({ name: 'Sneaker Depot', phone: '+12015550100', email: OWNER_EMAIL })
       .returning();
 
     await tx.insert(usersTable).values({

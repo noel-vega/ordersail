@@ -9,6 +9,7 @@ import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { formatPhone } from "../../../lib/phone";
 import { Can } from "../../../components/can";
 import { useListUsersQuery } from "../users.hooks";
 import { UserStatusBadge } from "./user-status-badge";
@@ -29,7 +30,8 @@ const columns: ColumnDef<User>[] = [
   {
     accessorKey: "phone",
     header: "Phone",
-    cell: ({ row }) => row.original.phone ?? "—",
+    cell: ({ row }) =>
+      row.original.phone ? formatPhone(row.original.phone) : "—",
   },
   {
     accessorKey: "email",

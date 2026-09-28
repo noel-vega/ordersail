@@ -4420,7 +4420,8 @@
             "type": "string"
           },
           "phone": {
-            "type": "string"
+            "type": "string",
+            "example": "+12015550123"
           },
           "password": {
             "type": "string"
@@ -4577,7 +4578,7 @@
           "phone": {
             "type": "string",
             "nullable": true,
-            "maxLength": 32
+            "example": "+12015550123"
           }
         }
       },
@@ -4738,7 +4739,8 @@
             "type": "string"
           },
           "phone": {
-            "type": "string"
+            "type": "string",
+            "example": "+12015550123"
           },
           "email": {
             "type": "string"
@@ -4955,7 +4957,8 @@
         "type": "object",
         "properties": {
           "phone": {
-            "type": "string"
+            "type": "string",
+            "example": "+12015550123"
           },
           "email": {
             "type": "string"
