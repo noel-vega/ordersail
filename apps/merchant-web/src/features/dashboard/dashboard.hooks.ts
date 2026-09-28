@@ -25,3 +25,15 @@ export function getDashboardSalesQueryOptions(
     placeholderData: keepPreviousData,
   })
 }
+
+// the same money bucketed per day / week / month for the trend charts (OS-670,
+// OS-194); both charts share this one query
+export function getDashboardSalesTimeseriesQueryOptions(
+  params: DashboardRangeParams = {},
+) {
+  return queryOptions({
+    queryKey: ["dashboard", "sales", "timeseries", params],
+    queryFn: () => merchantApi.dashboard.salesTimeseries(params),
+    placeholderData: keepPreviousData,
+  })
+}
