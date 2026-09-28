@@ -8,6 +8,7 @@ import { Button } from "ui/button";
 import { LoaderCircleIcon } from "lucide-react";
 import { useAccountQuery, useUpdateAccountMutation } from "../account.hooks";
 import { usePermissions } from "../../auth/permission-context";
+import { TimezoneCombobox } from "../components/timezone-combobox";
 
 const ShippingContactFormSchema = z.object({
   phone: z.string().min(1, "Required"),
@@ -15,6 +16,12 @@ const ShippingContactFormSchema = z.object({
 });
 
 type ShippingContactForm = z.infer<typeof ShippingContactFormSchema>;
+
+const ReportingFormSchema = z.object({
+  timezone: z.string().min(1, "Required"),
+});
+
+type ReportingForm = z.infer<typeof ReportingFormSchema>;
 
 export function SettingsView() {
   const account = useAccountQuery();
@@ -29,6 +36,9 @@ export function SettingsView() {
           email={account.data.email}
           canWrite={canWrite}
         />
+      )}
+      {account.data && (
+        <ReportingForm timezone={account.data.timezone} canWrite={canWrite} />
       )}
     </div>
   );
@@ -96,6 +106,65 @@ function ShippingContactForm(props: {
               placeholder="shipping@example.com"
               disabled={!props.canWrite}
               {...field}
+            />
+            {fieldState.error && (
+              <p className="text-sm text-destructive">{fieldState.error.message}</p>
+            )}
+          </Field>
+        )}
+      />
+
+      {props.canWrite && (
+        <Button type="submit" disabled={updateAccount.isPending}>
+          {updateAccount.isPending ? (
+            <>
+              <LoaderCircleIcon className="animate-spin" /> Saving...
+            </>
+          ) : (
+            "Save"
+          )}
+        </Button>
+      )}
+    </form>
+  );
+}
+
+function ReportingForm(props: { timezone: string; canWrite: boolean }) {
+  const updateAccount = useUpdateAccountMutation();
+  const form = useForm<ReportingForm>({
+    resolver: zodResolver(ReportingFormSchema),
+    defaultValues: { timezone: props.timezone },
+  });
+
+  useEffect(() => {
+    form.reset({ timezone: props.timezone });
+  }, [form, props.timezone]);
+
+  const handleSubmit = form.handleSubmit((data) => {
+    // errors surface as a toast (react-query-client MutationCache.onError)
+    updateAccount.mutate(data);
+  });
+
+  return (
+    <form onSubmit={handleSubmit} className="max-w-sm space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-sm font-medium">Reporting</h2>
+        <p className="text-sm text-muted-foreground">
+          The time zone your dashboard uses to decide where each day starts and
+          ends, so everyone on your team sees the same totals.
+        </p>
+      </div>
+
+      <Controller
+        control={form.control}
+        name="timezone"
+        render={({ field, fieldState }) => (
+          <Field data-invalid={!!fieldState.error}>
+            <FieldLabel>Time zone</FieldLabel>
+            <TimezoneCombobox
+              value={field.value}
+              onValueChange={field.onChange}
+              disabled={!props.canWrite}
             />
             {fieldState.error && (
               <p className="text-sm text-destructive">{fieldState.error.message}</p>

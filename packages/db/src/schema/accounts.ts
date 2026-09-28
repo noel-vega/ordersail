@@ -17,6 +17,11 @@ export const accountsTable = pgTable("accounts", {
   // still signs in, just gated post-login into forced enrollment —
   // mirrors emailVerifiedAt's post-login-gate precedent (OS-470).
   requireMfaAt: timestamp("require_mfa_at"),
+  // IANA zone name (e.g. "America/New_York") that decides where a reporting
+  // day starts and ends — dashboard ranges and chart buckets are local dates
+  // in this zone, so every staffer sees the same totals. Captured from the
+  // browser at signup; validated as a real zone at the API edge, not here.
+  timezone: text("timezone").notNull().default("UTC"),
   createdAt: timestampAt("created_at"),
   updatedAt: timestampAt("updated_at"),
 });

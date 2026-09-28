@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsTimeZone } from 'src/shared/validation/is-time-zone';
 
 // the shipping contact used as the addressFrom phone/email for every
 // Shippo label purchase, regardless of which location ships the order
@@ -22,4 +23,10 @@ export class UpdateAccountDto {
   @IsOptional()
   @IsBoolean()
   requireMfa?: boolean;
+
+  // IANA zone the dashboard's reporting days are cut in (OS-667)
+  @ApiProperty({ required: false, example: 'America/New_York' })
+  @IsOptional()
+  @IsTimeZone()
+  timezone?: string;
 }

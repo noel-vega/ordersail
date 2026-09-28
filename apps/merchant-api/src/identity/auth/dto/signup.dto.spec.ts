@@ -93,3 +93,42 @@ describe('SignUpDto password policy (OS-317)', () => {
     expect(errors.some((e) => e.property === 'password')).toBe(true);
   });
 });
+
+describe('SignUpDto timezone (OS-667)', () => {
+  const originalFetch = global.fetch;
+  const strong = { ...validBase, password: 'Qr7#vNw4tKzL9pXs' };
+
+  beforeEach(() => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(''),
+    });
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('is optional', async () => {
+    await expect(
+      validate(plainToInstance(SignUpDto, strong)),
+    ).resolves.toHaveLength(0);
+  });
+
+  it('accepts the browser-reported zone', async () => {
+    const dto = plainToInstance(SignUpDto, {
+      ...strong,
+      timezone: 'America/Los_Angeles',
+    });
+    await expect(validate(dto)).resolves.toHaveLength(0);
+  });
+
+  it('rejects an unknown zone instead of silently falling back', async () => {
+    const dto = plainToInstance(SignUpDto, {
+      ...strong,
+      timezone: 'Nope/Zone',
+    });
+    const errors = await validate(dto);
+    expect(errors.map((e) => e.property)).toEqual(['timezone']);
+  });
+});

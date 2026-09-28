@@ -4289,6 +4289,10 @@
           },
           "password": {
             "type": "string"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "America/New_York"
           }
         },
         "required": [
@@ -4783,6 +4787,10 @@
             "type": "string",
             "nullable": true
           },
+          "timezone": {
+            "type": "string",
+            "example": "America/New_York"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -4798,6 +4806,7 @@
           "phone",
           "email",
           "requireMfaAt",
+          "timezone",
           "createdAt",
           "updatedAt"
         ]
@@ -4813,6 +4822,10 @@
           },
           "requireMfa": {
             "type": "boolean"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "America/New_York"
           }
         }
       },

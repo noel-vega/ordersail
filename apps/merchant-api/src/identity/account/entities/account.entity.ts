@@ -17,6 +17,10 @@ export class Account implements SelectAccount {
   @ApiProperty({ type: Date, nullable: true })
   requireMfaAt!: Date | null;
 
+  // IANA zone name — see accountsTable.timezone
+  @ApiProperty({ example: 'America/New_York' })
+  timezone!: string;
+
   @ApiProperty()
   createdAt!: Date;
 

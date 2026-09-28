@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { InfoIcon } from "lucide-react";
 import { appConfig } from "../../../config";
+import { detectTimeZone } from "../../account/timezone";
 
 export function SignUpView() {
   const signUpMutation = useSignUpMutation();
@@ -32,7 +33,9 @@ export function SignUpView() {
   });
 
   async function handleSubmit(formData: SignUpRequestBody) {
-    signUpMutation.mutate(formData, {
+    // the account's reporting timezone starts as this browser's (OS-667);
+    // editable later in Settings
+    signUpMutation.mutate({ ...formData, timezone: detectTimeZone() }, {
       onError: () => {
         setErrorMessage(
           "Unable to create account. This email may already be in use.",
