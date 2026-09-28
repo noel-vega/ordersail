@@ -1,5 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { getDashboardSummaryQueryOptions } from "../dashboard.hooks";
+import {
+  getDashboardSalesQueryOptions,
+  getDashboardSummaryQueryOptions,
+} from "../dashboard.hooks";
 import { getFailedOrdersQueryOptions } from "../../failed-orders/failed-orders.hooks";
 import { DataTable } from "../../../components/data-table";
 import { Card, CardHeader, CardTitle, CardContent } from "ui/card";
@@ -87,16 +90,21 @@ const customerColumns: ColumnDef<Customer>[] = [
 export function DashboardView() {
   const dashboard = useQuery(getDashboardSummaryQueryOptions());
   const summary = dashboard.data;
+  // the API's default range (last 30 days) until the range picker (OS-193)
+  const sales = useQuery(getDashboardSalesQueryOptions()).data?.current;
   const failedOrders = useQuery(getFailedOrdersQueryOptions());
   const unresolvedFailed = failedOrders.data?.unresolvedCount ?? 0;
 
   return (
     <div className="space-y-6">
       <div className="flex gap-4">
-        <MetricCard title="Orders" value={summary?.orderCount ?? 0} />
         <MetricCard
-          title="Revenue"
-          value={formatCents(summary?.revenueCents ?? 0)}
+          title="Net sales · last 30 days"
+          value={formatCents(sales?.netSalesCents ?? 0)}
+        />
+        <MetricCard
+          title="Orders · last 30 days"
+          value={sales?.orderCount ?? 0}
         />
         <MetricCard
           title="Out of Stock"

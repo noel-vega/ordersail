@@ -3728,6 +3728,53 @@
         ]
       }
     },
+    "/dashboard/sales": {
+      "get": {
+        "operationId": "DashboardController_getSales",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "first day (YYYY-MM-DD); default: 29 days before `to`",
+            "schema": {
+              "example": "2026-09-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "last day (YYYY-MM-DD); default: today in the account's zone",
+            "schema": {
+              "example": "2026-09-30",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSales"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "operationId": "HealthController_check",
@@ -7183,12 +7230,6 @@
       "DashboardSummary": {
         "type": "object",
         "properties": {
-          "orderCount": {
-            "type": "number"
-          },
-          "revenueCents": {
-            "type": "number"
-          },
           "outOfStockCount": {
             "type": "number"
           },
@@ -7206,11 +7247,91 @@
           }
         },
         "required": [
-          "orderCount",
-          "revenueCents",
           "outOfStockCount",
           "recentOrders",
           "recentCustomers"
+        ]
+      },
+      "DashboardSalesRange": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "example": "2026-09-01"
+          },
+          "to": {
+            "type": "string",
+            "example": "2026-09-30"
+          },
+          "previousFrom": {
+            "type": "string",
+            "example": "2026-08-02"
+          },
+          "previousTo": {
+            "type": "string",
+            "example": "2026-08-31"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "America/New_York"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "previousFrom",
+          "previousTo",
+          "timezone"
+        ]
+      },
+      "SalesTotals": {
+        "type": "object",
+        "properties": {
+          "grossSalesCents": {
+            "type": "number",
+            "description": "SUM(amountTotalCents) of paid orders placed in the window"
+          },
+          "refundsCents": {
+            "type": "number",
+            "description": "refunds issued in the window, as a positive amount"
+          },
+          "netSalesCents": {
+            "type": "number",
+            "description": "grossSalesCents − refundsCents"
+          },
+          "orderCount": {
+            "type": "number"
+          },
+          "averageOrderValueCents": {
+            "type": "number",
+            "description": "grossSalesCents / orderCount, rounded; 0 with no orders"
+          }
+        },
+        "required": [
+          "grossSalesCents",
+          "refundsCents",
+          "netSalesCents",
+          "orderCount",
+          "averageOrderValueCents"
+        ]
+      },
+      "DashboardSales": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "$ref": "#/components/schemas/DashboardSalesRange"
+          },
+          "current": {
+            "$ref": "#/components/schemas/SalesTotals"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/SalesTotals"
+          }
+        },
+        "required": [
+          "range",
+          "current",
+          "previous"
         ]
       },
       "OnboardingStatus": {

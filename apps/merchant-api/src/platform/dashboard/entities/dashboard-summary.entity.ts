@@ -1,13 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { OrderListItem, Customer } from '../ports/sales.port';
 
+// point-in-time figures only — money is range-scoped (GET /dashboard/sales)
 export class DashboardSummary {
-  @ApiProperty({ type: Number })
-  orderCount!: number;
-
-  @ApiProperty({ type: Number })
-  revenueCents!: number;
-
   // variants with zero stock across all locations — the only "stock is a
   // problem" concept that exists anywhere in the app today (see
   // product-inventory-tab.tsx's identical stock <= 0 badge). Not a
