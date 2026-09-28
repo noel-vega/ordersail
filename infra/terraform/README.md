@@ -153,6 +153,14 @@ SNS SMS sandbox is exited. Full runbook: `docs/runbooks/alerts.md`.
 there and apply; the list and what each is for is in `docs/observability.md` →
 "Tracing a bug", so update that table too.
 
+## Mailboxes: Google Workspace (OS-665)
+
+`envs/production/mail.tf` publishes Google Workspace's MX, the apex TXT (Google verification and
+SPF) and Google's DKIM key, from `google_site_verification` / `google_dkim_txt` in
+`terraform.tfvars`. Users and groups are managed in the Workspace admin console. App mail is
+SES (`ses.tf`), independent of this. Runbook: `docs/runbooks/alerts.md` → Email (SES) →
+Mailboxes.
+
 ## Runbooks
 
 ### Changing an RDS identity attribute (`db_name`, `identifier`, `engine`, …)

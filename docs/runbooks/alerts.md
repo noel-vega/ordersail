@@ -255,6 +255,28 @@ aws sesv2 get-suppressed-destination --email-address <addr>
 SES silently skips an address that hard-bounced or complained. Remove it only when you know
 it's good now: `aws sesv2 delete-suppressed-destination --email-address <addr>`.
 
+### Mailboxes (Google Workspace)
+
+People's mail is separate from app mail. The two share `ordersail.com`'s DNS but not the
+same servers:
+
+| | Handled by | DNS (Terraform) |
+|---|---|---|
+| **People's mail**: support@, privacy@, legal@, security@, dmarc@, staff | **Google Workspace** (OS-665) | apex MX `smtp.google.com`, apex SPF `include:_spf.google.com`, DKIM `google._domainkey`, verification TXT (`envs/production/mail.tf`) |
+| **App mail**: verification, reset, invites, order confirmations | **Amazon SES** as `no-reply@ordersail.com` | SES DKIM CNAMEs, MAIL FROM `bounce.ordersail.com` (`envs/production/ses.tf`) |
+
+- **The role addresses are Google Groups** on one paid seat, with the owner as a member and
+  anyone on the web allowed to post. To add someone, add them to the group in the Workspace
+  admin console; a new person needs a paid seat only if they want their own inbox.
+  **Adding an address needs no Terraform or DNS change.**
+- **A mail "never arrived" at support@ etc.:** check the group's "who can post" setting and its
+  spam moderation queue (Groups → the group → Pending messages), then `dig MX ordersail.com`.
+- **DMARC aggregate reports** (`rua`) land in `dmarc@`, one XML attachment per receiver per
+  day. They show which servers send as `ordersail.com` and whether SPF and DKIM pass. Read them
+  before tightening `p=none` (OS-662).
+- **Replying as support@:** set it up as a "Send mail as" address in the owner's Gmail. Mail sent
+  that way is DKIM-signed by Google with `d=ordersail.com`, so it passes DMARC.
+
 ### While in the sandbox: adding a test inbox
 
 Each test recipient needs **both** of these, or its emails fail:

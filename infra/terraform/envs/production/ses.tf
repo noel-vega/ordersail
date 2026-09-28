@@ -22,9 +22,9 @@ resource "aws_ses_email_identity" "sender" {
 #   MAIL FROM  bounce.ordersail.com as the envelope sender, with its own MX (SES
 #              feedback endpoint) and SPF, so SPF aligns too instead of
 #              checking amazonses.com.
-#   DMARC      p=none — monitor only. No `rua`: ordersail.com receives no mail
-#              yet. Tighten to p=quarantine once real traffic is clean
-#              (OS-662).
+#   DMARC      p=none — monitor only. Aggregate reports (rua) go to the
+#              dmarc@ Google Group (OS-665). Tighten to p=quarantine once real
+#              traffic is clean (OS-662).
 #
 # The worker sends from this identity (EMAIL_FROM, OS-658). The gmail identity
 # above is no longer a sender; OS-61 deletes it after production access is
@@ -82,7 +82,8 @@ resource "aws_route53_record" "dmarc" {
   name    = "_dmarc.${var.domain_name}"
   type    = "TXT"
   ttl     = 1800
-  records = ["v=DMARC1; p=none;"]
+  # rua: aggregate reports go to the dmarc@ Google Group (OS-665)
+  records = ["v=DMARC1; p=none; rua=mailto:dmarc@${var.domain_name}"]
 }
 
 # --- bounce / complaint handling (OS-659) -----------------------------------
