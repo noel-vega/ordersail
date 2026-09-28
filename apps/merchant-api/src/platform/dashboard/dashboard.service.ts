@@ -22,7 +22,8 @@ import {
   DashboardSalesTimeseries,
   type SalesGranularity,
 } from './entities/dashboard-sales-timeseries.entity';
-import { resolveRange, spanDays, type RangePreset } from './range';
+import { resolveRange, spanDays } from './range';
+import type { DashboardRangeQueryDto } from './dto/dashboard-range-query.dto';
 
 const RECENT_LIMIT = 5;
 
@@ -34,15 +35,14 @@ const RECENT_LIMIT = 5;
 // it was placed, retroactively.
 const SALE_STATUSES = ['paid', 'partially_refunded', 'refunded'] as const;
 
-// the account's orders that count as a sale; the query must join ordersTable
-function saleOrderOf(accountId: number): SQL {
+// WHERE predicate: the account's orders that count as a sale; the query must
+// join ordersTable
+function isSaleOrder(accountId: number): SQL {
   return and(
     eq(ordersTable.accountId, accountId),
     inArray(ordersTable.status, [...SALE_STATUSES]),
   )!;
 }
-
-type RangeQuery = { from?: string; to?: string; range?: RangePreset };
 
 // the chart's bucket size, from the span in days: ~a point per day up to a
 // month, per ISO week (Monday start) up to ~6 months, else per month (OS-670)
@@ -86,7 +86,7 @@ export class DashboardService {
 
   async getSales(
     accountId: number,
-    query: RangeQuery,
+    query: DashboardRangeQueryDto,
     now = new Date(),
   ): Promise<DashboardSales> {
     const { timezone, range } = await this.resolveAccountRange(
@@ -115,7 +115,7 @@ export class DashboardService {
   // `date` is still the bucket's start, and only in-range data is counted.
   async getSalesTimeseries(
     accountId: number,
-    query: RangeQuery,
+    query: DashboardRangeQueryDto,
     now = new Date(),
   ): Promise<DashboardSalesTimeseries> {
     const { timezone, range } = await this.resolveAccountRange(
@@ -129,7 +129,7 @@ export class DashboardService {
     // created_at is a naive UTC timestamp → the local wall-clock date in tz
     const bucketOf = (createdAt: SQL) =>
       sql`date_trunc(${granularity}, (${createdAt} at time zone 'UTC') at time zone ${timezone})`;
-    const saleOrder = saleOrderOf(accountId);
+    const isSale = isSaleOrder(accountId);
 
     const { rows } = await this.db.execute<{
       date: string;
@@ -149,7 +149,7 @@ export class DashboardService {
                sum(${ordersTable.amountTotalCents}) as gross,
                count(*)::int as orders
         from ${ordersTable}
-        where ${saleOrder}
+        where ${isSale}
           and ${ordersTable.createdAt} >= ${start}
           and ${ordersTable.createdAt} < ${end}
         group by 1
@@ -159,7 +159,7 @@ export class DashboardService {
                -sum(${orderPaymentsTable.amountCents}) as refunds
         from ${orderPaymentsTable}
         inner join ${ordersTable} on ${ordersTable.id} = ${orderPaymentsTable.orderId}
-        where ${saleOrder}
+        where ${isSale}
           and ${orderPaymentsTable.amountCents} < 0
           and ${orderPaymentsTable.createdAt} >= ${start}
           and ${orderPaymentsTable.createdAt} < ${end}
@@ -197,7 +197,7 @@ export class DashboardService {
 
   private async resolveAccountRange(
     accountId: number,
-    query: RangeQuery,
+    query: DashboardRangeQueryDto,
     now: Date,
   ) {
     const [{ timezone }] = await this.db
@@ -222,7 +222,7 @@ export class DashboardService {
     const start = localMidnightUtc(from, tz);
     // exclusive: the local midnight starting the day after `to`
     const end = localMidnightUtc(to, tz, 1);
-    const saleOrder = saleOrderOf(accountId);
+    const isSale = isSaleOrder(accountId);
 
     const [[orders], [refunds]] = await Promise.all([
       this.db
@@ -238,7 +238,7 @@ export class DashboardService {
         .from(ordersTable)
         .where(
           and(
-            saleOrder,
+            isSale,
             sql`${ordersTable.createdAt} >= ${start}`,
             sql`${ordersTable.createdAt} < ${end}`,
           ),
@@ -254,7 +254,7 @@ export class DashboardService {
         .innerJoin(ordersTable, eq(ordersTable.id, orderPaymentsTable.orderId))
         .where(
           and(
-            saleOrder,
+            isSale,
             lt(orderPaymentsTable.amountCents, 0),
             sql`${orderPaymentsTable.createdAt} >= ${start}`,
             sql`${orderPaymentsTable.createdAt} < ${end}`,
