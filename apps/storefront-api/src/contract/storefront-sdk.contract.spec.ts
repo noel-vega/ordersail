@@ -359,20 +359,31 @@ describe('storefront-sdk contract', () => {
 
     // holds every refresh response until release() — the server has already
     // rotated by the time refreshLanded() is true, but the client hasn't
-    // applied it yet
+    // applied it yet. issuedRefreshTokens() is what the server minted, read
+    // off the wire, whether or not the client ends up keeping it.
     function holdRefresh() {
       let landed = false;
+      const issued: string[] = [];
       let release!: () => void;
       const released = new Promise<void>((resolve) => (release = resolve));
       const fetches = spyOnFetch(async (path, send) => {
         const response = await send();
         if (path === '/auth/token/refresh') {
+          const body = (await response.clone().json()) as {
+            refresh_token?: string;
+          };
+          if (body.refresh_token) issued.push(body.refresh_token);
           landed = true;
           await released;
         }
         return response;
       });
-      return { ...fetches, refreshLanded: () => landed, release };
+      return {
+        ...fetches,
+        refreshLanded: () => landed,
+        issuedRefreshTokens: () => issued,
+        release,
+      };
     }
 
     it('concurrent 401s share one refresh and the session survives', async () => {
@@ -506,6 +517,17 @@ describe('storefront-sdk contract', () => {
       // and nothing is left to refresh with
       await expect(client.refreshAccessToken()).resolves.toBeUndefined();
       expect(fetches.refreshCount()).toBe(1);
+
+      // the server rotated before logout ran, so the discarded refresh
+      // minted a real token — logout (presenting the rotated-out one) must
+      // have revoked its whole family, or that token is a live orphan
+      const [minted] = fetches.issuedRefreshTokens();
+      expect(minted).toEqual(expect.any(String));
+      const replay = restoredClient({
+        appKey: session.appKey,
+        refreshToken: minted,
+      });
+      await expect(replay.refreshAccessToken()).resolves.toBeUndefined();
     }, 30000);
 
     it('signIn() while a refresh is in flight keeps the signed-in session', async () => {
