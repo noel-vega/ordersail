@@ -35,6 +35,15 @@ export class DashboardSalesTimeseries {
   })
   granularity!: SalesGranularity;
 
+  // the resolved range the points cover — local calendar dates (YYYY-MM-DD)
+  // in `timezone`, both inclusive. Returned so a client clamps partial first
+  // and last buckets to this response's range, not one from another request
+  @ApiProperty({ example: '2026-09-01' })
+  from!: string;
+
+  @ApiProperty({ example: '2026-09-30' })
+  to!: string;
+
   @ApiProperty({ example: 'America/New_York' })
   timezone!: string;
 

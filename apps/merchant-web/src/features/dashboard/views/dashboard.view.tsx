@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   getDashboardSalesQueryOptions,
+  getDashboardSalesTimeseriesQueryOptions,
   getDashboardSummaryQueryOptions,
 } from "../dashboard.hooks";
 import { formatRangeLabel, toApiRange } from "../dashboard-range";
 import { DateRangePicker } from "../components/date-range-picker";
 import { MetricCard } from "../components/metric-card";
+import { SalesTrendChart } from "../components/sales-trend-chart";
+import { OrdersTrendChart } from "../components/orders-trend-chart";
 import { getFailedOrdersQueryOptions } from "../../failed-orders/failed-orders.hooks";
 import { DataTable } from "../../../components/data-table";
 import { cn } from "ui/utils";
@@ -71,6 +74,9 @@ export function DashboardView() {
   const summary = dashboard.data;
   const salesQuery = useQuery(getDashboardSalesQueryOptions(params));
   const sales = salesQuery.data;
+  const timeseriesQuery = useQuery(
+    getDashboardSalesTimeseriesQueryOptions(params),
+  );
   const failedOrders = useQuery(getFailedOrdersQueryOptions());
   const unresolvedFailed = failedOrders.data?.unresolvedCount ?? 0;
 
@@ -128,6 +134,18 @@ export function DashboardView() {
           value={formatCents(sales?.current.averageOrderValueCents ?? 0)}
           comparison={comparison((t) => t.averageOrderValueCents)}
         />
+      </section>
+
+      <section
+        aria-label="Sales and orders over the selected range"
+        aria-busy={timeseriesQuery.isPlaceholderData}
+        className={cn(
+          "grid grid-cols-1 gap-4 transition-opacity lg:grid-cols-2",
+          timeseriesQuery.isPlaceholderData && "opacity-60",
+        )}
+      >
+        <SalesTrendChart query={timeseriesQuery} />
+        <OrdersTrendChart query={timeseriesQuery} />
       </section>
 
       {/* point-in-time — not affected by the range above */}

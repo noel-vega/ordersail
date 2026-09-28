@@ -327,6 +327,8 @@ describe('DashboardService.getSalesTimeseries (OS-670)', () => {
       }),
     ).resolves.toEqual({
       granularity: 'day',
+      from: '2026-09-01',
+      to: '2026-09-07',
       timezone: 'UTC',
       points: [
         point('2026-09-01'),
@@ -354,6 +356,8 @@ describe('DashboardService.getSalesTimeseries (OS-670)', () => {
       to: '2026-12-01',
     });
     expect(weeks.granularity).toBe('week');
+    // the range itself, not the first bucket's start — a client clamps to it
+    expect([weeks.from, weeks.to]).toEqual(['2026-09-03', '2026-12-01']);
     expect(weeks.points[0].date).toBe('2026-08-31');
     expect(weeks.points.at(-1)?.date).toBe('2026-11-30');
     expect(weeks.points).toHaveLength(14);
@@ -378,6 +382,15 @@ describe('DashboardService.getSalesTimeseries (OS-670)', () => {
       '2026-12-01',
       '2027-01-01',
     ]);
+  });
+
+  it('returns the range a preset resolved to', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    // NOW is 2027-01-01 → the last 7 days, today included
+    const series = await getTimeseries(service, account.id, { range: '7d' });
+    expect([series.from, series.to]).toEqual(['2026-12-26', '2027-01-01']);
   });
 
   it('a partial first bucket counts only in-range sales', async () => {
