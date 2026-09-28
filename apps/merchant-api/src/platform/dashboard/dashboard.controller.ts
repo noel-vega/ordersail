@@ -1,6 +1,13 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse } from '@nestjs/swagger';
-import { DashboardService } from './dashboard.service';
+import {
+  Controller,
+  DefaultValuePipe,
+  Get,
+  ParseIntPipe,
+  Query,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOkResponse, ApiQuery } from '@nestjs/swagger';
+import { DashboardService, LOW_STOCK_DEFAULT_LIMIT } from './dashboard.service';
+import { DashboardLowStock } from './entities/dashboard-low-stock.entity';
 import { DashboardSummary } from './entities/dashboard-summary.entity';
 import { DashboardSales } from './entities/dashboard-sales.entity';
 import { DashboardSalesTimeseries } from './entities/dashboard-sales-timeseries.entity';
@@ -47,5 +54,24 @@ export class DashboardController {
     @Query() query: DashboardRangeQueryDto,
   ) {
     return this.dashboardService.getSalesTimeseries(user.accountId, query);
+  }
+
+  // variants at or below the low-stock threshold, most urgent first (OS-195)
+  @RequirePermissions('dashboard:read')
+  @Get('low-stock')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: DashboardLowStock })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: `1–50, clamped; default ${LOW_STOCK_DEFAULT_LIMIT}`,
+  })
+  getLowStock(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('limit', new DefaultValuePipe(LOW_STOCK_DEFAULT_LIMIT), ParseIntPipe)
+    limit: number,
+  ) {
+    return this.dashboardService.getLowStock(user.accountId, limit);
   }
 }

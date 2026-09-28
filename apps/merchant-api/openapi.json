@@ -3863,6 +3863,42 @@
         ]
       }
     },
+    "/dashboard/low-stock": {
+      "get": {
+        "operationId": "DashboardController_getLowStock",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "1–50, clamped; default 10",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardLowStock"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "operationId": "HealthController_check",
@@ -7366,6 +7402,12 @@
           "outOfStockCount": {
             "type": "number"
           },
+          "lowStockCount": {
+            "type": "number"
+          },
+          "lowStockThreshold": {
+            "type": "number"
+          },
           "recentOrders": {
             "type": "array",
             "items": {
@@ -7381,6 +7423,8 @@
         },
         "required": [
           "outOfStockCount",
+          "lowStockCount",
+          "lowStockThreshold",
           "recentOrders",
           "recentCustomers"
         ]
@@ -7539,6 +7583,60 @@
           "to",
           "timezone",
           "points"
+        ]
+      },
+      "LowStockItem": {
+        "type": "object",
+        "properties": {
+          "variantId": {
+            "type": "number"
+          },
+          "productId": {
+            "type": "number"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "optionsLabel": {
+            "type": "string",
+            "nullable": true,
+            "example": "Blue / Large",
+            "description": "the variant's option values in option order; null with no options"
+          },
+          "stock": {
+            "type": "number",
+            "description": "on hand across all locations; can be negative"
+          }
+        },
+        "required": [
+          "variantId",
+          "productId",
+          "productName",
+          "sku",
+          "optionsLabel",
+          "stock"
+        ]
+      },
+      "DashboardLowStock": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LowStockItem"
+            }
+          },
+          "lowStockThreshold": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "lowStockThreshold"
         ]
       },
       "OnboardingStatus": {

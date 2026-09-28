@@ -1,6 +1,7 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
+import { dashboardQueryKey } from "../dashboard/dashboard.hooks"
 
 export function getAccountQueryOptions() {
   return queryOptions({
@@ -19,6 +20,9 @@ export function useUpdateAccountMutation() {
       merchantApi.account.update(params),
     onSuccess: () => {
       queryClient.invalidateQueries(getAccountQueryOptions())
+      // every dashboard query: the stock counts and low-stock list follow
+      // lowStockThreshold, the sales figures follow timezone (OS-195)
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKey })
     },
   })
 }

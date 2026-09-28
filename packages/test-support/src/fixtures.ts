@@ -610,6 +610,9 @@ export interface VariantSpec {
   // "Size: 8" style label — creates the option/value/link rows so
   // ProductsService.selectVariants surfaces optionValues
   option?: { name: string; value: string };
+  // several options on one variant ("Color: Blue" + "Size: Large"), in the
+  // order the product's options are created
+  options?: { name: string; value: string }[];
   // stock per location: [{ locationId, stock }]
   stock?: { locationId: number; stock: number }[];
 }
@@ -646,23 +649,26 @@ export async function insertProductWithVariants(
         .returning(),
     );
 
-    if (spec.option) {
-      let optionId = optionIdByName.get(spec.option.name);
+    for (const option of [
+      ...(spec.option ? [spec.option] : []),
+      ...(spec.options ?? []),
+    ]) {
+      let optionId = optionIdByName.get(option.name);
       if (optionId === undefined) {
         optionId = (
           await one(
             await db
               .insert(productOptionsTable)
-              .values({ productId, name: spec.option.name })
+              .values({ productId, name: option.name })
               .returning(),
           )
         ).id;
-        optionIdByName.set(spec.option.name, optionId);
+        optionIdByName.set(option.name, optionId);
       }
       const value = await one(
         await db
           .insert(productOptionValuesTable)
-          .values({ optionId, value: spec.option.value })
+          .values({ optionId, value: option.value })
           .returning(),
       );
       await db

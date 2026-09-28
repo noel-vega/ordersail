@@ -6,6 +6,10 @@ export type DashboardRangeParams = NonNullable<
   paths["/dashboard/sales"]["get"]["parameters"]["query"]
 >;
 
+export type DashboardLowStockParams = NonNullable<
+  paths["/dashboard/low-stock"]["get"]["parameters"]["query"]
+>;
+
 // only the params that are set — an empty `from=` would 400
 function rangeQuery(params?: DashboardRangeParams): DashboardRangeParams {
   return {
@@ -36,6 +40,20 @@ export function createDashboardResource(
         ),
       );
     },
+
+    // variants at or below the account's low-stock threshold, summed across
+    // locations, lowest stock first; the server clamps and defaults `limit`
+    // (OS-195)
+    lowStock: async (params?: DashboardLowStockParams) =>
+      unwrap(
+        await doRequest(() =>
+          client.GET("/dashboard/low-stock", {
+            params: {
+              query: params?.limit !== undefined ? { limit: params.limit } : {},
+            },
+          }),
+        ),
+      ),
 
     // the same money in zero-filled day/week/month buckets (the server picks
     // the granularity from the span) for the trend charts (OS-670)
