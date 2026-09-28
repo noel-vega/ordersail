@@ -1268,6 +1268,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/sales/timeseries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DashboardController_getSalesTimeseries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2196,6 +2212,27 @@ export interface components {
             range: components["schemas"]["DashboardSalesRange"];
             current: components["schemas"]["SalesTotals"];
             previous: components["schemas"]["SalesTotals"];
+        };
+        SalesTimeseriesPoint: {
+            /**
+             * @description the bucket's first local date (YYYY-MM-DD) — a week starts Monday. The first and last buckets may extend past the range; only in-range sales are counted
+             * @example 2026-09-07
+             */
+            date: string;
+            grossSalesCents: number;
+            refundsCents: number;
+            netSalesCents: number;
+            orderCount: number;
+        };
+        DashboardSalesTimeseries: {
+            /**
+             * @description chosen from the span: ≤ 31 days → day, ≤ 184 days → week, else month
+             * @enum {string}
+             */
+            granularity: "day" | "week" | "month";
+            /** @example America/New_York */
+            timezone: string;
+            points: components["schemas"]["SalesTimeseriesPoint"][];
         };
         OnboardingStatus: {
             stripeConnected: boolean;
@@ -4631,6 +4668,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardSales"];
+                };
+            };
+        };
+    };
+    DashboardController_getSalesTimeseries: {
+        parameters: {
+            query?: {
+                /** @description first day (YYYY-MM-DD); wins over `range`; a day after today in the account's zone is capped to today; default: `range`'s length ending at `to` */
+                from?: string;
+                /** @description last day (YYYY-MM-DD); a day after today in the account's zone is capped to today; default: today */
+                to?: string;
+                /** @description window length ending at `to` (default today in the account's zone) when `from` is omitted; default 30d */
+                range?: "today" | "7d" | "30d" | "90d" | "12m";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardSalesTimeseries"];
                 };
             };
         };

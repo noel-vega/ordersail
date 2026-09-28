@@ -6,7 +6,19 @@ export type DashboardRangeParams = NonNullable<
   paths["/dashboard/sales"]["get"]["parameters"]["query"]
 >;
 
-export function createDashboardResource(client: Client<paths>, doRequest: DoFn) {
+// only the params that are set — an empty `from=` would 400
+function rangeQuery(params?: DashboardRangeParams): DashboardRangeParams {
+  return {
+    ...(params?.from ? { from: params.from } : {}),
+    ...(params?.to ? { to: params.to } : {}),
+    ...(params?.range ? { range: params.range } : {}),
+  };
+}
+
+export function createDashboardResource(
+  client: Client<paths>,
+  doRequest: DoFn,
+) {
   return {
     get: async () => unwrap(await doRequest(() => client.GET("/dashboard"))),
 
@@ -15,13 +27,7 @@ export function createDashboardResource(client: Client<paths>, doRequest: DoFn) 
     // `range` is a preset ending today in the account's zone (the server
     // resolves it); omitted -> the last 30 days (OS-669, OS-193)
     sales: async (params?: DashboardRangeParams) => {
-      const query: NonNullable<
-        paths["/dashboard/sales"]["get"]["parameters"]["query"]
-      > = {
-        ...(params?.from ? { from: params.from } : {}),
-        ...(params?.to ? { to: params.to } : {}),
-        ...(params?.range ? { range: params.range } : {}),
-      };
+      const query = rangeQuery(params);
       // unwrapped: a 400 must surface as an ApiError, not resolve to
       // undefined (which fails the query without the server's message)
       return unwrap(
@@ -30,5 +36,16 @@ export function createDashboardResource(client: Client<paths>, doRequest: DoFn) 
         ),
       );
     },
+
+    // the same money in zero-filled day/week/month buckets (the server picks
+    // the granularity from the span) for the trend charts (OS-670)
+    salesTimeseries: async (params?: DashboardRangeParams) =>
+      unwrap(
+        await doRequest(() =>
+          client.GET("/dashboard/sales/timeseries", {
+            params: { query: rangeQuery(params) },
+          }),
+        ),
+      ),
   };
 }
