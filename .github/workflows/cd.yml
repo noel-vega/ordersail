@@ -342,24 +342,30 @@ jobs:
               echo "FAIL  $label body missing '$needle'"; fail=1
             fi
           }
-          frontend() {   # frontend <label> <body-marker> <url>
-            # Normally expects 200 + the marker. While the pre-launch HTTP Basic
-            # gate is up (OS-363) an unauthenticated GET is 401 with a Basic
-            # challenge — that's the deliberate state, so accept it. Reverts to
-            # the full check automatically once the gate is lifted.
-            local label=$1 marker=$2 url=$3 code n=0
+          frontend() {   # frontend <label> <public|gated> <body-marker> <url>
+            # public: must be 200 + the marker — a 401 means the site got gated
+            # again by mistake, so it fails.
+            # gated: behind the pre-launch HTTP Basic gate (OS-363), so an
+            # unauthenticated GET is 401 with a Basic challenge — the deliberate
+            # state, so accept it. 200 + the marker also passes, so lifting the
+            # gate at launch doesn't break the smoke test.
+            local label=$1 mode=$2 marker=$3 url=$4 code n=0
             while :; do
               code=$(curl -s -o /tmp/smoke.body -w '%{http_code}' --max-time 15 "$url" || echo 000)
-              { [ "$code" = 200 ] || [ "$code" = 401 ]; } && break
+              [ "$code" = 200 ] && break
+              [ "$mode" = gated ] && [ "$code" = 401 ] && break
               n=$((n + 1)); [ $n -ge 5 ] && break
               sleep 6
             done
-            if [ "$code" = 401 ] && curl -sI --max-time 15 "$url" | grep -qi '^www-authenticate: *basic'; then
+            if [ "$mode" = gated ] && [ "$code" = 401 ] && curl -sI --max-time 15 "$url" | grep -qi '^www-authenticate: *basic'; then
               echo "ok    $label -> 401 (pre-launch gate active, OS-363)"
             elif [ "$code" = 200 ] && grep -qF -- "$marker" /tmp/smoke.body; then
               echo "ok    $label -> 200, body ~ '$marker'"
-            else
+            elif [ "$mode" = gated ]; then
               echo "FAIL  $label -> $code (want 200 + '$marker', or 401 + Basic while gated)"
+              head -c 300 /tmp/smoke.body; echo; fail=1
+            else
+              echo "FAIL  $label -> $code (want 200 + '$marker'; public site)"
               head -c 300 /tmp/smoke.body; echo; fail=1
             fi
           }
@@ -381,8 +387,11 @@ jobs:
           hit      "pos-api        GET /pos/session" 401 https://pos.ordersail.com/pos/session
 
           echo "== Frontends =="
-          frontend "merchant-web   GET /"            '<title>merchant-web</title>'  https://merchant.ordersail.com/
-          frontend "website        GET /"            'Set sail with your store.'    https://ordersail.com/
+          frontend "merchant-web   GET /"            gated  '<title>merchant-web</title>'  https://merchant.ordersail.com/
+          frontend "website        GET /"            public 'Set sail with your store.'    https://ordersail.com/
+          # Both directory-index rewrite branches (OS-365): trailing slash and bare path.
+          frontend "website        GET /features/"   public 'Everything a small store runs on' https://ordersail.com/features/
+          frontend "website        GET /features"    public 'Everything a small store runs on' https://ordersail.com/features
 
           [ $fail -eq 0 ] && { echo "all smoke checks passed"; exit 0; }
           echo "::error::post-deploy smoke test failed"
