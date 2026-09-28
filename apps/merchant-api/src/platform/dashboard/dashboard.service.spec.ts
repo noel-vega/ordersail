@@ -34,8 +34,6 @@ describe('DashboardService.getSummary — fresh account (OS-173)', () => {
     const service = await build();
 
     await expect(service.getSummary(account.id)).resolves.toEqual({
-      orderCount: 0,
-      revenueCents: 0,
       outOfStockCount: 0,
       recentOrders: [],
       recentCustomers: [],
@@ -53,6 +51,5 @@ describe('DashboardService.getSummary — fresh account (OS-173)', () => {
 
     const summary = await service.getSummary(account.id);
     expect(summary.outOfStockCount).toBe(1);
-    expect(summary.orderCount).toBe(0);
   });
 });

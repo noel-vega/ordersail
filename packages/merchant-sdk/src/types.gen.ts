@@ -1252,6 +1252,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/sales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DashboardController_getSales"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2144,11 +2160,37 @@ export interface components {
             offset: number;
         };
         DashboardSummary: {
-            orderCount: number;
-            revenueCents: number;
             outOfStockCount: number;
             recentOrders: components["schemas"]["OrderListItem"][];
             recentCustomers: components["schemas"]["Customer"][];
+        };
+        DashboardSalesRange: {
+            /** @example 2026-09-01 */
+            from: string;
+            /** @example 2026-09-30 */
+            to: string;
+            /** @example 2026-08-02 */
+            previousFrom: string;
+            /** @example 2026-08-31 */
+            previousTo: string;
+            /** @example America/New_York */
+            timezone: string;
+        };
+        SalesTotals: {
+            /** @description SUM(amountTotalCents) of paid orders placed in the window */
+            grossSalesCents: number;
+            /** @description refunds issued in the window, as a positive amount */
+            refundsCents: number;
+            /** @description grossSalesCents − refundsCents */
+            netSalesCents: number;
+            orderCount: number;
+            /** @description grossSalesCents / orderCount, rounded; 0 with no orders */
+            averageOrderValueCents: number;
+        };
+        DashboardSales: {
+            range: components["schemas"]["DashboardSalesRange"];
+            current: components["schemas"]["SalesTotals"];
+            previous: components["schemas"]["SalesTotals"];
         };
         OnboardingStatus: {
             stripeConnected: boolean;
@@ -4558,6 +4600,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardSummary"];
+                };
+            };
+        };
+    };
+    DashboardController_getSales: {
+        parameters: {
+            query?: {
+                /** @description first day (YYYY-MM-DD); default: 29 days before `to` */
+                from?: string;
+                /** @description last day (YYYY-MM-DD); default: today in the account's zone */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardSales"];
                 };
             };
         };

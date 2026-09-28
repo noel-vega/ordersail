@@ -739,6 +739,8 @@ export async function insertOrder(
     amountTotalCents?: number;
     shippingCents?: number;
     confirmationEmailQueuedAt?: Date | null;
+    // omitted -> now(); set to place the order at a point in time
+    createdAt?: Date;
   },
 ): Promise<Row<typeof ordersTable>> {
   return one(
@@ -755,6 +757,7 @@ export async function insertOrder(
         amountTotalCents: opts.amountTotalCents ?? 1000,
         shippingCents: opts.shippingCents ?? 0,
         confirmationEmailQueuedAt: opts.confirmationEmailQueuedAt ?? null,
+        createdAt: opts.createdAt,
       })
       .returning(),
   );
@@ -772,6 +775,8 @@ export async function insertOrderPayment(
     stripeRefundId?: string | null;
     reason?: string | null;
     parentPaymentId?: number | null;
+    // omitted -> now(); set to date a refund row
+    createdAt?: Date;
   },
 ): Promise<Row<typeof orderPaymentsTable>> {
   return one(
@@ -786,6 +791,7 @@ export async function insertOrderPayment(
         stripeRefundId: opts.stripeRefundId ?? null,
         reason: opts.reason ?? null,
         parentPaymentId: opts.parentPaymentId ?? null,
+        createdAt: opts.createdAt,
       })
       .returning(),
   );
