@@ -64,6 +64,11 @@ export function todayIn(timezone: string, now: Date): string {
   }).format(now);
 }
 
+// inclusive length in days of a resolved from..to
+export function spanDays(from: string, to: string): number {
+  return (parseDate(to, 'to') - parseDate(from, 'from')) / DAY_MS + 1;
+}
+
 // `from`/`to` as sent by the client (either may be omitted): a missing `to`
 // is today in the account's zone, a missing `from` makes the window `range`'s
 // length (default 30 days) ending at `to`. So `?range=7d` alone is the last

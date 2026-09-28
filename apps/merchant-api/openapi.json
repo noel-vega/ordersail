@@ -3800,6 +3800,69 @@
         ]
       }
     },
+    "/dashboard/sales/timeseries": {
+      "get": {
+        "operationId": "DashboardController_getSalesTimeseries",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "first day (YYYY-MM-DD); wins over `range`; a day after today in the account's zone is capped to today; default: `range`'s length ending at `to`",
+            "schema": {
+              "example": "2026-09-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "last day (YYYY-MM-DD); a day after today in the account's zone is capped to today; default: today",
+            "schema": {
+              "example": "2026-09-30",
+              "type": "string"
+            }
+          },
+          {
+            "name": "range",
+            "required": false,
+            "in": "query",
+            "description": "window length ending at `to` (default today in the account's zone) when `from` is omitted; default 30d",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "today",
+                "7d",
+                "30d",
+                "90d",
+                "12m"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSalesTimeseries"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "operationId": "HealthController_check",
@@ -7378,6 +7441,64 @@
           "range",
           "current",
           "previous"
+        ]
+      },
+      "SalesTimeseriesPoint": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "example": "2026-09-07",
+            "description": "the bucket's first local date (YYYY-MM-DD) — a week starts Monday. The first and last buckets may extend past the range; only in-range sales are counted"
+          },
+          "grossSalesCents": {
+            "type": "number"
+          },
+          "refundsCents": {
+            "type": "number"
+          },
+          "netSalesCents": {
+            "type": "number"
+          },
+          "orderCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "grossSalesCents",
+          "refundsCents",
+          "netSalesCents",
+          "orderCount"
+        ]
+      },
+      "DashboardSalesTimeseries": {
+        "type": "object",
+        "properties": {
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "chosen from the span: ≤ 31 days → day, ≤ 184 days → week, else month"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "America/New_York"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesTimeseriesPoint"
+            }
+          }
+        },
+        "required": [
+          "granularity",
+          "timezone",
+          "points"
         ]
       },
       "OnboardingStatus": {

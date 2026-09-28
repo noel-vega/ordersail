@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOkResponse } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { DashboardSummary } from './entities/dashboard-summary.entity';
 import { DashboardSales } from './entities/dashboard-sales.entity';
+import { DashboardSalesTimeseries } from './entities/dashboard-sales-timeseries.entity';
 import { DashboardRangeQueryDto } from './dto/dashboard-range-query.dto';
 import {
   CurrentUser,
@@ -34,5 +35,17 @@ export class DashboardController {
     @Query() query: DashboardRangeQueryDto,
   ) {
     return this.dashboardService.getSales(user.accountId, query);
+  }
+
+  // the same money bucketed by day/week/month for the trend charts (OS-670)
+  @RequirePermissions('dashboard:read')
+  @Get('sales/timeseries')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: DashboardSalesTimeseries })
+  getSalesTimeseries(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardRangeQueryDto,
+  ) {
+    return this.dashboardService.getSalesTimeseries(user.accountId, query);
   }
 }

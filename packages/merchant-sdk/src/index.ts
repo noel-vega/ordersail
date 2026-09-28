@@ -100,6 +100,10 @@ export type AccessTokenDto = components["schemas"]["AccessTokenDto"];
 export type DashboardSummary = components["schemas"]["DashboardSummary"];
 export type DashboardSales = components["schemas"]["DashboardSales"];
 export type SalesTotals = components["schemas"]["SalesTotals"];
+export type DashboardSalesTimeseries =
+  components["schemas"]["DashboardSalesTimeseries"];
+export type SalesTimeseriesPoint =
+  components["schemas"]["SalesTimeseriesPoint"];
 export type { DashboardRangeParams } from "./resources/dashboard.js";
 export type OnboardingStatus = components["schemas"]["OnboardingStatus"];
 export type Permission = components["schemas"]["Permission"];
@@ -111,12 +115,10 @@ export type PosDevice = components["schemas"]["PosDevice"];
 export type PosDevicePairing = components["schemas"]["PosDevicePairing"];
 export type CreatePosDeviceDto = components["schemas"]["CreatePosDeviceDto"];
 export type UpdatePosDeviceDto = components["schemas"]["UpdatePosDeviceDto"];
-export type MfaEnrollResponse =
-  components["schemas"]["MfaEnrollResponseDto"];
+export type MfaEnrollResponse = components["schemas"]["MfaEnrollResponseDto"];
 export type MfaRecoveryCodes = components["schemas"]["MfaRecoveryCodesDto"];
 export type MfaConfirmDto = components["schemas"]["MfaConfirmDto"];
-export type MfaConfirmResponse =
-  components["schemas"]["MfaConfirmResponseDto"];
+export type MfaConfirmResponse = components["schemas"]["MfaConfirmResponseDto"];
 export type MfaDisableDto = components["schemas"]["MfaDisableDto"];
 export type MfaRegenerateRecoveryCodesDto =
   components["schemas"]["MfaRegenerateRecoveryCodesDto"];
@@ -125,8 +127,7 @@ export type MfaChallenge = components["schemas"]["MfaChallengeDto"];
 export type Passkey = components["schemas"]["PasskeyDto"];
 export type PasskeyRegisterVerifyDto =
   components["schemas"]["PasskeyRegisterVerifyDto"];
-export type PasskeyRegistered =
-  components["schemas"]["PasskeyRegisteredDto"];
+export type PasskeyRegistered = components["schemas"]["PasskeyRegisteredDto"];
 export type PasskeyRenameDto = components["schemas"]["PasskeyRenameDto"];
 export type PasskeyRemoveDto = components["schemas"]["PasskeyRemoveDto"];
 export type PasskeyChallengeOptionsDto =
@@ -261,18 +262,14 @@ export class AdminClient {
   // public; resolves the same whether or not the email has an account, so
   // callers must not branch on it (no account enumeration)
   async forgotPassword(params: components["schemas"]["ForgotPasswordDto"]) {
-    unwrap(
-      await this.client.POST("/auth/forgot-password", { body: params }),
-    );
+    unwrap(await this.client.POST("/auth/forgot-password", { body: params }));
   }
 
   // public — the user can't sign in by definition. Never logs in: the API
   // revokes every session for the user, and MFA still applies on next
   // sign-in. 401 = bad/expired link, 400 = password rejected by policy.
   async resetPassword(params: components["schemas"]["ResetPasswordDto"]) {
-    unwrap(
-      await this.client.POST("/auth/reset-password", { body: params }),
-    );
+    unwrap(await this.client.POST("/auth/reset-password", { body: params }));
     this.accessToken = undefined;
   }
 
@@ -294,9 +291,7 @@ export class AdminClient {
   }
 
   async resendVerification() {
-    unwrap(
-      await this.do(() => this.client.POST("/auth/verify-email/resend")),
-    );
+    unwrap(await this.do(() => this.client.POST("/auth/verify-email/resend")));
   }
 
   async refreshAccessToken() {
