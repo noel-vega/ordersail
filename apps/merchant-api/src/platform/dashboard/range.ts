@@ -76,16 +76,17 @@ export function resolveRange(input: {
   now: Date;
 }): ReportingRange {
   const today = todayIn(input.timezone, input.now);
-  const to = parseDate(input.to ?? today, 'to');
-  // a day that hasn't started in the account's zone would pad the window
-  // with empty days and shift the comparison period
-  if (to > parseDate(today, 'today')) {
-    throw new BadRequestException('to cannot be after today');
-  }
+  const todayMs = parseDate(today, 'today');
+  // Days that haven't started in the account's zone are capped to today, not
+  // rejected: they'd only pad the window with empty days and shift the
+  // comparison period, and the client can't pre-check them (only the API
+  // knows the account's today) — a 400 here took down the whole dashboard
+  // over a hand-edited URL. `range` in the response carries the dates used.
+  const to = Math.min(parseDate(input.to ?? today, 'to'), todayMs);
   const days = input.range ? PRESET_DAYS[input.range] : DEFAULT_RANGE_DAYS;
   const from =
     input.from !== undefined
-      ? parseDate(input.from, 'from')
+      ? Math.min(parseDate(input.from, 'from'), todayMs)
       : to - (days - 1) * DAY_MS;
 
   if (from > to) {

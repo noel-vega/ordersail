@@ -52,7 +52,7 @@ export type DashboardSearch = { range?: RangePreset; from?: string; to?: string 
 // ends are dropped here, in validation, so the URL is cleaned the same way as
 // junk values and the dashboard falls back to the preset rather than let the
 // API 400 over a hand-edited URL. (A `to` after the account's today can't be
-// caught here — only the API knows that date.)
+// caught here — only the API knows that date — so the API caps it to today.)
 export const dashboardSearchSchema = z
   .object({
     range: z.enum(RANGE_PRESETS).optional().catch(undefined),

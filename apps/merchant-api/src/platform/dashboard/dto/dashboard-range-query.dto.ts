@@ -19,7 +19,7 @@ export class DashboardRangeQueryDto {
     required: false,
     example: '2026-09-30',
     description:
-      "last day (YYYY-MM-DD), no later than today in the account's zone; default: today",
+      "last day (YYYY-MM-DD); a day after today in the account's zone is capped to today; default: today",
   })
   @IsOptional()
   @IsString()

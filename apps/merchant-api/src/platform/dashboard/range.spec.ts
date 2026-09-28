@@ -149,21 +149,41 @@ describe('resolveRange presets (OS-193)', () => {
 });
 
 describe('resolveRange future dates (OS-193)', () => {
-  it('accepts today in the account zone, rejects the day after', () => {
+  it('caps a `to` after today in the account zone to that today', () => {
     // the 28th has begun in UTC but not in New York
-    expect(() =>
+    expect(
       resolveRange({ to: '2026-09-28', timezone: 'UTC', now }),
-    ).not.toThrow();
-    expect(() =>
+    ).toMatchObject({ to: '2026-09-28', today: '2026-09-28' });
+    expect(
       resolveRange({ to: '2026-09-28', timezone: 'America/New_York', now }),
-    ).toThrow(/after today/);
-    expect(() =>
+    ).toMatchObject({ to: '2026-09-27', today: '2026-09-27' });
+  });
+
+  it('keeps `from` and shortens the window, so the comparison follows', () => {
+    expect(
       resolveRange({
-        from: '2026-09-01',
-        to: '2026-09-29',
+        from: '2026-09-21',
+        to: '2099-01-01',
         timezone: 'UTC',
         now,
       }),
-    ).toThrow(BadRequestException);
+    ).toEqual({
+      from: '2026-09-21',
+      to: '2026-09-28',
+      today: '2026-09-28',
+      previousFrom: '2026-09-13',
+      previousTo: '2026-09-20',
+    });
+  });
+
+  it('an entirely future range collapses to today', () => {
+    expect(
+      resolveRange({
+        from: '2099-01-01',
+        to: '2099-01-31',
+        timezone: 'UTC',
+        now,
+      }),
+    ).toMatchObject({ from: '2026-09-28', to: '2026-09-28' });
   });
 });

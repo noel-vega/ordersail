@@ -4614,7 +4614,7 @@ export interface operations {
             query?: {
                 /** @description first day (YYYY-MM-DD); default: 29 days before `to` */
                 from?: string;
-                /** @description last day (YYYY-MM-DD), no later than today in the account's zone; default: today */
+                /** @description last day (YYYY-MM-DD); a day after today in the account's zone is capped to today; default: today */
                 to?: string;
                 /** @description window length ending at `to` (default today in the account's zone) when `from` is omitted; default 30d */
                 range?: "today" | "7d" | "30d" | "90d" | "12m";

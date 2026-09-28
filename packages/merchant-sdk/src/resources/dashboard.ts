@@ -1,6 +1,6 @@
 import type { Client } from "openapi-fetch";
 import type { paths } from "../types.gen.js";
-import type { DoFn } from "../http.js";
+import { unwrap, type DoFn } from "../http.js";
 
 export type DashboardRangeParams = NonNullable<
   paths["/dashboard/sales"]["get"]["parameters"]["query"]
@@ -25,10 +25,13 @@ export function createDashboardResource(client: Client<paths>, doRequest: DoFn) 
         ...(params?.to ? { to: params.to } : {}),
         ...(params?.range ? { range: params.range } : {}),
       };
-      const { data } = await doRequest(() =>
-        client.GET("/dashboard/sales", { params: { query } }),
+      // unwrapped: a 400 must surface as an ApiError, not resolve to
+      // undefined (which fails the query without the server's message)
+      return unwrap(
+        await doRequest(() =>
+          client.GET("/dashboard/sales", { params: { query } }),
+        ),
       );
-      return data;
     },
   };
 }
