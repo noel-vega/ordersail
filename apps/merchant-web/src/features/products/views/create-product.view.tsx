@@ -15,11 +15,12 @@ import {
 } from "ui/select";
 import { Button } from "ui/button";
 import { Barcode, X } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useCreateProductMutation } from "../products.hooks";
 import { BrandCombobox } from "../../brands/components/brand-combobox";
 import { CategoryCombobox } from "../../categories/components/category-combobox";
 import { centsToDollars, dollarsToCents } from "../../../lib/currency";
+import { useStockLocation } from "../../locations/locations.hooks";
 
 export const CreateProductFormSchema = z.object({
   name: z.string(),
@@ -44,6 +45,10 @@ export type CreateProductForm = z.infer<typeof CreateProductFormSchema>;
 export function CreateProductView() {
   const navigate = useNavigate();
   const createProduct = useCreateProductMutation();
+  // opening stock goes to the first location; with none yet there's nowhere
+  // to put it, and the API refuses stock above 0 (OS-689)
+  const stockLocation = useStockLocation();
+  const noLocation = stockLocation.isLoaded && !stockLocation.location;
   const form = useForm({
     resolver: zodResolver(CreateProductFormSchema),
     defaultValues: {
@@ -181,10 +186,19 @@ export function CreateProductView() {
                 <Input
                   type="number"
                   value={field.value}
+                  disabled={noLocation}
                   onChange={(e) =>
                     field.onChange(e.currentTarget.valueAsNumber)
                   }
                 />
+                {noLocation && (
+                  <FieldDescription>
+                    <Link to="/app/locations/create" className="underline">
+                      Add a location
+                    </Link>{" "}
+                    first — stock needs somewhere to live.
+                  </FieldDescription>
+                )}
               </Field>
             )}
           />

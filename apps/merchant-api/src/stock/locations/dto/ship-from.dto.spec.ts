@@ -38,3 +38,24 @@ describe.each([
     },
   );
 });
+
+// US-only for now (OS-689): the one country accepted, anything else a 400
+describe.each([
+  ['CreateLocationDto', CreateLocationDto, { name: 'Hoboken Warehouse' }],
+  ['UpdateLocationDto', UpdateLocationDto, {}],
+] as const)('%s addressCountry (OS-689)', (_, Dto, base) => {
+  const parse = (body: object) => plainToInstance(Dto, { ...base, ...body });
+
+  // null is treated as absent (IsOptional) — the location is stored as US either way
+  it.each([{ addressCountry: 'US' }, { addressCountry: null }, {}])(
+    'accepts %p',
+    async (body) => {
+      await expect(validate(parse(body))).resolves.toHaveLength(0);
+    },
+  );
+
+  it.each(['CA', 'us', ''])('rejects %p', async (addressCountry) => {
+    const errors = await validate(parse({ addressCountry }));
+    expect(errors.map((e) => e.property)).toEqual(['addressCountry']);
+  });
+});

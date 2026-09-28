@@ -24,11 +24,10 @@ export function LocationSelect({
   if (!locations.isLoading && items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No locations yet.{" "}
         <Link to="/app/locations/create" className="underline">
-          Create one
+          Add a location
         </Link>{" "}
-        first.
+        before pairing a device.
       </p>
     );
   }

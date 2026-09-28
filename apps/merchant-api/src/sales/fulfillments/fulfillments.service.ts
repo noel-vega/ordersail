@@ -65,7 +65,7 @@ export class FulfillmentsService {
           city: location.addressCity ?? undefined,
           state: location.addressState ?? undefined,
           zip: location.addressPostalCode ?? undefined,
-          country: location.addressCountry ?? 'US',
+          country: location.addressCountry,
           phone: location.phone,
           email: account?.email,
         },

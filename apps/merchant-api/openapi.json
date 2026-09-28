@@ -6073,6 +6073,9 @@
           },
           "addressCountry": {
             "type": "string",
+            "enum": [
+              "US"
+            ],
             "nullable": true
           },
           "phone": {
@@ -6122,7 +6125,7 @@
           },
           "addressCountry": {
             "type": "string",
-            "nullable": true
+            "example": "US"
           },
           "phone": {
             "type": "string",
@@ -6204,6 +6207,9 @@
           },
           "addressCountry": {
             "type": "string",
+            "enum": [
+              "US"
+            ],
             "nullable": true
           },
           "phone": {

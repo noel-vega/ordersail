@@ -19,9 +19,9 @@ async function build() {
 }
 
 describe('OnboardingService.getStatus (OS-165)', () => {
-  it('is all-false for a fresh post-signup account (address-less Default location)', async () => {
+  // signup seeds no location (OS-689)
+  it('is all-false for a fresh post-signup account (no locations)', async () => {
     const account = await insertAccount(db);
-    await insertLocation(db, { accountId: account.id, withAddress: false });
     const service = await build();
 
     expect(await service.getStatus(account.id)).toEqual({
@@ -50,14 +50,15 @@ describe('OnboardingService.getStatus (OS-165)', () => {
     expect((await service.getStatus(enabled.id)).stripeConnected).toBe(true);
   });
 
-  it('hasCompleteLocation needs all four address fields', async () => {
+  // line 1, city and postal code — the country is NOT NULL (US-only, OS-689)
+  it('hasCompleteLocation needs the required address fields', async () => {
     const account = await insertAccount(db);
     const service = await build();
 
     await insertLocation(db, {
       accountId: account.id,
       withAddress: true,
-      address: { country: undefined },
+      address: { postalCode: undefined },
     });
     expect((await service.getStatus(account.id)).hasCompleteLocation).toBe(
       false,

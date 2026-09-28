@@ -13,7 +13,6 @@ import {
   isUniqueViolation,
   usersTable,
 } from 'db/identity';
-import { locationsTable } from 'db/stock';
 import * as bcrypt from 'bcryptjs';
 import { generateApiKey } from '../api-keys/api-keys.util';
 import { RolesService } from '../roles/roles.service';
@@ -47,7 +46,10 @@ export class AccountService {
 
   // Creates an Account with its first Owner — everything a new tenant needs
   // to be usable, in one transaction: the Account, its first API key, the
-  // Default location, the first User, and the Owner Role assigned to them.
+  // first User, and the Owner Role assigned to them. No location: the
+  // merchant creates their first one, with its ship-from address and phone,
+  // as an onboarding step rather than inheriting an empty placeholder
+  // (OS-689).
   // Starting a session for that User is the caller's business (see
   // AuthService.signup).
   //
@@ -90,13 +92,6 @@ export class AccountService {
       await tx.insert(accountApiKeysTable).values({
         accountId: account.id,
         key: generateApiKey(),
-      });
-
-      // products need somewhere to hold stock — every account starts
-      // with a single seeded location, see locationsTable
-      await tx.insert(locationsTable).values({
-        accountId: account.id,
-        name: 'Default',
       });
 
       const [owner] = await tx

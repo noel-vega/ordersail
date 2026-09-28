@@ -510,7 +510,8 @@ export async function insertLocation(
         addressCity: addr?.city ?? null,
         addressState: addr?.state ?? null,
         addressPostalCode: addr?.postalCode ?? null,
-        addressCountry: addr?.country ?? null,
+        // US-only, NOT NULL (OS-689) — omitted, the column default is US
+        ...(addr?.country ? { addressCountry: addr.country } : {}),
         phone,
       })
       .returning(),

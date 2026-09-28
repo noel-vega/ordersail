@@ -4,6 +4,7 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"
+import type { Location } from "merchant-sdk"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { PAGE_SIZE, pageOffset, type ListSearch } from "../../lib/list-search"
@@ -34,6 +35,20 @@ export function getListLocationsQueryOptions(search?: ListSearch) {
 
 export function useListLocationsQuery(search?: ListSearch) {
   return useQuery(getListLocationsQueryOptions(search))
+}
+
+// The location a variant's stock lives at until there's a picker: the lowest
+// id, the same one the API puts opening stock in (products.service
+// openingStockLocationId). Not the list's first item — the list sorts by name,
+// so a rename would silently move it. `location` is undefined both while
+// loading and when the account has none (OS-689); `isLoaded` tells them apart.
+export function useStockLocation() {
+  const locations = useListLocationsQuery()
+  const location = locations.data?.items.reduce<Location | undefined>(
+    (lowest, l) => (!lowest || l.id < lowest.id ? l : lowest),
+    undefined,
+  )
+  return { location, isLoaded: locations.isSuccess }
 }
 
 export function useCreateLocationMutation() {

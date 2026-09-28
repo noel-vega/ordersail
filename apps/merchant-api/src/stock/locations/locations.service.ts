@@ -18,6 +18,11 @@ import {
 } from 'db/stock';
 import { PaginatedLocations } from './entities/paginated-locations.entity';
 
+// every location is in the US for now (see ShipFromDto). The column is NOT
+// NULL DEFAULT 'US', but the DTO lets a null through (IsOptional), so it's
+// written explicitly rather than passed on from the body
+const COUNTRY = 'US';
+
 @Injectable()
 export class LocationsService {
   constructor(@Inject(DRIZZLE) private readonly db: typeof Db) {}
@@ -25,7 +30,7 @@ export class LocationsService {
   async create(createLocationDto: CreateLocationDto, accountId: number) {
     const [location] = await this.db
       .insert(locationsTable)
-      .values({ ...createLocationDto, accountId })
+      .values({ ...createLocationDto, addressCountry: COUNTRY, accountId })
       .returning();
     return location;
   }
@@ -69,7 +74,11 @@ export class LocationsService {
   ) {
     const [location] = await this.db
       .update(locationsTable)
-      .set({ ...updateLocationDto, updatedAt: new Date() })
+      .set({
+        ...updateLocationDto,
+        addressCountry: COUNTRY,
+        updatedAt: new Date(),
+      })
       .where(
         and(eq(locationsTable.id, id), eq(locationsTable.accountId, accountId)),
       )

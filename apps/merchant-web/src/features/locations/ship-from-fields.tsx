@@ -1,5 +1,5 @@
 import { Controller, useFormContext } from "react-hook-form";
-import { Field, FieldLabel } from "ui/field";
+import { Field, FieldDescription, FieldLabel } from "ui/field";
 import { Input } from "ui/input";
 import type { ShipFromFormInput } from "./ship-from";
 
@@ -36,20 +36,11 @@ export function ShipFromFields() {
         />
       ))}
 
-      <Controller
-        control={control}
-        name="addressCountry"
-        render={({ field }) => (
-          <Field>
-            <FieldLabel>Country</FieldLabel>
-            <Input
-              placeholder="US"
-              {...field}
-              onChange={(e) => field.onChange(e.currentTarget.value.toUpperCase())}
-            />
-          </Field>
-        )}
-      />
+      <Field>
+        <FieldLabel>Country</FieldLabel>
+        <Input value="United States" disabled readOnly />
+        <FieldDescription>Only US locations are supported for now.</FieldDescription>
+      </Field>
 
       <Controller
         control={control}

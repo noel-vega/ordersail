@@ -123,6 +123,37 @@ describe('LocationsService.update — phone (OS-688)', () => {
   });
 });
 
+describe('LocationsService — US-only country (OS-689)', () => {
+  it('stores US on create, even when no country is sent', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    const location = await service.create({ name: 'Back room' }, account.id);
+
+    expect(location.addressCountry).toBe('US');
+  });
+
+  // the DTO lets null through (IsOptional) but the column is NOT NULL —
+  // passed on as-is, that would be a 500
+  it('stores US when the body sends a null country', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    const created = await service.create(
+      { name: 'Back room', addressCountry: null },
+      account.id,
+    );
+    const updated = await service.update(
+      created.id,
+      { addressCountry: null },
+      account.id,
+    );
+
+    expect(created.addressCountry).toBe('US');
+    expect(updated?.addressCountry).toBe('US');
+  });
+});
+
 describe('LocationsService.remove (OS-188)', () => {
   it('deletes a location with no references', async () => {
     const account = await insertAccount(db);
