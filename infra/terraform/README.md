@@ -123,7 +123,8 @@ it also does the directory-index rewrite, and `/features` etc. would 404.
 
 ```bash
 curl -sI https://ordersail.com                              # 200 (public since OS-666)
-curl -sI https://ordersail.com/features/                    # 200 (directory index)
+curl -sI https://ordersail.com/features/                    # 200 (directory index, trailing slash)
+curl -sI https://ordersail.com/features                     # 200 (directory index, bare path)
 curl -sI https://merchant.ordersail.com                     # 401
 curl -sI -u 'crew:<pass>' https://merchant.ordersail.com    # 200
 curl -sI https://merchant.ordersail.com/api/                # not the Basic realm
