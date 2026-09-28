@@ -11,7 +11,7 @@ import { Badge } from "ui/badge";
 import { Button } from "ui/button";
 import { useCreateUserMutation } from "../users.hooks";
 import { useListRolesQuery } from "../../roles/roles.hooks";
-import { phoneSchema, toE164 } from "../../../lib/phone";
+import { phoneSchema } from "../../../lib/phone";
 
 const CreateUserFormSchema = z.object({
   firstName: z.string().min(1, "Required"),
@@ -23,14 +23,18 @@ const CreateUserFormSchema = z.object({
   roleIds: z.array(z.number()),
 });
 
-type CreateUserForm = z.infer<typeof CreateUserFormSchema>;
+type CreateUserForm = z.input<typeof CreateUserFormSchema>;
 
 export function CreateUserView() {
   const navigate = useNavigate();
   const createUser = useCreateUserMutation();
   const roles = useListRolesQuery();
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const form = useForm<CreateUserForm>({
+  const form = useForm<
+    CreateUserForm,
+    unknown,
+    z.output<typeof CreateUserFormSchema>
+  >({
     resolver: zodResolver(CreateUserFormSchema),
     defaultValues: { firstName: "", lastName: "", phone: "", email: "", roleIds: [] },
   });
@@ -40,8 +44,6 @@ export function CreateUserView() {
     createUser.mutate(
       {
         ...data,
-        // the schema already proved it parses
-        phone: toE164(data.phone)!,
         roleIds: data.roleIds.length > 0 ? data.roleIds : undefined,
       },
       {

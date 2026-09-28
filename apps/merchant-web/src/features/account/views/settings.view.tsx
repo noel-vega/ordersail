@@ -9,14 +9,14 @@ import { LoaderCircleIcon } from "lucide-react";
 import { useAccountQuery, useUpdateAccountMutation } from "../account.hooks";
 import { usePermissions } from "../../auth/permission-context";
 import { TimezoneCombobox } from "../components/timezone-combobox";
-import { formatPhone, phoneSchema, toE164 } from "../../../lib/phone";
+import { formatPhone, phoneSchema } from "../../../lib/phone";
 
 const ShippingContactFormSchema = z.object({
   phone: phoneSchema,
   email: z.email("Enter a valid email"),
 });
 
-type ShippingContactForm = z.infer<typeof ShippingContactFormSchema>;
+type ShippingContactForm = z.input<typeof ShippingContactFormSchema>;
 
 const ReportingFormSchema = z.object({
   timezone: z.string().min(1, "Required"),
@@ -72,7 +72,11 @@ function ShippingContactForm(props: {
   const updateAccount = useUpdateAccountMutation();
   // stored as E.164; shown the way the merchant would type it
   const phone = formatPhone(props.phone);
-  const form = useForm<ShippingContactForm>({
+  const form = useForm<
+    ShippingContactForm,
+    unknown,
+    z.output<typeof ShippingContactFormSchema>
+  >({
     resolver: zodResolver(ShippingContactFormSchema),
     defaultValues: { phone, email: props.email },
   });
@@ -83,8 +87,8 @@ function ShippingContactForm(props: {
 
   const handleSubmit = form.handleSubmit((data) => {
     // errors surface as a toast (react-query-client MutationCache.onError).
-    // The schema already proved the phone parses.
-    updateAccount.mutate({ ...data, phone: toE164(data.phone)! });
+    // The schema has already turned the phone into E.164.
+    updateAccount.mutate(data);
   });
 
   return (

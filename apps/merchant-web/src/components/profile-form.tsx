@@ -6,7 +6,7 @@ import { Field, FieldLabel } from "ui/field";
 import { Input } from "ui/input";
 import { Button } from "ui/button";
 import { LoaderCircleIcon } from "lucide-react";
-import { formatPhone, optionalPhoneSchema, toE164 } from "../lib/phone";
+import { formatPhone, optionalPhoneSchema } from "../lib/phone";
 
 // The three self-editable attributes of a user row — the Profile aspect in
 // ADR 0001's split, as opposed to the Staff record (roles, status, invite
@@ -29,16 +29,16 @@ export const ProfileFormSchema = z.object({
   phone: optionalPhoneSchema,
 });
 
-export type ProfileFormValues = z.infer<typeof ProfileFormSchema>;
+// what the fields hold: the phone as the merchant typed or sees it
+export type ProfileFormValues = z.input<typeof ProfileFormSchema>;
 
-// What a save hands its caller: the form's values with the phone normalised
-// for the API — E.164, which is all it accepts (OS-687). Both endpoints behind this form read the field the same way —
-// absent leaves the column alone, null clears it — so an emptied box has to
-// go out as null, never undefined, or clearing a number silently no-ops.
-// That rule lives here, once, rather than in each caller.
-export type ProfileFormPayload = Omit<ProfileFormValues, "phone"> & {
-  phone: string | null;
-};
+// What a save hands its caller: the schema's output, so the phone is already
+// E.164, which is all the API accepts (OS-687). Both endpoints behind this
+// form read the field the same way — absent leaves the column alone, null
+// clears it — so an emptied box goes out as null (optionalPhoneSchema), never
+// undefined, or clearing a number silently no-ops. That rule lives in the
+// schema, once, rather than in each caller.
+export type ProfileFormPayload = z.output<typeof ProfileFormSchema>;
 
 export function ProfileForm(props: {
   values: ProfileFormValues;
@@ -56,7 +56,7 @@ export function ProfileForm(props: {
   const { firstName, lastName } = props.values;
   // stored as E.164; shown the way the merchant would type it
   const phone = props.values.phone && formatPhone(props.values.phone);
-  const form = useForm<ProfileFormValues>({
+  const form = useForm<ProfileFormValues, unknown, ProfileFormPayload>({
     resolver: zodResolver(ProfileFormSchema),
     defaultValues: { firstName, lastName, phone },
   });
@@ -69,14 +69,16 @@ export function ProfileForm(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstName, lastName, phone]);
 
-  const handleSubmit = form.handleSubmit(async (values) => {
-    const phone = values.phone.trim();
+  const handleSubmit = form.handleSubmit(async (payload) => {
     try {
-      await props.onSave({ ...values, phone: phone ? toE164(phone) : null });
+      await props.onSave(payload);
       // clears isDirty so the Save button settles, without waiting on the
       // refetch that will re-seed the same values through the effect above.
-      // The trimmed phone, since that's what was stored.
-      form.reset({ ...values, phone });
+      // Formatted the same way the effect will show the stored number.
+      form.reset({
+        ...payload,
+        phone: payload.phone ? formatPhone(payload.phone) : "",
+      });
     } catch {
       // the caller reports it; leave the form dirty so Save stays available
     }

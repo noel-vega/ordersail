@@ -25,14 +25,18 @@ describe("phoneSchema", () => {
     expect(phoneSchema.safeParse("asdf").success).toBe(false);
   });
 
-  it("accepts a local-format US number", () => {
-    expect(phoneSchema.safeParse("(201) 555-0123").success).toBe(true);
+  it("emits E.164 for a local-format US number", () => {
+    expect(phoneSchema.parse("(201) 555-0123")).toBe("+12015550123");
   });
 });
 
 describe("optionalPhoneSchema", () => {
-  it("accepts a blank box", () => {
-    expect(optionalPhoneSchema.safeParse("  ").success).toBe(true);
+  it("emits null for a blank box", () => {
+    expect(optionalPhoneSchema.parse("  ")).toBeNull();
+  });
+
+  it("emits E.164 for a number", () => {
+    expect(optionalPhoneSchema.parse("201-555-0123")).toBe("+12015550123");
   });
 
   it("still rejects garbage", () => {
