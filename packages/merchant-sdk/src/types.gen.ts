@@ -1284,6 +1284,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/low-stock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DashboardController_getLowStock"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2181,6 +2197,8 @@ export interface components {
         };
         DashboardSummary: {
             outOfStockCount: number;
+            lowStockCount: number;
+            lowStockThreshold: number;
             recentOrders: components["schemas"]["OrderListItem"][];
             recentCustomers: components["schemas"]["Customer"][];
         };
@@ -2241,6 +2259,23 @@ export interface components {
             /** @example America/New_York */
             timezone: string;
             points: components["schemas"]["SalesTimeseriesPoint"][];
+        };
+        LowStockItem: {
+            variantId: number;
+            productId: number;
+            productName: string;
+            sku: string | null;
+            /**
+             * @description the variant's option values in option order; null with no options
+             * @example Blue / Large
+             */
+            optionsLabel: string | null;
+            /** @description on hand across all locations; can be negative */
+            stock: number;
+        };
+        DashboardLowStock: {
+            items: components["schemas"]["LowStockItem"][];
+            lowStockThreshold: number;
         };
         OnboardingStatus: {
             stripeConnected: boolean;
@@ -4702,6 +4737,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardSalesTimeseries"];
+                };
+            };
+        };
+    };
+    DashboardController_getLowStock: {
+        parameters: {
+            query?: {
+                /** @description 1–50, clamped; default 10 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardLowStock"];
                 };
             };
         };

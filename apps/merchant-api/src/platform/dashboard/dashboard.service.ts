@@ -3,19 +3,26 @@ import { DRIZZLE } from 'src/shared/database/database.constants';
 import {
   accountsTable,
   and,
+  asc,
   eq,
   inArray,
   inventoryTable,
   lt,
+  lte,
+  ne,
   orderPaymentsTable,
   ordersTable,
+  productOptionsTable,
+  productOptionValuesTable,
   productsTable,
   productVariantsTable,
   sql,
   type db as Db,
+  variantOptionValuesTable,
   type SQL,
 } from 'db';
 import { DashboardSummary } from './entities/dashboard-summary.entity';
+import { DashboardLowStock } from './entities/dashboard-low-stock.entity';
 import { SALES_PORT, type SalesPort } from './ports/sales.port';
 import { DashboardSales, SalesTotals } from './entities/dashboard-sales.entity';
 import {
@@ -26,6 +33,13 @@ import { resolveRange, spanDays } from './range';
 import type { DashboardRangeQueryDto } from './dto/dashboard-range-query.dto';
 
 const RECENT_LIMIT = 5;
+export const LOW_STOCK_DEFAULT_LIMIT = 10;
+const LOW_STOCK_MAX_LIMIT = 50;
+
+// the account's lowStockThreshold (OS-668), inline in the stock queries
+function lowStockThresholdOf(accountId: number): SQL {
+  return sql`(select ${accountsTable.lowStockThreshold} from ${accountsTable} where ${accountsTable.id} = ${accountId})`;
+}
 
 // Orders that count as a sale (OS-669). pending / payment_failed never took
 // money. canceled is left out entirely — order AND its refund rows — because
@@ -75,13 +89,13 @@ export class DashboardService {
 
   // point-in-time only — money figures are range-scoped, see getSales
   async getSummary(accountId: number): Promise<DashboardSummary> {
-    const [recentOrders, recentCustomers, outOfStockCount] = await Promise.all([
+    const [recentOrders, recentCustomers, stockCounts] = await Promise.all([
       this.sales.recentOrders(accountId, RECENT_LIMIT),
       this.sales.recentCustomers(accountId, RECENT_LIMIT),
-      this.getOutOfStockCount(accountId),
+      this.getStockCounts(accountId),
     ]);
 
-    return { outOfStockCount, recentOrders, recentCustomers };
+    return { ...stockCounts, recentOrders, recentCustomers };
   }
 
   async getSales(
@@ -276,13 +290,77 @@ export class DashboardService {
     };
   }
 
-  // counted in JS rather than a SQL HAVING clause — simpler to read, and
-  // account-scale here doesn't warrant the extra query complexity
-  private async getOutOfStockCount(accountId: number) {
-    const rows = await this.db
+  async getLowStock(
+    accountId: number,
+    limit: number,
+  ): Promise<DashboardLowStock> {
+    const take = Math.min(Math.max(Math.trunc(limit), 1), LOW_STOCK_MAX_LIMIT);
+    // read once and applied as a value, so the items and the threshold
+    // returned beside them always agree
+    const [{ lowStockThreshold }] = await this.db
+      .select({ lowStockThreshold: accountsTable.lowStockThreshold })
+      .from(accountsTable)
+      .where(eq(accountsTable.id, accountId));
+    const stock = this.variantStock(accountId);
+    const items = await this.db
       .select({
-        variantId: productVariantsTable.id,
-        totalStock: sql<number>`coalesce(sum(${inventoryTable.stock}), 0)::int`,
+        variantId: stock.variantId,
+        productId: productsTable.id,
+        productName: productsTable.name,
+        sku: productVariantsTable.sku,
+        // "Blue / Large", in option order; null for a variant with no options
+        optionsLabel: sql<string | null>`(
+          select string_agg(${productOptionValuesTable.value}, ' / ' order by ${productOptionsTable.id})
+          from ${variantOptionValuesTable}
+          inner join ${productOptionValuesTable} on ${productOptionValuesTable.id} = ${variantOptionValuesTable.optionValueId}
+          inner join ${productOptionsTable} on ${productOptionsTable.id} = ${productOptionValuesTable.optionId}
+          where ${variantOptionValuesTable.variantId} = ${stock.variantId}
+        )`,
+        stock: stock.total,
+      })
+      .from(stock)
+      .innerJoin(
+        productVariantsTable,
+        eq(productVariantsTable.id, stock.variantId),
+      )
+      .innerJoin(
+        productsTable,
+        eq(productsTable.id, productVariantsTable.productId),
+      )
+      .where(lte(stock.total, lowStockThreshold))
+      // most urgent first: out of stock (<= 0) sorts ahead of merely low
+      .orderBy(asc(stock.total), asc(productsTable.name), asc(stock.variantId))
+      .limit(take);
+
+    return { items, lowStockThreshold };
+  }
+
+  // Out-of-stock and low-stock variant counts in one aggregate (OS-195).
+  // Judged on each variant's stock summed across every location — a variant
+  // is out when it can't be sold anywhere, not when one store runs dry.
+  private async getStockCounts(accountId: number) {
+    const stock = this.variantStock(accountId);
+    const threshold = lowStockThresholdOf(accountId);
+    const [counts] = await this.db
+      .select({
+        outOfStockCount: sql<number>`count(*) filter (where ${stock.total} <= 0)::int`,
+        lowStockCount: sql<number>`count(*) filter (where ${stock.total} > 0 and ${stock.total} <= ${threshold})::int`,
+        lowStockThreshold: sql<number>`${threshold}`,
+      })
+      .from(stock);
+    return counts;
+  }
+
+  // Each of the account's variants with its stock summed across locations,
+  // 0 for a variant with no inventory rows yet. Archived products are left
+  // out — they're off sale, so their stock isn't a problem to act on.
+  private variantStock(accountId: number) {
+    return this.db
+      .select({
+        variantId: sql<number>`${productVariantsTable.id}`.as('variant_id'),
+        total: sql<number>`coalesce(sum(${inventoryTable.stock}), 0)::int`.as(
+          'total',
+        ),
       })
       .from(productVariantsTable)
       .innerJoin(
@@ -293,9 +371,13 @@ export class DashboardService {
         inventoryTable,
         eq(inventoryTable.variantId, productVariantsTable.id),
       )
-      .where(eq(productsTable.accountId, accountId))
-      .groupBy(productVariantsTable.id);
-
-    return rows.filter((row) => row.totalStock <= 0).length;
+      .where(
+        and(
+          eq(productsTable.accountId, accountId),
+          ne(productsTable.status, 'archived'),
+        ),
+      )
+      .groupBy(productVariantsTable.id)
+      .as('variant_stock');
   }
 }

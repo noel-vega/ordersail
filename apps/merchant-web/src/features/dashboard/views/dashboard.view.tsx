@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  getDashboardLowStockQueryOptions,
   getDashboardSalesQueryOptions,
   getDashboardSalesTimeseriesQueryOptions,
   getDashboardSummaryQueryOptions,
@@ -9,6 +10,7 @@ import { DateRangePicker } from "../components/date-range-picker";
 import { MetricCard } from "../components/metric-card";
 import { SalesTrendChart } from "../components/sales-trend-chart";
 import { OrdersTrendChart } from "../components/orders-trend-chart";
+import { LowStockCard } from "../components/low-stock-card";
 import { getFailedOrdersQueryOptions } from "../../failed-orders/failed-orders.hooks";
 import { DataTable } from "../../../components/data-table";
 import { cn } from "ui/utils";
@@ -77,8 +79,10 @@ export function DashboardView() {
   const timeseriesQuery = useQuery(
     getDashboardSalesTimeseriesQueryOptions(params),
   );
+  const lowStock = useQuery(getDashboardLowStockQueryOptions());
   const failedOrders = useQuery(getFailedOrdersQueryOptions());
   const unresolvedFailed = failedOrders.data?.unresolvedCount ?? 0;
+  const outOfStock = summary?.outOfStockCount ?? 0;
 
   const previousLabel = sales
     ? formatRangeLabel(sales.range.previousFrom, sales.range.previousTo)
@@ -156,19 +160,41 @@ export function DashboardView() {
         >
           Right now
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <MetricCard
-            title="Out of stock"
-            value={summary?.outOfStockCount ?? 0}
-          />
-          <Link to="/app/failed-orders" className="flex">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
+            {/* variants judged on stock summed across locations (OS-195) */}
             <MetricCard
-              title="Failed orders"
-              value={unresolvedFailed}
-              tone={unresolvedFailed > 0 ? "alert" : "default"}
-              interactive
+              title="Stock alerts"
+              value={
+                <>
+                  {outOfStock}
+                  <span className="text-sm font-normal text-muted-foreground">
+                    {" "}
+                    out of stock ·{" "}
+                  </span>
+                  <span className="text-foreground">
+                    {summary?.lowStockCount ?? 0}
+                  </span>
+                  <span className="text-sm font-normal text-muted-foreground">
+                    {" "}
+                    low
+                  </span>
+                </>
+              }
+              tone={outOfStock > 0 ? "alert" : "default"}
             />
-          </Link>
+            <Link to="/app/failed-orders" className="flex">
+              <MetricCard
+                title="Failed orders"
+                value={unresolvedFailed}
+                tone={unresolvedFailed > 0 ? "alert" : "default"}
+                interactive
+              />
+            </Link>
+          </div>
+          <div className="lg:col-span-2">
+            <LowStockCard lowStock={lowStock.data} />
+          </div>
         </div>
       </section>
 

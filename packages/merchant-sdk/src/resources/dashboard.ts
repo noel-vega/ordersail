@@ -37,6 +37,19 @@ export function createDashboardResource(
       );
     },
 
+    // variants at or below the account's low-stock threshold, summed across
+    // locations, lowest stock first; `limit` 1–50, default 10 (OS-195)
+    lowStock: async (params?: { limit?: number }) =>
+      unwrap(
+        await doRequest(() =>
+          client.GET("/dashboard/low-stock", {
+            params: {
+              query: params?.limit !== undefined ? { limit: params.limit } : {},
+            },
+          }),
+        ),
+      ),
+
     // the same money in zero-filled day/week/month buckets (the server picks
     // the granularity from the span) for the trend charts (OS-670)
     salesTimeseries: async (params?: DashboardRangeParams) =>

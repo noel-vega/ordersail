@@ -37,3 +37,12 @@ export function getDashboardSalesTimeseriesQueryOptions(
     placeholderData: keepPreviousData,
   })
 }
+
+// variants at or below the account's low-stock threshold, summed across
+// locations, most urgent first (OS-195)
+export function getDashboardLowStockQueryOptions(limit = 10) {
+  return queryOptions({
+    queryKey: ["dashboard", "low-stock", limit],
+    queryFn: () => merchantApi.dashboard.lowStock({ limit }),
+  })
+}
