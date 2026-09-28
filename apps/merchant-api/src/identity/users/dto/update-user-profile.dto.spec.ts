@@ -27,18 +27,24 @@ describe('UpdateUserProfileDto phone (OS-503)', () => {
     expect(dto.phone).toBeUndefined();
   });
 
-  it('accepts a formatted number with an extension', async () => {
-    const errors = await errorsFor({ phone: '+1 (555) 555-0100 ext. 4421' });
-    expect(errors).toHaveLength(0);
+  it('stores a formatted international number as E.164 (OS-687)', async () => {
+    const dto = plainToInstance(UpdateUserProfileDto, {
+      phone: '+1 (201) 555-0100',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.phone).toBe('+12015550100');
   });
 
-  it('rejects a phone longer than the cap', async () => {
-    const errors = await errorsFor({ phone: '5'.repeat(33) });
-    expect(errors.some((e) => e.property === 'phone')).toBe(true);
-  });
+  it.each(['asdf', '2015550100', '+1 201-555-0100 ext. 4421'])(
+    'rejects %p, which is not an international number (OS-687)',
+    async (phone) => {
+      const errors = await errorsFor({ phone });
+      expect(errors.some((e) => e.property === 'phone')).toBe(true);
+    },
+  );
 
   it('rejects a phone that is not a string', async () => {
-    const errors = await errorsFor({ phone: 5555550100 });
+    const errors = await errorsFor({ phone: 12015550100 });
     expect(errors.some((e) => e.property === 'phone')).toBe(true);
   });
 });

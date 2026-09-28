@@ -21,6 +21,7 @@
     "@tanstack/react-router": "^1.170.17",
     "@tanstack/react-table": "^8.21.3",
     "date-fns": "^4.4.0",
+    "libphonenumber-js": "^1.13.14",
     "lucide-react": "^1.26.0",
     "merchant-sdk": "*",
     "qrcode.react": "^4.2.0",

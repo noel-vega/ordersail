@@ -11,25 +11,30 @@ import { Badge } from "ui/badge";
 import { Button } from "ui/button";
 import { useCreateUserMutation } from "../users.hooks";
 import { useListRolesQuery } from "../../roles/roles.hooks";
+import { phoneSchema } from "../../../lib/phone";
 
 const CreateUserFormSchema = z.object({
   firstName: z.string().min(1, "Required"),
   lastName: z.string().min(1, "Required"),
-  phone: z.string().min(1, "Required"),
+  phone: phoneSchema,
   email: z.email("Enter a valid email"),
   // optional — a user invited with no roles can still log in, they just
   // can't use anything gated by a permission until assigned one
   roleIds: z.array(z.number()),
 });
 
-type CreateUserForm = z.infer<typeof CreateUserFormSchema>;
+type CreateUserForm = z.input<typeof CreateUserFormSchema>;
 
 export function CreateUserView() {
   const navigate = useNavigate();
   const createUser = useCreateUserMutation();
   const roles = useListRolesQuery();
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const form = useForm<CreateUserForm>({
+  const form = useForm<
+    CreateUserForm,
+    unknown,
+    z.output<typeof CreateUserFormSchema>
+  >({
     resolver: zodResolver(CreateUserFormSchema),
     defaultValues: { firstName: "", lastName: "", phone: "", email: "", roleIds: [] },
   });
@@ -37,7 +42,10 @@ export function CreateUserView() {
   const handleSubmit = form.handleSubmit((data) => {
     setSubmitError(null);
     createUser.mutate(
-      { ...data, roleIds: data.roleIds.length > 0 ? data.roleIds : undefined },
+      {
+        ...data,
+        roleIds: data.roleIds.length > 0 ? data.roleIds : undefined,
+      },
       {
         onSuccess: (result) => {
           if (!result) {
@@ -88,7 +96,7 @@ export function CreateUserView() {
           render={({ field, fieldState }) => (
             <Field data-invalid={!!fieldState.error}>
               <FieldLabel>Phone</FieldLabel>
-              <Input placeholder="(555) 555-5555" {...field} />
+              <Input type="tel" placeholder="(201) 555-0123" {...field} />
               {fieldState.error && (
                 <p className="text-sm text-destructive">{fieldState.error.message}</p>
               )}

@@ -235,11 +235,11 @@ describe('UsersService.update (OS-184)', () => {
 
     const updated = await service.update(user.id, account.id, {
       firstName: 'New',
-      phone: '5555559999',
+      phone: '+12015559999',
     });
     expect(updated).toMatchObject({
       firstName: 'New',
-      phone: '5555559999',
+      phone: '+12015559999',
       email: 'keep@store.test',
     });
   });
@@ -252,7 +252,7 @@ describe('UsersService.update (OS-184)', () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, {
       accountId: account.id,
-      phone: '5555559999',
+      phone: '+12015559999',
     });
     const service = await build();
 
@@ -264,7 +264,7 @@ describe('UsersService.update (OS-184)', () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, {
       accountId: account.id,
-      phone: '5555559999',
+      phone: '+12015559999',
     });
     const service = await build();
 
@@ -272,7 +272,7 @@ describe('UsersService.update (OS-184)', () => {
       (await service.update(user.id, account.id, { phone: '' }))?.phone,
     ).toBeNull();
     // whitespace is the same intent typed less carefully
-    await service.update(user.id, account.id, { phone: '5555559999' });
+    await service.update(user.id, account.id, { phone: '+12015559999' });
     expect(
       (await service.update(user.id, account.id, { phone: '   ' }))?.phone,
     ).toBeNull();
@@ -285,23 +285,23 @@ describe('UsersService.update (OS-184)', () => {
 
     // the forms trim before sending; a direct API caller doesn't have to
     const updated = await service.update(user.id, account.id, {
-      phone: '  5555559999  ',
+      phone: '  +12015559999  ',
     });
-    expect(updated?.phone).toBe('5555559999');
+    expect(updated?.phone).toBe('+12015559999');
   });
 
   it('leaves the phone alone when the field is absent', async () => {
     const account = await insertAccount(db);
     const user = await insertUser(db, {
       accountId: account.id,
-      phone: '5555559999',
+      phone: '+12015559999',
     });
     const service = await build();
 
     const updated = await service.update(user.id, account.id, {
       firstName: 'Dana',
     });
-    expect(updated?.phone).toBe('5555559999');
+    expect(updated?.phone).toBe('+12015559999');
   });
 
   it('an empty patch is a no-op read', async () => {
@@ -338,7 +338,7 @@ describe('UsersService profile (OS-384)', () => {
       accountId: account.id,
       firstname: 'Fox',
       lastname: 'Mulder',
-      phone: '5555550199',
+      phone: '+12015550199',
     });
     const role = await insertRole(db, {
       accountId: account.id,
@@ -351,7 +351,7 @@ describe('UsersService profile (OS-384)', () => {
     expect(await service.getProfile(user.id, account.id)).toEqual({
       firstName: 'Fox',
       lastName: 'Mulder',
-      phone: '5555550199',
+      phone: '+12015550199',
     });
   });
 
@@ -366,9 +366,9 @@ describe('UsersService profile (OS-384)', () => {
     expect(
       await service.updateProfile(user.id, account.id, {
         firstName: 'Katherine',
-        phone: '5555559999',
+        phone: '+12015559999',
       }),
-    ).toMatchObject({ firstName: 'Katherine', phone: '5555559999' });
+    ).toMatchObject({ firstName: 'Katherine', phone: '+12015559999' });
 
     // the email column is untouched — it's the sign-in identity, and the DTO
     // has no field for it
@@ -801,7 +801,7 @@ describe('UsersService.create — the pending Staff record and its Invite', () =
     const { service, links } = await buildBoth();
 
     const created = await service.create(
-      new CreateUserDto('Fox', 'Mulder', '5555550111', 'fox@store.test'),
+      new CreateUserDto('Fox', 'Mulder', '+12015550111', 'fox@store.test'),
       account.id,
       1,
     );
@@ -826,7 +826,7 @@ describe('UsersService.create — the pending Staff record and its Invite', () =
         new CreateUserDto(
           'Dana',
           'Scully',
-          '5555550112',
+          '+12015550112',
           'dana@store.test',
           [404],
         ),

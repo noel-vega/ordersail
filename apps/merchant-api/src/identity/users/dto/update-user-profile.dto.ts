@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
+import { IsE164Phone } from 'src/shared/validation/is-e164-phone';
 
 // name + phone only — email is the login identity and is never changed here
 // (see OS-184). Every field optional: a PATCH may touch just one.
@@ -21,14 +22,21 @@ export class UpdateUserProfileDto {
   // states stay distinct — absent leaves the column alone, null or an empty
   // string clears it to NULL, anything else sets it.
   //
-  // Capped because the column is unbounded `text` and, with no lower bound
-  // either, @IsString alone would accept anything. 32 is deliberately roomy:
-  // E.164 tops out at 16 characters, and this is free-form, so it has to
-  // leave space for spaces, brackets and an extension.
-  @ApiProperty({ required: false, type: String, nullable: true, maxLength: 32 })
+  // A number that's set is validated and stored as E.164 (OS-687). The
+  // ValidateIf lets a blank string through as the "clear" it means; anything
+  // else, non-strings included, still has to be a real number.
+  @ApiProperty({
+    required: false,
+    type: String,
+    nullable: true,
+    example: '+12015550123',
+  })
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
+  @ValidateIf(
+    (o: UpdateUserProfileDto) =>
+      typeof o.phone !== 'string' || o.phone.trim() !== '',
+  )
+  @IsE164Phone()
   phone?: string | null;
 
   constructor(firstName?: string, lastName?: string, phone?: string | null) {
