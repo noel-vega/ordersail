@@ -14,7 +14,7 @@ import { useVariantOptions } from "./shared";
 import { VariantOptionForm } from "./variant-option-form";
 import { getVariantColumns } from "./variant-columns";
 import { EditVariantSheet } from "./edit-variant-sheet";
-import { useListLocationsQuery } from "../../locations/locations.hooks";
+import { useStockLocation } from "../../locations/locations.hooks";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
 import { useProductInventoryQuery } from "../../inventory/inventory.hooks";
 
@@ -35,21 +35,21 @@ export function VariantSection({
   const [editingVariant, setEditingVariant] = useState<ProductVariant | null>(null);
 
   const navigate = useNavigate();
-  const { data: locations } = useListLocationsQuery();
   // single-location for now — once there's more than one, adjusting stock
   // from here will need a location picker instead of a silent default
-  const defaultLocation = locations?.items?.[0];
+  const { location: stockLocation, isLoaded: locationsLoaded } =
+    useStockLocation();
 
   const adjustingRecord: InventoryRecord | null =
-    adjustingVariant && defaultLocation
+    adjustingVariant && stockLocation
       ? {
           id: adjustingVariant.id,
           variantId: adjustingVariant.id,
           sku: adjustingVariant.sku,
           productId,
           productName,
-          locationId: defaultLocation.id,
-          locationName: defaultLocation.name,
+          locationId: stockLocation.id,
+          locationName: stockLocation.name,
           stock: adjustingVariant.stock,
           updatedAt: adjustingVariant.updatedAt,
         }
@@ -63,13 +63,13 @@ export function VariantSection({
     // an account has no location until the merchant creates one (OS-689);
     // stock needs somewhere to live, so send them there first
     onAdjustStock: (variant) =>
-      defaultLocation
+      stockLocation
         ? setAdjustingVariant(variant)
         : navigate({ to: "/app/locations/create" }),
     onEdit: (variant) => setEditingVariant(variant),
     lowStockThreshold,
     // unknown while loading: assume there's one rather than flash the prompt
-    canAdjustStock: !locations || !!defaultLocation,
+    canAdjustStock: !locationsLoaded || !!stockLocation,
   });
 
   return (

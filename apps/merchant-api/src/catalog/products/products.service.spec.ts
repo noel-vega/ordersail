@@ -168,6 +168,29 @@ describe('ProductsService opening stock with no location (OS-689)', () => {
     expect(await inventoryRowsFor(product.id)).toEqual([{ stock: 5 }]);
   });
 
+  // merchant-web's useStockLocation adjusts stock at the lowest id too; the
+  // location list sorts by name, so "first" must not follow it
+  it('picks the lowest-id location, not the first by name', async () => {
+    const { account, service, productBody } = await setup();
+    const older = await insertLocation(db, {
+      accountId: account.id,
+      name: 'Warehouse',
+    });
+    await insertLocation(db, { accountId: account.id, name: 'Annex' });
+
+    const product = await service.create(productBody(5), account.id);
+
+    const rows = await db
+      .select({ locationId: inventoryTable.locationId })
+      .from(inventoryTable)
+      .innerJoin(
+        productVariantsTable,
+        eq(productVariantsTable.id, inventoryTable.variantId),
+      )
+      .where(eq(productVariantsTable.productId, product.id));
+    expect(rows).toEqual([{ locationId: older.id }]);
+  });
+
   it('adds variants at stock 0 with no location, and refuses stock', async () => {
     const { account, service, productBody } = await setup();
     const product = await service.create(productBody(0), account.id);

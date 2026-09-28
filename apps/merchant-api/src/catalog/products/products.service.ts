@@ -114,7 +114,7 @@ export class ProductsService {
       }
     }
 
-    const stockLocationId = await this.openingStockLocation(
+    const stockLocationId = await this.openingStockLocationId(
       accountId,
       createProductDto.stock,
     );
@@ -342,7 +342,7 @@ export class ProductsService {
   // (OS-689) — and then there's nowhere to put stock: fine at 0, since no
   // inventory row reads as 0 everywhere stock is summed, but a 400 otherwise
   // rather than stock silently dropped.
-  private async openingStockLocation(
+  private async openingStockLocationId(
     accountId: number,
     stock: number,
   ): Promise<number | null> {
@@ -716,7 +716,7 @@ export class ProductsService {
   ): Promise<ProductVariant[]> {
     if (!(await this.productExists(productId, accountId))) return [];
 
-    const stockLocationId = await this.openingStockLocation(
+    const stockLocationId = await this.openingStockLocationId(
       accountId,
       createVariantsDto.stock,
     );

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { type ColumnDef } from "@tanstack/react-table";
 import { ApiError, type PosDevice, type PosDevicePairing } from "merchant-sdk";
 import { format } from "date-fns";
@@ -42,6 +43,7 @@ import { EditDeviceSheet } from "./edit-device-sheet";
 import { PairingCodeReveal } from "../components/pairing-code-reveal";
 import { Can } from "../../../components/can";
 import { usePermissions } from "../../auth/permission-context";
+import { useListLocationsQuery } from "../../locations/locations.hooks";
 
 const STATUS_BADGE: Record<
   PosDevice["status"],
@@ -136,6 +138,11 @@ export function ListPosDevicesView() {
   const revoke = useRevokePosDeviceMutation();
   const rotate = useRotatePairingMutation();
   const canWrite = usePermissions().has("pos_devices:write");
+  // signup creates no location (OS-689) and every device is paired to one —
+  // say so up front rather than inside the New device sheet
+  const locations = useListLocationsQuery();
+  const noLocations =
+    locations.isSuccess && locations.data?.items.length === 0;
 
   const [mintOpen, setMintOpen] = useState(false);
   const [factorPrompt, setFactorPrompt] = useState(false);
@@ -228,6 +235,15 @@ export function ListPosDevicesView() {
           </Button>
         </Can>
       </div>
+
+      {canWrite && noLocations && (
+        <p className="text-sm text-muted-foreground">
+          <Link to="/app/locations/create" className="underline">
+            Add a location
+          </Link>{" "}
+          before pairing a device.
+        </p>
+      )}
 
       {showCodeError && (
         <p className="text-sm text-destructive">{showCodeError}</p>

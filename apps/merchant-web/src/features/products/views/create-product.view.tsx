@@ -20,7 +20,7 @@ import { useCreateProductMutation } from "../products.hooks";
 import { BrandCombobox } from "../../brands/components/brand-combobox";
 import { CategoryCombobox } from "../../categories/components/category-combobox";
 import { centsToDollars, dollarsToCents } from "../../../lib/currency";
-import { useListLocationsQuery } from "../../locations/locations.hooks";
+import { useStockLocation } from "../../locations/locations.hooks";
 
 export const CreateProductFormSchema = z.object({
   name: z.string(),
@@ -47,8 +47,8 @@ export function CreateProductView() {
   const createProduct = useCreateProductMutation();
   // opening stock goes to the first location; with none yet there's nowhere
   // to put it, and the API refuses stock above 0 (OS-689)
-  const locations = useListLocationsQuery();
-  const hasLocation = (locations.data?.items.length ?? 0) > 0;
+  const stockLocation = useStockLocation();
+  const noLocation = stockLocation.isLoaded && !stockLocation.location;
   const form = useForm({
     resolver: zodResolver(CreateProductFormSchema),
     defaultValues: {
@@ -186,12 +186,12 @@ export function CreateProductView() {
                 <Input
                   type="number"
                   value={field.value}
-                  disabled={locations.isSuccess && !hasLocation}
+                  disabled={noLocation}
                   onChange={(e) =>
                     field.onChange(e.currentTarget.valueAsNumber)
                   }
                 />
-                {locations.isSuccess && !hasLocation && (
+                {noLocation && (
                   <FieldDescription>
                     <Link to="/app/locations/create" className="underline">
                       Add a location
