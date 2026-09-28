@@ -10,6 +10,8 @@
 #     authenticates with its own DKIM keys and the bounce.ordersail.com MAIL
 #     FROM, so the apex SPF only needs to name Google.
 #
+# The domain's DMARC record judges both kinds, so it lives here too (bottom).
+#
 # Groups, users and aliases are managed in the Workspace admin console, not
 # here. The two inputs below come from it: the domain-verification token
 # (Admin console → domain setup, TXT method) and the DKIM record
@@ -53,4 +55,15 @@ resource "aws_route53_record" "google_dkim" {
   type    = "TXT"
   ttl     = 3600
   records = [join("\"\"", local.google_dkim_chunks)]
+}
+
+# DMARC for the whole domain: it judges SES app mail and Workspace mail alike.
+# p=none — monitor only. Aggregate reports (rua) go to the dmarc@ Google Group;
+# read them before tightening to p=quarantine (OS-662).
+resource "aws_route53_record" "dmarc" {
+  zone_id = data.aws_route53_zone.this.zone_id
+  name    = "_dmarc.${var.domain_name}"
+  type    = "TXT"
+  ttl     = 1800
+  records = ["v=DMARC1; p=none; rua=mailto:dmarc@${var.domain_name}"]
 }

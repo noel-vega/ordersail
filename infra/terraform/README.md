@@ -157,9 +157,9 @@ there and apply; the list and what each is for is in `docs/observability.md` →
 
 `envs/production/mail.tf` publishes Google Workspace's MX, the apex TXT (Google verification and
 SPF) and Google's DKIM key, from `google_site_verification` / `google_dkim_txt` in
-`terraform.tfvars`. Users and groups are managed in the Workspace admin console. App mail is
-SES (`ses.tf`), independent of this. Runbook: `docs/runbooks/alerts.md` → Email (SES) →
-Mailboxes.
+`terraform.tfvars`, plus the domain-wide DMARC record that covers both Workspace and SES mail.
+Users and groups are managed in the Workspace admin console. App mail is SES (`ses.tf`),
+independent of this. Runbook: `docs/runbooks/alerts.md` → Email (SES) → Mailboxes.
 
 ## Runbooks
 

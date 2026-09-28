@@ -14,17 +14,17 @@ resource "aws_ses_email_identity" "sender" {
 }
 
 # --- ordersail.com domain identity (OS-657) --------------------------------
-# Transactional mail is sent as no-reply@ordersail.com. Three records make it
-# authenticate under DMARC:
+# Transactional mail is sent as no-reply@ordersail.com. Two sets of records
+# make it authenticate under DMARC:
 #
 #   DKIM       Easy DKIM — SES signs with a key it rotates; the 3 CNAMEs below
 #              point at it. This alone aligns DMARC (d=ordersail.com).
 #   MAIL FROM  bounce.ordersail.com as the envelope sender, with its own MX (SES
 #              feedback endpoint) and SPF, so SPF aligns too instead of
 #              checking amazonses.com.
-#   DMARC      p=none — monitor only. Aggregate reports (rua) go to the
-#              dmarc@ Google Group (OS-665). Tighten to p=quarantine once real
-#              traffic is clean (OS-662).
+#
+# The DMARC policy itself covers SES and Google Workspace mail alike, so it
+# lives with the domain's other mail records in mail.tf.
 #
 # The worker sends from this identity (EMAIL_FROM, OS-658). The gmail identity
 # above is no longer a sender; OS-61 deletes it after production access is
@@ -75,15 +75,6 @@ resource "aws_route53_record" "ses_mail_from_spf" {
   type    = "TXT"
   ttl     = 1800
   records = ["v=spf1 include:amazonses.com ~all"]
-}
-
-resource "aws_route53_record" "dmarc" {
-  zone_id = data.aws_route53_zone.this.zone_id
-  name    = "_dmarc.${var.domain_name}"
-  type    = "TXT"
-  ttl     = 1800
-  # rua: aggregate reports go to the dmarc@ Google Group (OS-665)
-  records = ["v=DMARC1; p=none; rua=mailto:dmarc@${var.domain_name}"]
 }
 
 # --- bounce / complaint handling (OS-659) -----------------------------------

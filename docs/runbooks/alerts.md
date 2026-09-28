@@ -262,13 +262,17 @@ same servers:
 
 | | Handled by | DNS (Terraform) |
 |---|---|---|
-| **People's mail**: support@, privacy@, legal@, security@, dmarc@, staff | **Google Workspace** (OS-665) | apex MX `smtp.google.com`, apex SPF `include:_spf.google.com`, DKIM `google._domainkey`, verification TXT (`envs/production/mail.tf`) |
+| **People's mail**: support@, privacy@, legal@, security@, dmarc@, staff | **Google Workspace** (OS-665) | apex MX `smtp.google.com`, apex SPF `include:_spf.google.com`, DKIM `google._domainkey`, verification TXT, domain-wide DMARC `_dmarc` (`envs/production/mail.tf`) |
 | **App mail**: verification, reset, invites, order confirmations | **Amazon SES** as `no-reply@ordersail.com` | SES DKIM CNAMEs, MAIL FROM `bounce.ordersail.com` (`envs/production/ses.tf`) |
 
 - **The role addresses are Google Groups** on one paid seat, with the owner as a member and
   anyone on the web allowed to post. To add someone, add them to the group in the Workspace
   admin console; a new person needs a paid seat only if they want their own inbox.
-  **Adding an address needs no Terraform or DNS change.**
+- **Adding an address:** for a new role address (e.g. `billing@`), create a Google Group in
+  Admin console → Directory → Groups, add the owner, and set "who can post" to anyone on the
+  web. For a second name on an existing inbox, add an alias instead: Directory → Users (or
+  Groups) → the user or group → Add alternate email. **Neither needs a Terraform or DNS
+  change**, since the MX already covers all of `@ordersail.com`.
 - **A mail "never arrived" at support@ etc.:** check the group's "who can post" setting and its
   spam moderation queue (Groups → the group → Pending messages), then `dig MX ordersail.com`.
 - **DMARC aggregate reports** (`rua`) land in `dmarc@`, one XML attachment per receiver per
