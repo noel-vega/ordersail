@@ -5,7 +5,7 @@ import SignupCta from '../components/SignupCta.astro';
 const setup = [
 	{
 		title: 'Create your account',
-		body: 'Sign up with an email address — free during the beta, no card. You land in the dashboard with an empty catalog and one location.',
+		body: 'Once signups open at launch, all it takes is an email address — free during the beta, no card. You land in the dashboard with an empty catalog and one location.',
 	},
 	{
 		title: 'Add your products',
@@ -32,14 +32,15 @@ const journey = [
 
 <Layout
 	title="How it works — OrderSail"
-	description="From signup to first order: create an account, add products, connect Stripe, share your storefront — and what a customer sees when they buy."
+	description="What running your shop on OrderSail looks like, from signup to first order: create an account, add products, connect Stripe, share your storefront — and what a customer sees when they buy."
 >
 	<section class="head">
 		<p class="eyebrow">How it works</p>
 		<h1>From signup to your first order.</h1>
 		<p class="lede">
-			Four steps to open the shop, then OrderSail runs the sale from the
-			customer's first click through to a delivered package.
+			Once signups open at launch, it’s four steps to open the shop. Then
+			OrderSail runs the sale from the customer's first click through to a
+			delivered package.
 		</p>
 	</section>
 
@@ -85,7 +86,7 @@ const journey = [
 
 	<section class="cta">
 		<h2>Open your shop.</h2>
-		<SignupCta label="Create your account →" note="Free while in beta. No credit card." />
+		<SignupCta label="Create your account →" note="Free during the beta. No credit card." />
 	</section>
 </Layout>
 
@@ -228,11 +229,6 @@ const journey = [
 		font-weight: 400;
 		letter-spacing: -0.01em;
 		margin: 0 0 12px;
-	}
-	.cta p {
-		font-family: system-ui, sans-serif;
-		color: var(--ink-dim);
-		margin: 0 0 28px;
 	}
 
 	@media (max-width: 720px) {

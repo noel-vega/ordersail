@@ -11,7 +11,7 @@ const groups: Group[] = [
 		items: [
 			{
 				q: 'What do I need to start?',
-				a: 'An email address. Signup is free during the beta and doesn’t ask for a card. To take payments you’ll connect a Stripe account, which you can create during <a href="/how-it-works">setup</a>.',
+				a: 'An email address, once signups open at launch. The account is free during the beta and doesn’t ask for a card. To take payments you’ll connect a Stripe account, which you can create during <a href="/how-it-works">setup</a>.',
 			},
 			{
 				q: 'Is there a contract or a minimum?',
@@ -49,7 +49,7 @@ const groups: Group[] = [
 		items: [
 			{
 				q: 'Can I use my own domain or storefront?',
-				a: 'You can send customers to the OrderSail storefront today. Custom domains for the hosted storefront are on the roadmap; for full control now, build your own front end on the <a href="/features">API</a>.',
+				a: 'Every shop gets a hosted OrderSail storefront to send customers to. Custom domains for it are on the roadmap; for full control, build your own front end on the <a href="/features">API</a>.',
 			},
 			{
 				q: 'Is the API documented?',
@@ -92,14 +92,14 @@ const groups: Group[] = [
 
 <Layout
 	title="FAQ — OrderSail"
-	description="Answers to the common questions before signing up: what you need to start, how payouts and fees work, storefront and API options, point of sale, and your data."
+	description="Answers to the common questions about OrderSail: what you need to start, how payouts and fees work, storefront and API options, point of sale, and your data."
 >
 	<section class="head">
 		<p class="eyebrow">FAQ</p>
-		<h1>Questions worth asking before you sign up.</h1>
+		<h1>Questions worth asking before you commit.</h1>
 		<p class="lede">
-			Short, honest answers. We’re in beta, so a few things are still on the
-			way — those are called out.
+			Short, honest answers. We launch as a beta, so a few things are still on
+			the way — those are called out.
 		</p>
 	</section>
 
@@ -121,7 +121,7 @@ const groups: Group[] = [
 
 	<section class="cta">
 		<h2>Still deciding?</h2>
-		<SignupCta label="Create your account →" note="Signup is free while in beta — you can look around before committing." />
+		<SignupCta label="Create your account →" note="Signup is free during the beta — you can look around before committing." />
 	</section>
 </Layout>
 
@@ -199,10 +199,5 @@ const groups: Group[] = [
 		font-weight: 400;
 		letter-spacing: -0.01em;
 		margin: 0 0 12px;
-	}
-	.cta p {
-		font-family: system-ui, sans-serif;
-		color: var(--ink-dim);
-		margin: 0 0 28px;
 	}
 </style>
