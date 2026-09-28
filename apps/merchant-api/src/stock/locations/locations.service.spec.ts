@@ -123,6 +123,35 @@ describe('LocationsService.update — phone (OS-688)', () => {
   });
 });
 
+describe('LocationsService — US-only country (OS-689)', () => {
+  it('stores US on create, even when no country is sent', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    const location = await service.create({ name: 'Back room' }, account.id);
+
+    expect(location.addressCountry).toBe('US');
+  });
+
+  it('sets US on update, so a row saved without one picks it up', async () => {
+    const account = await insertAccount(db);
+    const location = await insertLocation(db, {
+      accountId: account.id,
+      withAddress: false,
+    });
+    expect(location.addressCountry).toBeNull();
+    const service = await build();
+
+    const updated = await service.update(
+      location.id,
+      { addressCity: 'Hoboken' },
+      account.id,
+    );
+
+    expect(updated?.addressCountry).toBe('US');
+  });
+});
+
 describe('LocationsService.remove (OS-188)', () => {
   it('deletes a location with no references', async () => {
     const account = await insertAccount(db);

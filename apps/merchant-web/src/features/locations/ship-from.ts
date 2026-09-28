@@ -12,7 +12,6 @@ export const shipFromFormSchema = z.object({
   addressCity: z.string(),
   addressState: z.string(),
   addressPostalCode: z.string(),
-  addressCountry: z.string(),
   // the contact carriers reach at this origin; a blank box clears it
   phone: optionalPhoneSchema,
 });
@@ -28,7 +27,6 @@ export function shipFromDefaults(location?: Location): ShipFromFormInput {
     addressCity: location?.addressCity ?? "",
     addressState: location?.addressState ?? "",
     addressPostalCode: location?.addressPostalCode ?? "",
-    addressCountry: location?.addressCountry ?? "",
     // stored as E.164; shown the way the merchant would type it
     phone: location?.phone ? formatPhone(location.phone) : "",
   };
@@ -42,7 +40,8 @@ export function toShipFromBody(data: ShipFromFormOutput) {
     addressCity: data.addressCity.trim() || null,
     addressState: data.addressState.trim() || null,
     addressPostalCode: data.addressPostalCode.trim() || null,
-    addressCountry: data.addressCountry.trim() || null,
+    // US-only for now — not a form field; the API refuses anything else
+    addressCountry: "US" as const,
     // already E.164, or null for a blank box
     phone: data.phone,
   };

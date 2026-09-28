@@ -1857,7 +1857,8 @@ export interface components {
             addressCity?: string | null;
             addressState?: string | null;
             addressPostalCode?: string | null;
-            addressCountry?: string | null;
+            /** @enum {string} */
+            addressCountry?: "US";
             /** @example +12015550123 */
             phone?: string | null;
             name: string;
@@ -1891,7 +1892,8 @@ export interface components {
             addressCity?: string | null;
             addressState?: string | null;
             addressPostalCode?: string | null;
-            addressCountry?: string | null;
+            /** @enum {string} */
+            addressCountry?: "US";
             /** @example +12015550123 */
             phone?: string | null;
         };
