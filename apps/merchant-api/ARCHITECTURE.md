@@ -68,7 +68,7 @@ Adding a new cross-context edge = update the table above **and** the
     (`platform/dashboard/ports/sales.port.ts`); `SalesAdapter`
     (`…/ports/sales.adapter.ts`) is the *only* file in `platform/` that imports
     `sales`' services — enforced by `no-restricted-imports` in
-    `eslint.config.mjs`. `dashboard.service`'s `getOrderTotals` /
+    `eslint.config.mjs`. `dashboard.service`'s `getSalesTotals` /
     `getOutOfStockCount` stay as direct SQL (deliberate read-model projections —
     platform is exempt from the read-graph).
   - **`sales → payments`** (M2 refunds, OS-121). `sales` owns the order

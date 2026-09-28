@@ -103,7 +103,12 @@ export class DashboardService {
     const [[orders], [refunds]] = await Promise.all([
       this.db
         .select({
-          grossSalesCents: sql<number>`coalesce(sum(${ordersTable.amountTotalCents}), 0)::int`,
+          // sum() is bigint — an ::int cast overflows past ~$21.4M a window;
+          // node-postgres returns bigint as a string, so map it to a number
+          grossSalesCents:
+            sql<number>`coalesce(sum(${ordersTable.amountTotalCents}), 0)`.mapWith(
+              Number,
+            ),
           orderCount: sql<number>`count(*)::int`,
         })
         .from(ordersTable)
@@ -116,7 +121,10 @@ export class DashboardService {
         ),
       this.db
         .select({
-          refundsCents: sql<number>`coalesce(-sum(${orderPaymentsTable.amountCents}), 0)::int`,
+          refundsCents:
+            sql<number>`coalesce(-sum(${orderPaymentsTable.amountCents}), 0)`.mapWith(
+              Number,
+            ),
         })
         .from(orderPaymentsTable)
         .innerJoin(ordersTable, eq(ordersTable.id, orderPaymentsTable.orderId))
