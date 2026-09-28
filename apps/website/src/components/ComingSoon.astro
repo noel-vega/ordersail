@@ -1,0 +1,31 @@
+---
+// Stands in for every signup call-to-action while OrderSail is pre-launch
+// (OS-663): a "Coming soon" pill that goes nowhere, plus a pointer to /contact.
+// The public site has no route into the merchant app until launch.
+
+interface Props {
+	/** Just the pill, no contact line (hero, pricing card). */
+	bare?: boolean;
+}
+
+const { bare = false } = Astro.props;
+---
+
+{
+	!bare && (
+		<p class="cta-note">
+			Signups open at launch. Questions? <a href="/contact">Contact us</a>.
+		</p>
+	)
+}
+<span class="btn-soon">Coming soon</span>
+
+<style>
+	/* Matches the pages' CTA-section paragraph styling (a page's scoped rules
+	   don't reach this component). A page can widen the gap with --cta-note-gap. */
+	.cta-note {
+		font-family: system-ui, sans-serif;
+		color: var(--ink-dim);
+		margin: 0 0 var(--cta-note-gap, 28px);
+	}
+</style>

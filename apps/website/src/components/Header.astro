@@ -1,6 +1,4 @@
 ---
-import { signupOpen, signupUrl, signinUrl } from '../lib/urls';
-
 const links = [
 	{ href: '/features', label: 'Features' },
 	{ href: '/pricing', label: 'Pricing' },
@@ -34,16 +32,7 @@ const current = Astro.url.pathname.replace(/(.)\/$/, '$1');
 	</nav>
 
 	<div class="top-actions">
-		{
-			signupOpen ? (
-				<>
-					<a class="signin-top" href={signinUrl}>Sign in</a>
-					<a class="cta-top" href={signupUrl}>Start selling</a>
-				</>
-			) : (
-				<span class="cta-top soon">Coming soon</span>
-			)
-		}
+		<span class="cta-top soon">Coming soon</span>
 	</div>
 
 	<button
@@ -66,16 +55,7 @@ const current = Astro.url.pathname.replace(/(.)\/$/, '$1');
 				</a>
 			))
 		}
-		{
-			signupOpen ? (
-				<>
-					<a href={signinUrl}>Sign in</a>
-					<a class="btn-primary" href={signupUrl}>Start selling</a>
-				</>
-			) : (
-				<span class="btn-soon">Coming soon</span>
-			)
-		}
+		<span class="btn-soon">Coming soon</span>
 	</nav>
 </div>
 
@@ -124,16 +104,6 @@ const current = Astro.url.pathname.replace(/(.)\/$/, '$1');
 		display: flex;
 		align-items: center;
 		gap: 22px;
-	}
-	.signin-top {
-		text-decoration: none;
-		font-size: 0.82rem;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		color: var(--ink-dim);
-	}
-	.signin-top:hover {
-		text-decoration: underline;
 	}
 	.cta-top {
 		text-decoration: none;
@@ -224,7 +194,6 @@ const current = Astro.url.pathname.replace(/(.)\/$/, '$1');
 		text-decoration: underline;
 		text-underline-offset: 4px;
 	}
-	.mobile-menu nav a.btn-primary,
 	.mobile-menu nav .btn-soon {
 		margin-top: 24px;
 		border-bottom: none;

@@ -1,6 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import SignupCta from '../components/SignupCta.astro';
+import ComingSoon from '../components/ComingSoon.astro';
 
 const included = [
 	'Full catalog — unlimited products, variants, and images',
@@ -57,7 +57,7 @@ const faq = [
 		<ul class="included">
 			{included.map((i) => <li>{i}</li>)}
 		</ul>
-		<SignupCta label="Create your account →" bare />
+		<ComingSoon bare />
 		<p class="fine">No feature gates during the beta — every account gets everything above.</p>
 	</section>
 
@@ -92,7 +92,7 @@ const faq = [
 
 	<section class="cta">
 		<h2>Start selling — free.</h2>
-		<SignupCta label="Create your account →" note="Beta pricing, everything included. No credit card." />
+		<ComingSoon />
 	</section>
 </Layout>
 

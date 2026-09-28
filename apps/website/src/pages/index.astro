@@ -1,7 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import SignupCta from '../components/SignupCta.astro';
-import { signupOpen } from '../lib/urls';
+import ComingSoon from '../components/ComingSoon.astro';
 
 const problems = [
 	{
@@ -35,7 +34,7 @@ const features = [
 			payouts — no separate tools, no duct-taped integrations.
 		</p>
 		<div class="actions">
-			<SignupCta label="Sign up — free" bare />
+			<ComingSoon bare />
 			<a class="btn-line" href="/features">See what it does</a>
 		</div>
 	</section>
@@ -90,8 +89,8 @@ const features = [
 	</section>
 
 	<section class="final">
-		<h2>{signupOpen ? 'Set sail today.' : 'Set sail soon.'}</h2>
-		<SignupCta label="Create your account →" note="Free during the beta. No credit card." />
+		<h2>Set sail soon.</h2>
+		<ComingSoon />
 	</section>
 </Layout>
 

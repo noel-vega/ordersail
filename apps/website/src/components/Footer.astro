@@ -1,6 +1,4 @@
 ---
-import { signupOpen, signupUrl, signinUrl } from '../lib/urls';
-
 const year = new Date().getFullYear();
 
 const columns = [
@@ -26,18 +24,10 @@ const columns = [
 		links: [{ href: '/contact', label: 'Contact' }],
 	},
 	// pre-launch there's nothing to start yet — point at Contact instead (OS-663)
-	signupOpen
-		? {
-				title: 'Get started',
-				links: [
-					{ href: signupUrl, label: 'Start selling' },
-					{ href: signinUrl, label: 'Sign in' },
-				],
-			}
-		: {
-				title: 'Coming soon',
-				links: [{ href: '/contact', label: 'Questions? Contact us' }],
-			},
+	{
+		title: 'Coming soon',
+		links: [{ href: '/contact', label: 'Questions? Contact us' }],
+	},
 ];
 ---
 

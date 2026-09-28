@@ -1,6 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import SignupCta from '../components/SignupCta.astro';
+import ComingSoon from '../components/ComingSoon.astro';
 
 type QA = { q: string; a: string };
 type Group = { title: string; items: QA[] };
@@ -121,7 +121,7 @@ const groups: Group[] = [
 
 	<section class="cta">
 		<h2>Still deciding?</h2>
-		<SignupCta label="Create your account →" note="Signup is free during the beta — you can look around before committing." />
+		<ComingSoon />
 	</section>
 </Layout>
 
