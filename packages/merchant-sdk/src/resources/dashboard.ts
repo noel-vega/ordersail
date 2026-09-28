@@ -8,10 +8,7 @@ export type DashboardRangeParams = NonNullable<
 
 export function createDashboardResource(client: Client<paths>, doRequest: DoFn) {
   return {
-    get: async () => {
-      const { data } = await doRequest(() => client.GET("/dashboard"));
-      return data;
-    },
+    get: async () => unwrap(await doRequest(() => client.GET("/dashboard"))),
 
     // net sales / orders / AOV for a range of local dates in the account's
     // timezone (both inclusive), plus the equal-length previous period.

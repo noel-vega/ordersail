@@ -2,14 +2,16 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString } from 'class-validator';
 import { RANGE_PRESETS, type RangePreset } from '../range';
 
-// `?from&to` for every range-scoped dashboard endpoint. Local calendar dates
-// in the account's timezone, both inclusive; parsed and bounded by
-// resolveRange (which 400s), so only the shape is checked here.
+// `?from&to&range` for every range-scoped dashboard endpoint. Local calendar
+// dates in the account's timezone, both inclusive; parsed, capped at today
+// and bounded by resolveRange (which 400s a malformed, reversed or too-long
+// range), so only the shape is checked here.
 export class DashboardRangeQueryDto {
   @ApiProperty({
     required: false,
     example: '2026-09-01',
-    description: 'first day (YYYY-MM-DD); default: 29 days before `to`',
+    description:
+      "first day (YYYY-MM-DD); wins over `range`; a day after today in the account's zone is capped to today; default: `range`'s length ending at `to`",
   })
   @IsOptional()
   @IsString()

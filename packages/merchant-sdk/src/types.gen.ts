@@ -4612,7 +4612,7 @@ export interface operations {
     DashboardController_getSales: {
         parameters: {
             query?: {
-                /** @description first day (YYYY-MM-DD); default: 29 days before `to` */
+                /** @description first day (YYYY-MM-DD); wins over `range`; a day after today in the account's zone is capped to today; default: `range`'s length ending at `to` */
                 from?: string;
                 /** @description last day (YYYY-MM-DD); a day after today in the account's zone is capped to today; default: today */
                 to?: string;
