@@ -18,7 +18,7 @@ import {
 import { DashboardSummary } from './entities/dashboard-summary.entity';
 import { SALES_PORT, type SalesPort } from './ports/sales.port';
 import { DashboardSales, SalesTotals } from './entities/dashboard-sales.entity';
-import { resolveRange } from './range';
+import { resolveRange, type RangePreset } from './range';
 
 const RECENT_LIMIT = 5;
 
@@ -58,7 +58,7 @@ export class DashboardService {
 
   async getSales(
     accountId: number,
-    query: { from?: string; to?: string },
+    query: { from?: string; to?: string; range?: RangePreset },
     now = new Date(),
   ): Promise<DashboardSales> {
     const [{ timezone }] = await this.db

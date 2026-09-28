@@ -36,6 +36,12 @@ export class DashboardSalesRange {
   @ApiProperty({ example: '2026-09-30' })
   to!: string;
 
+  @ApiProperty({
+    example: '2026-09-30',
+    description: 'today in `timezone` — the latest `to` the API accepts',
+  })
+  today!: string;
+
   @ApiProperty({ example: '2026-08-02' })
   previousFrom!: string;
 

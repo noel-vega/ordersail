@@ -17,6 +17,7 @@ describe('resolveRange (OS-669)', () => {
     expect(resolveRange({ timezone: 'America/New_York', now })).toEqual({
       from: '2026-08-29',
       to: '2026-09-27',
+      today: '2026-09-27',
       previousFrom: '2026-07-30',
       previousTo: '2026-08-28',
     });
@@ -33,6 +34,7 @@ describe('resolveRange (OS-669)', () => {
     ).toEqual({
       from: '2026-09-01',
       to: '2026-09-07',
+      today: '2026-09-28',
       previousFrom: '2026-08-25',
       previousTo: '2026-08-31',
     });
@@ -56,7 +58,7 @@ describe('resolveRange (OS-669)', () => {
         from: '2026-10-29',
         to: '2026-11-04',
         timezone: 'America/New_York',
-        now,
+        now: new Date('2026-12-01T12:00:00Z'),
       }),
     ).toMatchObject({ previousFrom: '2026-10-22', previousTo: '2026-10-28' });
   });
@@ -101,5 +103,87 @@ describe('resolveRange (OS-669)', () => {
         now,
       }),
     ).toThrow(/at most/);
+  });
+});
+
+describe('resolveRange presets (OS-193)', () => {
+  // today in New York is 2026-09-27 at `now`
+  it.each([
+    ['today', '2026-09-27', '2026-09-26', '2026-09-26'],
+    ['7d', '2026-09-21', '2026-09-14', '2026-09-20'],
+    ['30d', '2026-08-29', '2026-07-30', '2026-08-28'],
+    ['90d', '2026-06-30', '2026-04-01', '2026-06-29'],
+    ['12m', '2025-09-28', '2024-09-28', '2025-09-27'],
+  ] as const)(
+    '%s ends today in the account zone',
+    (range, from, previousFrom, previousTo) => {
+      expect(
+        resolveRange({ range, timezone: 'America/New_York', now }),
+      ).toEqual({
+        from,
+        to: '2026-09-27',
+        today: '2026-09-27',
+        previousFrom,
+        previousTo,
+      });
+    },
+  );
+
+  it('an explicit from wins over range', () => {
+    expect(
+      resolveRange({
+        range: '7d',
+        from: '2026-09-01',
+        to: '2026-09-15',
+        timezone: 'UTC',
+        now,
+      }),
+    ).toMatchObject({ from: '2026-09-01', to: '2026-09-15' });
+  });
+
+  it('range with an explicit to ends there', () => {
+    expect(
+      resolveRange({ range: '7d', to: '2026-06-30', timezone: 'UTC', now }),
+    ).toMatchObject({ from: '2026-06-24', to: '2026-06-30' });
+  });
+});
+
+describe('resolveRange future dates (OS-193)', () => {
+  it('caps a `to` after today in the account zone to that today', () => {
+    // the 28th has begun in UTC but not in New York
+    expect(
+      resolveRange({ to: '2026-09-28', timezone: 'UTC', now }),
+    ).toMatchObject({ to: '2026-09-28', today: '2026-09-28' });
+    expect(
+      resolveRange({ to: '2026-09-28', timezone: 'America/New_York', now }),
+    ).toMatchObject({ to: '2026-09-27', today: '2026-09-27' });
+  });
+
+  it('keeps `from` and shortens the window, so the comparison follows', () => {
+    expect(
+      resolveRange({
+        from: '2026-09-21',
+        to: '2099-01-01',
+        timezone: 'UTC',
+        now,
+      }),
+    ).toEqual({
+      from: '2026-09-21',
+      to: '2026-09-28',
+      today: '2026-09-28',
+      previousFrom: '2026-09-13',
+      previousTo: '2026-09-20',
+    });
+  });
+
+  it('an entirely future range collapses to today', () => {
+    expect(
+      resolveRange({
+        from: '2099-01-01',
+        to: '2099-01-31',
+        timezone: 'UTC',
+        now,
+      }),
+    ).toMatchObject({ from: '2026-09-28', to: '2026-09-28' });
   });
 });

@@ -3745,7 +3745,7 @@
             "name": "from",
             "required": false,
             "in": "query",
-            "description": "first day (YYYY-MM-DD); default: 29 days before `to`",
+            "description": "first day (YYYY-MM-DD); wins over `range`; a day after today in the account's zone is capped to today; default: `range`'s length ending at `to`",
             "schema": {
               "example": "2026-09-01",
               "type": "string"
@@ -3755,10 +3755,26 @@
             "name": "to",
             "required": false,
             "in": "query",
-            "description": "last day (YYYY-MM-DD); default: today in the account's zone",
+            "description": "last day (YYYY-MM-DD); a day after today in the account's zone is capped to today; default: today",
             "schema": {
               "example": "2026-09-30",
               "type": "string"
+            }
+          },
+          {
+            "name": "range",
+            "required": false,
+            "in": "query",
+            "description": "window length ending at `to` (default today in the account's zone) when `from` is omitted; default 30d",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "today",
+                "7d",
+                "30d",
+                "90d",
+                "12m"
+              ]
             }
           }
         ],
@@ -7287,6 +7303,11 @@
             "type": "string",
             "example": "2026-09-30"
           },
+          "today": {
+            "type": "string",
+            "example": "2026-09-30",
+            "description": "today in `timezone` — the latest `to` the API accepts"
+          },
           "previousFrom": {
             "type": "string",
             "example": "2026-08-02"
@@ -7303,6 +7324,7 @@
         "required": [
           "from",
           "to",
+          "today",
           "previousFrom",
           "previousTo",
           "timezone"
