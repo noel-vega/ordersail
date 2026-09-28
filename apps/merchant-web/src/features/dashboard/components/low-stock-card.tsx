@@ -1,5 +1,7 @@
+import type { UseQueryResult } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import type { DashboardLowStock } from "merchant-sdk"
+import { Button } from "ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "ui/card"
 import { Skeleton } from "ui/skeleton"
 import { usePermissions } from "../../auth/permission-context"
@@ -9,10 +11,13 @@ import { StockLevel } from "../../inventory/components/stock-level"
 // every location, at or below the account's threshold, lowest first. Each
 // row links to its product for a viewer who can open it. The badges use the
 // threshold from the same response, so they always match the list.
-export function LowStockCard(props: { lowStock?: DashboardLowStock }) {
+export function LowStockCard(props: {
+  query: UseQueryResult<DashboardLowStock>
+}) {
+  const { query } = props
   const canOpenProduct = usePermissions().has("products:read")
-  const items = props.lowStock?.items
-  const threshold = props.lowStock?.lowStockThreshold
+  const items = query.data?.items
+  const threshold = query.data?.lowStockThreshold
 
   return (
     <Card className="h-full">
@@ -25,7 +30,20 @@ export function LowStockCard(props: { lowStock?: DashboardLowStock }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {items === undefined || threshold === undefined ? (
+        {query.isError && !query.data ? (
+          // a failed load must not sit on the skeleton forever
+          <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-6 text-center">
+            <p className="text-sm font-medium">Couldn&apos;t load low stock</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void query.refetch()}
+              disabled={query.isFetching}
+            >
+              {query.isFetching ? "Retrying..." : "Retry"}
+            </Button>
+          </div>
+        ) : items === undefined || threshold === undefined ? (
           <div className="space-y-2">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-5 w-full" />

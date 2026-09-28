@@ -193,7 +193,7 @@ export function DashboardView() {
             </Link>
           </div>
           <div className="lg:col-span-2">
-            <LowStockCard lowStock={lowStock.data} />
+            <LowStockCard query={lowStock} />
           </div>
         </div>
       </section>

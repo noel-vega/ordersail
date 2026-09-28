@@ -36,11 +36,6 @@ const RECENT_LIMIT = 5;
 export const LOW_STOCK_DEFAULT_LIMIT = 10;
 const LOW_STOCK_MAX_LIMIT = 50;
 
-// the account's lowStockThreshold (OS-668), inline in the stock queries
-function lowStockThresholdOf(accountId: number): SQL {
-  return sql`(select ${accountsTable.lowStockThreshold} from ${accountsTable} where ${accountsTable.id} = ${accountId})`;
-}
-
 // Orders that count as a sale (OS-669). pending / payment_failed never took
 // money. canceled is left out entirely — order AND its refund rows — because
 // a cancel reverses the whole sale: a paid web cancel writes a refund row but
@@ -294,13 +289,8 @@ export class DashboardService {
     accountId: number,
     limit: number,
   ): Promise<DashboardLowStock> {
-    const take = Math.min(Math.max(Math.trunc(limit), 1), LOW_STOCK_MAX_LIMIT);
-    // read once and applied as a value, so the items and the threshold
-    // returned beside them always agree
-    const [{ lowStockThreshold }] = await this.db
-      .select({ lowStockThreshold: accountsTable.lowStockThreshold })
-      .from(accountsTable)
-      .where(eq(accountsTable.id, accountId));
+    const take = Math.min(Math.max(limit, 1), LOW_STOCK_MAX_LIMIT);
+    const lowStockThreshold = await this.getLowStockThreshold(accountId);
     const stock = this.variantStock(accountId);
     const items = await this.db
       .select({
@@ -339,16 +329,26 @@ export class DashboardService {
   // Judged on each variant's stock summed across every location — a variant
   // is out when it can't be sold anywhere, not when one store runs dry.
   private async getStockCounts(accountId: number) {
+    const lowStockThreshold = await this.getLowStockThreshold(accountId);
     const stock = this.variantStock(accountId);
-    const threshold = lowStockThresholdOf(accountId);
     const [counts] = await this.db
       .select({
         outOfStockCount: sql<number>`count(*) filter (where ${stock.total} <= 0)::int`,
-        lowStockCount: sql<number>`count(*) filter (where ${stock.total} > 0 and ${stock.total} <= ${threshold})::int`,
-        lowStockThreshold: sql<number>`${threshold}`,
+        lowStockCount: sql<number>`count(*) filter (where ${stock.total} > 0 and ${stock.total} <= ${lowStockThreshold})::int`,
       })
       .from(stock);
-    return counts;
+    return { ...counts, lowStockThreshold };
+  }
+
+  // the account's lowStockThreshold (OS-668), read once and applied as a
+  // value, so the counts or items and the threshold returned beside them
+  // always agree
+  private async getLowStockThreshold(accountId: number) {
+    const [{ lowStockThreshold }] = await this.db
+      .select({ lowStockThreshold: accountsTable.lowStockThreshold })
+      .from(accountsTable)
+      .where(eq(accountsTable.id, accountId));
+    return lowStockThreshold;
   }
 
   // Each of the account's variants with its stock summed across locations,

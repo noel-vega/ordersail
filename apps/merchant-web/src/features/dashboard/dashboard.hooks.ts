@@ -1,5 +1,8 @@
 import { keepPreviousData, queryOptions, useQuery } from "@tanstack/react-query"
-import type { DashboardRangeParams } from "merchant-sdk"
+import type {
+  DashboardLowStockParams,
+  DashboardRangeParams,
+} from "merchant-sdk"
 import { merchantApi } from "../../lib/merchant-api-client"
 
 export function getDashboardSummaryQueryOptions() {
@@ -40,9 +43,11 @@ export function getDashboardSalesTimeseriesQueryOptions(
 
 // variants at or below the account's low-stock threshold, summed across
 // locations, most urgent first (OS-195)
-export function getDashboardLowStockQueryOptions(limit = 10) {
+export function getDashboardLowStockQueryOptions(
+  params: DashboardLowStockParams = {},
+) {
   return queryOptions({
-    queryKey: ["dashboard", "low-stock", limit],
-    queryFn: () => merchantApi.dashboard.lowStock({ limit }),
+    queryKey: ["dashboard", "low-stock", params],
+    queryFn: () => merchantApi.dashboard.lowStock(params),
   })
 }
