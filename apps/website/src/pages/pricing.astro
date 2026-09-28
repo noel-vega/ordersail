@@ -13,66 +13,50 @@ const included = [
 
 const faq = [
 	{
-		q: 'Is there really no catch?',
-		a: 'During the beta, no. We’re trading a low price for your feedback and your patience with the occasional rough edge.',
-	},
-	{
-		q: 'Will my price jump when the beta ends?',
-		a: 'You’ll get at least 30 days’ notice and a choice — no beta merchant is moved onto a paid plan without agreeing to it first.',
-	},
-	{
-		q: 'Are there contracts or minimums?',
-		a: 'No. It’s month-to-month once pricing exists, cancel anytime. More in the <a href="/faq">FAQ</a>.',
+		q: 'When will pricing be announced?',
+		a: 'Before signups open. Want a heads-up, or have a question about your shop? <a href="/contact">Get in touch</a>.',
 	},
 	{
 		q: 'Do you take a percentage of my sales?',
-		a: 'No. OrderSail never touches your money — Stripe pays you directly, and we don’t add a transaction fee.',
+		a: 'OrderSail never touches your money — payments go into your own Stripe account and Stripe pays you directly.',
 	},
 	{
-		q: 'What happens to my data if I stop?',
-		a: 'Export your catalog, orders, and customers through the API, then close the account. See the <a href="/faq">FAQ</a>.',
+		q: 'What happens to my data if I leave?',
+		a: 'It’s yours. Export your catalog, orders, and customers through the API. See the <a href="/faq">FAQ</a>.',
 	},
 ];
 ---
 
 <Layout
 	title="Pricing — OrderSail"
-	description="OrderSail launches as a free beta — no card, no per-transaction fee. Stripe's processing fees are separate and passed through. Post-beta pricing is not set yet."
+	description="What an OrderSail account includes: catalog, inventory, orders, Stripe payouts, team accounts, and the full API. Pricing is announced before signups open."
 >
 	<section class="head">
 		<p class="eyebrow">Pricing</p>
-		<h1>Free at launch.</h1>
+		<h1>Pricing announced at launch.</h1>
 		<p class="lede">
-			We launch as a free beta: no card to sign up, and no per-transaction
-			fee from us. You pay Stripe’s standard processing fee on each sale —
-			nothing else.
+			We’re finalizing plans now. Here’s what an OrderSail account includes —
+			and payments always run through your own Stripe account.
 		</p>
 	</section>
 
 	<section class="card">
 		<div class="card-head">
-			<span class="price">$0</span>
-			<span class="per">/ month during beta</span>
+			<span class="per">What’s included</span>
 		</div>
 		<ul class="included">
 			{included.map((i) => <li>{i}</li>)}
 		</ul>
 		<ComingSoon bare />
-		<p class="fine">No feature gates during the beta — every account gets everything above.</p>
+		<p class="fine">Plans and pricing are announced before signups open.</p>
 	</section>
 
 	<section class="note">
-		<h2>After the beta</h2>
-		<p>
-			We haven’t set pricing yet. When we do, every beta merchant gets at least
-			30 days’ notice before anything takes effect, and you won’t be moved onto a
-			plan without agreeing to it.
-		</p>
 		<h2>Payment processing</h2>
 		<p>
 			Stripe charges its standard processing fee on each sale, billed by Stripe.
-			That’s separate from OrderSail and we don’t mark it up. Connect your own
-			Stripe account and payouts go straight to your bank.
+			Connect your own Stripe account and payouts go straight to your bank —
+			OrderSail never holds your money.
 		</p>
 	</section>
 
@@ -91,7 +75,7 @@ const faq = [
 	</section>
 
 	<section class="cta">
-		<h2>Start selling — free.</h2>
+		<h2>Want to hear first?</h2>
 		<ComingSoon />
 	</section>
 </Layout>
@@ -129,11 +113,6 @@ const faq = [
 		align-items: baseline;
 		gap: 10px;
 		margin-bottom: 24px;
-	}
-	.price {
-		font-family: Georgia, serif;
-		font-size: 2.6rem;
-		letter-spacing: -0.02em;
 	}
 	.per {
 		font-family: ui-monospace, monospace;
