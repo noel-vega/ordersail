@@ -23,7 +23,11 @@ import {
   insertStripeAccount,
   useTestDb,
 } from 'test-support';
-import { ApiError, StorefrontClient } from '@ordersail/storefront-sdk';
+import {
+  ApiError,
+  StorefrontClient,
+  type StorefrontClientOptions,
+} from '@ordersail/storefront-sdk';
 import { SHIPPO, STRIPE } from '../modules/checkout/checkout.constants';
 
 // Two independent real ioredis connections get created as a side effect of
@@ -339,15 +343,42 @@ describe('storefront-sdk contract', () => {
       return { appKey: apiKey.key, refreshToken: signedIn.refreshToken, email };
     }
 
-    it('concurrent 401s share one refresh and the session survives', async () => {
-      const session = await restoredSession('concurrent');
-      const fetches = spyOnFetch();
-      const client = new StorefrontClient(
+    // call after spyOnFetch() — openapi-fetch captures fetch at construction
+    function restoredClient(
+      session: { appKey: string; refreshToken: string | undefined },
+      options?: StorefrontClientOptions,
+    ) {
+      return new StorefrontClient(
         baseUrl,
         session.appKey,
         undefined,
         session.refreshToken,
+        options,
       );
+    }
+
+    // holds every refresh response until release() — the server has already
+    // rotated by the time refreshLanded() is true, but the client hasn't
+    // applied it yet
+    function holdRefresh() {
+      let landed = false;
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      const fetches = spyOnFetch(async (path, send) => {
+        const response = await send();
+        if (path === '/auth/token/refresh') {
+          landed = true;
+          await released;
+        }
+        return response;
+      });
+      return { ...fetches, refreshLanded: () => landed, release };
+    }
+
+    it('concurrent 401s share one refresh and the session survives', async () => {
+      const session = await restoredSession('concurrent');
+      const fetches = spyOnFetch();
+      const client = restoredClient(session);
 
       const [customer, orders, sameOrders] = await Promise.all([
         client.customer.get(),
@@ -379,12 +410,7 @@ describe('storefront-sdk contract', () => {
         return response;
       });
       // only read by the interceptor once requests start, after this runs
-      const client = new StorefrontClient(
-        baseUrl,
-        session.appKey,
-        undefined,
-        session.refreshToken,
-      );
+      const client = restoredClient(session);
 
       const [customer, orders] = await Promise.all([
         client.customer.get(),
@@ -412,12 +438,7 @@ describe('storefront-sdk contract', () => {
         if (response.status === 401) unauthorized++;
         return response;
       });
-      const client = new StorefrontClient(
-        baseUrl,
-        session.appKey,
-        undefined,
-        session.refreshToken,
-      );
+      const client = restoredClient(session);
 
       const results = await Promise.allSettled([
         client.customer.get(),
@@ -444,12 +465,10 @@ describe('storefront-sdk contract', () => {
       const account = await insertAccount(db);
       const apiKey = await insertApiKey(db, { accountId: account.id });
       const fetches = spyOnFetch();
-      const client = new StorefrontClient(
-        baseUrl,
-        apiKey.key,
-        undefined,
-        'not-a-real-refresh-token',
-      );
+      const client = restoredClient({
+        appKey: apiKey.key,
+        refreshToken: 'not-a-real-refresh-token',
+      });
 
       const [customer, orders] = await Promise.allSettled([
         client.customer.get(),
@@ -463,6 +482,55 @@ describe('storefront-sdk contract', () => {
       });
       expect(fetches.refreshCount()).toBe(1);
       expect(client.refreshToken).toBeUndefined();
+    }, 30000);
+
+    it('logout() while a refresh is in flight stays logged out when it lands', async () => {
+      const session = await restoredSession('logout-race');
+      const fetches = holdRefresh();
+      const emitted: (string | undefined)[] = [];
+      const client = restoredClient(session, {
+        onTokensChanged: ({ accessToken }) => emitted.push(accessToken),
+      });
+
+      const pending = client.customer.get();
+      await waitFor(fetches.refreshLanded);
+      await client.logout();
+      fetches.release();
+
+      await expect(pending).resolves.toBeUndefined();
+      expect(client.accessToken).toBeUndefined();
+      expect(client.refreshToken).toBeUndefined();
+      // logout's clear is the last thing persisted — the stale refresh
+      // never wrote its tokens back
+      expect(emitted).toEqual([undefined]);
+      // and nothing is left to refresh with
+      await expect(client.refreshAccessToken()).resolves.toBeUndefined();
+      expect(fetches.refreshCount()).toBe(1);
+    }, 30000);
+
+    it('signIn() while a refresh is in flight keeps the signed-in session', async () => {
+      const session = await restoredSession('signin-race');
+      const fetches = holdRefresh();
+      const client = restoredClient(session);
+
+      const pending = client.customer.get();
+      await waitFor(fetches.refreshLanded);
+      const signedInToken = await client.signIn({
+        email: session.email,
+        password: 'a-real-password-123',
+      });
+      const signedInRefreshToken = client.refreshToken;
+      fetches.release();
+
+      await expect(pending).resolves.toMatchObject({ email: session.email });
+      expect(client.accessToken).toBe(signedInToken);
+      expect(client.refreshToken).toBe(signedInRefreshToken);
+      // the next refresh starts fresh against the signed-in session rather
+      // than joining the superseded one
+      await expect(client.refreshAccessToken()).resolves.toEqual(
+        expect.any(String),
+      );
+      expect(fetches.refreshCount()).toBe(2);
     }, 30000);
   });
 
