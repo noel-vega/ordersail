@@ -18,8 +18,9 @@ import {
 } from 'db/stock';
 import { PaginatedLocations } from './entities/paginated-locations.entity';
 
-// every location is in the US for now (see ShipFromDto) — written on every
-// create and update, so a row saved before that rule gets it on its next edit
+// every location is in the US for now (see ShipFromDto). The column is NOT
+// NULL DEFAULT 'US', but the DTO lets a null through (IsOptional), so it's
+// written explicitly rather than passed on from the body
 const COUNTRY = 'US';
 
 @Injectable()

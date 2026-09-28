@@ -41,8 +41,8 @@ import {
   usersTable,
   variantOptionValuesTable,
   webauthnChallengesTable,
-} from 'db';
-import type { TestDb } from './test-db/db.js';
+} from "db";
+import type { TestDb } from "./test-db/db.js";
 
 // Emailed links (Invite, password reset, email verification) are NOT seeded
 // from here — nor anywhere else. Their digest has one definition, in
@@ -58,11 +58,11 @@ import type { TestDb } from './test-db/db.js';
 let n = 0;
 const uniq = () => `${++n}`;
 
-type Row<T extends { $inferSelect: unknown }> = T['$inferSelect'];
+type Row<T extends { $inferSelect: unknown }> = T["$inferSelect"];
 
 async function one<T>(rows: T[]): Promise<T> {
   const [row] = rows;
-  if (!row) throw new Error('fixture insert returned no row');
+  if (!row) throw new Error("fixture insert returned no row");
   return row;
 }
 
@@ -79,7 +79,7 @@ export async function insertAccount(
     await db
       .insert(accountsTable)
       .values({
-        name: over.name ?? 'Test Store',
+        name: over.name ?? "Test Store",
         email: over.email ?? `owner-${uniq()}@store.test`,
         timezone: over.timezone,
         lowStockThreshold: over.lowStockThreshold,
@@ -116,7 +116,7 @@ export async function insertUser(
       .insert(usersTable)
       .values({
         accountId: opts.accountId,
-        firstname: opts.firstname ?? 'Staff',
+        firstname: opts.firstname ?? "Staff",
         lastname: opts.lastname ?? `Member ${uniq()}`,
         email: opts.email ?? `staff-${uniq()}@store.test`,
         phone: opts.phone ?? null,
@@ -177,7 +177,10 @@ export async function insertAccountWithUser(
 // nothing more: no Session is revoked. That is the point, for the specs that
 // use it: they ask what the claim check or a sign-in path does with a
 // deactivated User on its own.
-export async function deactivateUser(db: TestDb, userId: number): Promise<void> {
+export async function deactivateUser(
+  db: TestDb,
+  userId: number,
+): Promise<void> {
   await db
     .update(usersTable)
     .set({ deactivatedAt: new Date() })
@@ -289,9 +292,9 @@ export async function insertUserPasskey(
         credentialId: opts.credentialId ?? `credential-${uniq()}`,
         publicKey: opts.publicKey ?? `public-key-${uniq()}`,
         counter: opts.counter ?? 0,
-        nickname: opts.nickname ?? 'Test passkey',
-        transports: opts.transports ?? ['internal'],
-        deviceType: opts.deviceType ?? 'multiDevice',
+        nickname: opts.nickname ?? "Test passkey",
+        transports: opts.transports ?? ["internal"],
+        deviceType: opts.deviceType ?? "multiDevice",
         backedUp: opts.backedUp ?? true,
         lastUsedAt: opts.lastUsedAt ?? null,
       })
@@ -306,7 +309,7 @@ export async function insertUserPasskey(
 export async function insertWebauthnChallenge(
   db: TestDb,
   opts: {
-    type: 'registration' | 'authentication';
+    type: "registration" | "authentication";
     challenge?: string;
     userId?: number | null;
     expiresAt?: Date;
@@ -441,10 +444,10 @@ export async function insertCustomer(
       .insert(customersTable)
       .values({
         accountId: opts.accountId,
-        firstname: opts.firstname ?? 'Shopper',
+        firstname: opts.firstname ?? "Shopper",
         lastname: opts.lastname ?? `Buyer ${uniq()}`,
         email: opts.email ?? `shopper-${uniq()}@buyer.test`,
-        password: 'x',
+        password: "x",
       })
       .returning(),
   );
@@ -473,12 +476,12 @@ export async function insertStripeAccount(
 }
 
 const DEFAULT_ADDRESS = {
-  line1: '2261 Market Street',
-  line2: '4242',
-  city: 'San Francisco',
-  state: 'CA',
-  postalCode: '94114',
-  country: 'US',
+  line1: "2261 Market Street",
+  line2: "4242",
+  city: "San Francisco",
+  state: "CA",
+  postalCode: "94114",
+  country: "US",
 };
 
 export async function insertLocation(
@@ -498,7 +501,7 @@ export async function insertLocation(
   const addr =
     opts.withAddress === false ? null : { ...DEFAULT_ADDRESS, ...opts.address };
   const phone =
-    opts.phone !== undefined ? opts.phone : addr ? '+12015550100' : null;
+    opts.phone !== undefined ? opts.phone : addr ? "+12015550100" : null;
   return one(
     await db
       .insert(locationsTable)
@@ -510,7 +513,8 @@ export async function insertLocation(
         addressCity: addr?.city ?? null,
         addressState: addr?.state ?? null,
         addressPostalCode: addr?.postalCode ?? null,
-        addressCountry: addr?.country ?? null,
+        // US-only, NOT NULL (OS-689) — omitted, the column default is US
+        ...(addr?.country ? { addressCountry: addr.country } : {}),
         phone,
       })
       .returning(),
@@ -524,7 +528,10 @@ export async function insertBrand(
   return one(
     await db
       .insert(brandsTable)
-      .values({ accountId: opts.accountId, name: opts.name ?? `Brand ${uniq()}` })
+      .values({
+        accountId: opts.accountId,
+        name: opts.name ?? `Brand ${uniq()}`,
+      })
       .returning(),
   );
 }
@@ -550,7 +557,7 @@ export async function insertProduct(
     accountId: number;
     name?: string;
     description?: string | null;
-    status?: 'draft' | 'active' | 'archived';
+    status?: "draft" | "active" | "archived";
     brandId?: number | null;
     categoryIds?: number[];
   },
@@ -562,20 +569,18 @@ export async function insertProduct(
         accountId: opts.accountId,
         name: opts.name ?? `Product ${uniq()}`,
         description: opts.description ?? null,
-        status: opts.status ?? 'active',
+        status: opts.status ?? "active",
         brandId: opts.brandId ?? null,
       })
       .returning(),
   );
   if (opts.categoryIds?.length) {
-    await db
-      .insert(productCategoriesTable)
-      .values(
-        opts.categoryIds.map((categoryId) => ({
-          productId: product.id,
-          categoryId,
-        })),
-      );
+    await db.insert(productCategoriesTable).values(
+      opts.categoryIds.map((categoryId) => ({
+        productId: product.id,
+        categoryId,
+      })),
+    );
   }
   return product;
 }
@@ -627,8 +632,12 @@ export async function insertProductWithVariants(
 ): Promise<Row<typeof productVariantsTable>[]> {
   const productId =
     opts.productId ??
-    (await insertProduct(db, { accountId: opts.accountId, name: opts.productName }))
-      .id;
+    (
+      await insertProduct(db, {
+        accountId: opts.accountId,
+        name: opts.productName,
+      })
+    ).id;
 
   const optionIdByName = new Map<string, number>();
   const out: Row<typeof productVariantsTable>[] = [];
@@ -711,15 +720,13 @@ export async function insertCart(
       .returning(),
   );
   if (opts.items?.length) {
-    await db
-      .insert(cartItemsTable)
-      .values(
-        opts.items.map((i) => ({
-          cartId: cart.id,
-          variantId: i.variantId,
-          quantity: i.quantity,
-        })),
-      );
+    await db.insert(cartItemsTable).values(
+      opts.items.map((i) => ({
+        cartId: cart.id,
+        variantId: i.variantId,
+        quantity: i.quantity,
+      })),
+    );
   }
   return cart;
 }
@@ -728,14 +735,14 @@ export async function insertOrder(
   db: TestDb,
   opts: {
     accountId: number;
-    channel?: 'web' | 'pos';
+    channel?: "web" | "pos";
     status?:
-      | 'pending'
-      | 'paid'
-      | 'partially_refunded'
-      | 'refunded'
-      | 'canceled'
-      | 'payment_failed';
+      | "pending"
+      | "paid"
+      | "partially_refunded"
+      | "refunded"
+      | "canceled"
+      | "payment_failed";
     customerEmail?: string | null;
     customerName?: string | null;
     customerId?: number | null;
@@ -752,10 +759,10 @@ export async function insertOrder(
       .insert(ordersTable)
       .values({
         accountId: opts.accountId,
-        channel: opts.channel ?? 'web',
-        status: opts.status ?? 'paid',
-        customerEmail: opts.customerEmail ?? 'buyer@test.com',
-        customerName: opts.customerName ?? 'Buyer',
+        channel: opts.channel ?? "web",
+        status: opts.status ?? "paid",
+        customerEmail: opts.customerEmail ?? "buyer@test.com",
+        customerName: opts.customerName ?? "Buyer",
         customerId: opts.customerId ?? null,
         subtotalCents: opts.subtotalCents ?? 1000,
         amountTotalCents: opts.amountTotalCents ?? 1000,
@@ -771,7 +778,7 @@ export async function insertOrderPayment(
   db: TestDb,
   opts: {
     orderId: number;
-    method?: 'stripe' | 'cash' | 'card';
+    method?: "stripe" | "cash" | "card";
     amountCents?: number;
     stripeCheckoutSessionId?: string | null;
     stripePaymentIntentId?: string | null;
@@ -788,7 +795,7 @@ export async function insertOrderPayment(
       .insert(orderPaymentsTable)
       .values({
         orderId: opts.orderId,
-        method: opts.method ?? 'stripe',
+        method: opts.method ?? "stripe",
         amountCents: opts.amountCents ?? 1000,
         stripeCheckoutSessionId: opts.stripeCheckoutSessionId ?? null,
         stripePaymentIntentId: opts.stripePaymentIntentId ?? null,
@@ -820,7 +827,7 @@ export async function insertOrderItem(
       .values({
         orderId: opts.orderId,
         variantId: opts.variantId ?? null,
-        productName: opts.productName ?? 'Item',
+        productName: opts.productName ?? "Item",
         sku: opts.sku ?? null,
         optionsLabel: opts.optionsLabel ?? null,
         priceCents: opts.priceCents ?? 1000,
@@ -879,8 +886,8 @@ export async function insertFulfillment(
       .values({
         orderId: opts.orderId,
         locationId: opts.locationId,
-        shippingCarrier: opts.shippingCarrier ?? 'USPS',
-        shippingServiceLevel: opts.shippingServiceLevel ?? 'Priority Mail',
+        shippingCarrier: opts.shippingCarrier ?? "USPS",
+        shippingServiceLevel: opts.shippingServiceLevel ?? "Priority Mail",
         trackingNumber: opts.trackingNumber ?? `TRACK${uniq()}`,
         trackingUrl: opts.trackingUrl ?? null,
         labelUrl: opts.labelUrl ?? null,

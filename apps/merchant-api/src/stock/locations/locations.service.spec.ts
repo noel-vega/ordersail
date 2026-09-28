@@ -133,21 +133,23 @@ describe('LocationsService — US-only country (OS-689)', () => {
     expect(location.addressCountry).toBe('US');
   });
 
-  it('sets US on update, so a row saved without one picks it up', async () => {
+  // the DTO lets null through (IsOptional) but the column is NOT NULL —
+  // passed on as-is, that would be a 500
+  it('stores US when the body sends a null country', async () => {
     const account = await insertAccount(db);
-    const location = await insertLocation(db, {
-      accountId: account.id,
-      withAddress: false,
-    });
-    expect(location.addressCountry).toBeNull();
     const service = await build();
 
+    const created = await service.create(
+      { name: 'Back room', addressCountry: null },
+      account.id,
+    );
     const updated = await service.update(
-      location.id,
-      { addressCity: 'Hoboken' },
+      created.id,
+      { addressCountry: null },
       account.id,
     );
 
+    expect(created.addressCountry).toBe('US');
     expect(updated?.addressCountry).toBe('US');
   });
 });

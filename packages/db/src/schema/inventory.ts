@@ -1,4 +1,3 @@
-
 // stock is derived (SUM) from per-location inventory rows rather than
 // stored directly on the variant — see inventoryTable below
 
@@ -29,7 +28,11 @@ export const locationsTable = pgTable(
     addressCity: varchar("address_city", { length: 255 }),
     addressState: varchar("address_state", { length: 255 }),
     addressPostalCode: varchar("address_postal_code", { length: 20 }),
-    addressCountry: varchar("address_country", { length: 2 }),
+    // US-only for now (OS-689): never null, even on a stock-only location —
+    // the API refuses any other country
+    addressCountry: varchar("address_country", { length: 2 })
+      .notNull()
+      .default("US"),
     // E.164, validated at the API edge. The contact a carrier reaches at this
     // origin — USPS rejects a label without one — so, like the address, only
     // needed once the location ships (OS-688)
@@ -40,10 +43,10 @@ export const locationsTable = pgTable(
   (t) => [unique().on(t.accountId, t.name)],
 );
 
-export const SelectLocationSchema = createSelectSchema(locationsTable)
-export type SelectLocation = z.infer<typeof SelectLocationSchema>
-export const InsertLocationSchema = createInsertSchema(locationsTable)
-export type InsertLocation = z.infer<typeof InsertLocationSchema>
+export const SelectLocationSchema = createSelectSchema(locationsTable);
+export type SelectLocation = z.infer<typeof SelectLocationSchema>;
+export const InsertLocationSchema = createInsertSchema(locationsTable);
+export type InsertLocation = z.infer<typeof InsertLocationSchema>;
 
 // on-hand quantity for one variant at one location — the only place stock
 // is actually stored; a variant's total stock is SUM(stock) across these
@@ -63,10 +66,10 @@ export const inventoryTable = pgTable(
   (t) => [unique().on(t.variantId, t.locationId)],
 );
 
-export const SelectInventorySchema = createSelectSchema(inventoryTable)
-export type SelectInventory = z.infer<typeof SelectInventorySchema>
-export const InsertInventorySchema = createInsertSchema(inventoryTable)
-export type InsertInventory = z.infer<typeof InsertInventorySchema>
+export const SelectInventorySchema = createSelectSchema(inventoryTable);
+export type SelectInventory = z.infer<typeof SelectInventorySchema>;
+export const InsertInventorySchema = createInsertSchema(inventoryTable);
+export type InsertInventory = z.infer<typeof InsertInventorySchema>;
 
 export const inventoryMovementReasonEnum = pgEnum("inventory_movement_reason", [
   "received",
@@ -94,7 +97,9 @@ export const inventoryMovementsTable = pgTable("inventory_movements", {
   // lets fulfillment ask "which order item did this stock come from, and
   // from which location(s)" (SUM(-delta) GROUP BY locationId) instead of
   // needing a separate allocation table kept in sync with this ledger
-  orderItemId: integer().references(() => orderItemsTable.id, { onDelete: "set null" }),
+  orderItemId: integer().references(() => orderItemsTable.id, {
+    onDelete: "set null",
+  }),
   note: varchar({ length: 500 }),
   createdByUserId: integer().references(() => usersTable.id, {
     onDelete: "set null",
@@ -102,7 +107,15 @@ export const inventoryMovementsTable = pgTable("inventory_movements", {
   createdAt: timestampAt("created_at"),
 });
 
-export const SelectInventoryMovementSchema = createSelectSchema(inventoryMovementsTable)
-export type SelectInventoryMovement = z.infer<typeof SelectInventoryMovementSchema>
-export const InsertInventoryMovementSchema = createInsertSchema(inventoryMovementsTable)
-export type InsertInventoryMovement = z.infer<typeof InsertInventoryMovementSchema>
+export const SelectInventoryMovementSchema = createSelectSchema(
+  inventoryMovementsTable,
+);
+export type SelectInventoryMovement = z.infer<
+  typeof SelectInventoryMovementSchema
+>;
+export const InsertInventoryMovementSchema = createInsertSchema(
+  inventoryMovementsTable,
+);
+export type InsertInventoryMovement = z.infer<
+  typeof InsertInventoryMovementSchema
+>;

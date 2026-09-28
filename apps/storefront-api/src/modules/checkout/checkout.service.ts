@@ -221,7 +221,7 @@ export class CheckoutService {
           city: location.addressCity ?? undefined,
           state: location.addressState ?? undefined,
           zip: location.addressPostalCode ?? undefined,
-          country: location.addressCountry ?? 'US',
+          country: location.addressCountry,
         },
         addressTo: {
           name: dto.shippingDetails.name,

@@ -1857,8 +1857,8 @@ export interface components {
             addressCity?: string | null;
             addressState?: string | null;
             addressPostalCode?: string | null;
-            /** @enum {string} */
-            addressCountry?: "US";
+            /** @enum {string|null} */
+            addressCountry?: "US" | null;
             /** @example +12015550123 */
             phone?: string | null;
             name: string;
@@ -1872,7 +1872,8 @@ export interface components {
             addressCity: string | null;
             addressState: string | null;
             addressPostalCode: string | null;
-            addressCountry: string | null;
+            /** @example US */
+            addressCountry: string;
             /** @example +12015550123 */
             phone: string | null;
             /** Format: date-time */
@@ -1892,8 +1893,8 @@ export interface components {
             addressCity?: string | null;
             addressState?: string | null;
             addressPostalCode?: string | null;
-            /** @enum {string} */
-            addressCountry?: "US";
+            /** @enum {string|null} */
+            addressCountry?: "US" | null;
             /** @example +12015550123 */
             phone?: string | null;
         };

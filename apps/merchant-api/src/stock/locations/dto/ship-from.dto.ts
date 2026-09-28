@@ -35,11 +35,11 @@ export class ShipFromDto {
   addressPostalCode?: string | null;
 
   // US-only for now: anything else is refused, and the location is stored
-  // as US whether or not this is sent (LocationsService)
-  @ApiProperty({ enum: SUPPORTED_COUNTRIES, required: false })
+  // as US whether this is sent, omitted or null (LocationsService)
+  @ApiProperty({ enum: SUPPORTED_COUNTRIES, required: false, nullable: true })
   @IsOptional()
   @IsIn(SUPPORTED_COUNTRIES)
-  addressCountry?: (typeof SUPPORTED_COUNTRIES)[number];
+  addressCountry?: (typeof SUPPORTED_COUNTRIES)[number] | null;
 
   // stored as E.164; null clears it
   @ApiProperty({
