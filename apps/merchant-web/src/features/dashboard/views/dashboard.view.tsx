@@ -144,8 +144,8 @@ export function DashboardView() {
           timeseriesQuery.isPlaceholderData && "opacity-60",
         )}
       >
-        <SalesTrendChart series={timeseriesQuery.data} range={sales?.range} />
-        <OrdersTrendChart series={timeseriesQuery.data} range={sales?.range} />
+        <SalesTrendChart query={timeseriesQuery} />
+        <OrdersTrendChart query={timeseriesQuery} />
       </section>
 
       {/* point-in-time — not affected by the range above */}
