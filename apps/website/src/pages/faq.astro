@@ -1,6 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { signupUrl } from '../lib/urls';
+import ComingSoon from '../components/ComingSoon.astro';
 
 type QA = { q: string; a: string };
 type Group = { title: string; items: QA[] };
@@ -11,11 +11,11 @@ const groups: Group[] = [
 		items: [
 			{
 				q: 'What do I need to start?',
-				a: 'An email address. Signup is free while we’re in beta and doesn’t ask for a card. To take payments you’ll connect a Stripe account, which you can create during <a href="/how-it-works">setup</a>.',
+				a: 'An email address — signups open at launch. To take payments you’ll connect a Stripe account, which you can create during <a href="/how-it-works">setup</a>.',
 			},
 			{
 				q: 'Is there a contract or a minimum?',
-				a: 'No. It’s free during beta, and month-to-month with no minimum after that. Close your account whenever you want. See <a href="/pricing">pricing</a>.',
+				a: 'Plans and terms are announced before signups open. See <a href="/pricing">pricing</a>, or <a href="/contact">ask us</a>.',
 			},
 			{
 				q: 'Can I import my existing products?',
@@ -32,7 +32,7 @@ const groups: Group[] = [
 			},
 			{
 				q: 'What does it cost to take a payment?',
-				a: 'Stripe’s standard processing fee, charged by Stripe. OrderSail doesn’t add a per-transaction fee — see <a href="/pricing">pricing</a>.',
+				a: 'Stripe’s standard processing fee, charged by Stripe. OrderSail’s own pricing is announced before signups open — see <a href="/pricing">pricing</a>.',
 			},
 			{
 				q: 'Do you hold my money?',
@@ -49,7 +49,7 @@ const groups: Group[] = [
 		items: [
 			{
 				q: 'Can I use my own domain or storefront?',
-				a: 'You can send customers to the OrderSail storefront today. Custom domains for the hosted storefront are on the roadmap; for full control now, build your own front end on the <a href="/features">API</a>.',
+				a: 'Every shop gets a hosted OrderSail storefront to send customers to. Custom domains for it are on the roadmap; for full control, build your own front end on the <a href="/features">API</a>.',
 			},
 			{
 				q: 'Is the API documented?',
@@ -92,14 +92,14 @@ const groups: Group[] = [
 
 <Layout
 	title="FAQ — OrderSail"
-	description="Answers to the common questions before signing up: what you need to start, how payouts and fees work, storefront and API options, point of sale, and your data."
+	description="Answers to the common questions about OrderSail: what you need to start, how payouts and fees work, storefront and API options, point of sale, and your data."
 >
 	<section class="head">
 		<p class="eyebrow">FAQ</p>
-		<h1>Questions worth asking before you sign up.</h1>
+		<h1>Questions worth asking before you commit.</h1>
 		<p class="lede">
-			Short, honest answers. We’re in beta, so a few things are still on the
-			way — those are called out.
+			Short, honest answers. A few things are still on the way — those are
+			called out.
 		</p>
 	</section>
 
@@ -121,8 +121,7 @@ const groups: Group[] = [
 
 	<section class="cta">
 		<h2>Still deciding?</h2>
-		<p>Signup is free while in beta — you can look around before committing.</p>
-		<a class="btn-primary" href={signupUrl}>Create your account →</a>
+		<ComingSoon />
 	</section>
 </Layout>
 
@@ -200,10 +199,5 @@ const groups: Group[] = [
 		font-weight: 400;
 		letter-spacing: -0.01em;
 		margin: 0 0 12px;
-	}
-	.cta p {
-		font-family: system-ui, sans-serif;
-		color: var(--ink-dim);
-		margin: 0 0 28px;
 	}
 </style>

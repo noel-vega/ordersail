@@ -1,6 +1,4 @@
 ---
-import { signupUrl, signinUrl } from '../lib/urls';
-
 const links = [
 	{ href: '/features', label: 'Features' },
 	{ href: '/pricing', label: 'Pricing' },
@@ -34,8 +32,7 @@ const current = Astro.url.pathname.replace(/(.)\/$/, '$1');
 	</nav>
 
 	<div class="top-actions">
-		<a class="signin-top" href={signinUrl}>Sign in</a>
-		<a class="cta-top" href={signupUrl}>Start selling</a>
+		<span class="cta-top soon">Coming soon</span>
 	</div>
 
 	<button
@@ -58,8 +55,7 @@ const current = Astro.url.pathname.replace(/(.)\/$/, '$1');
 				</a>
 			))
 		}
-		<a href={signinUrl}>Sign in</a>
-		<a class="btn-primary" href={signupUrl}>Start selling</a>
+		<span class="btn-soon">Coming soon</span>
 	</nav>
 </div>
 
@@ -109,16 +105,6 @@ const current = Astro.url.pathname.replace(/(.)\/$/, '$1');
 		align-items: center;
 		gap: 22px;
 	}
-	.signin-top {
-		text-decoration: none;
-		font-size: 0.82rem;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		color: var(--ink-dim);
-	}
-	.signin-top:hover {
-		text-decoration: underline;
-	}
 	.cta-top {
 		text-decoration: none;
 		font-size: 0.82rem;
@@ -126,6 +112,12 @@ const current = Astro.url.pathname.replace(/(.)\/$/, '$1');
 		letter-spacing: 0.1em;
 		border-bottom: 1px solid var(--line);
 		padding-bottom: 2px;
+	}
+	.cta-top.soon {
+		/* not a link, so no link underline (OS-663) */
+		border-bottom-color: transparent;
+		color: var(--ink-dim);
+		cursor: default;
 	}
 
 	/* Hamburger — hidden on desktop. */
@@ -202,10 +194,13 @@ const current = Astro.url.pathname.replace(/(.)\/$/, '$1');
 		text-decoration: underline;
 		text-underline-offset: 4px;
 	}
-	.mobile-menu nav a.btn-primary {
+	.mobile-menu nav .btn-soon {
 		margin-top: 24px;
 		border-bottom: none;
 		text-align: center;
+	}
+	.mobile-menu nav .btn-soon {
+		border: 1px solid var(--line);
 	}
 
 	@media (max-width: 720px) {

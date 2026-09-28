@@ -1,6 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { signupUrl } from '../lib/urls';
+import ComingSoon from '../components/ComingSoon.astro';
 
 const capabilities = [
 	{
@@ -85,8 +85,7 @@ const capabilities = [
 
 	<section class="cta">
 		<h2>Start selling with OrderSail.</h2>
-		<p>Free while in beta. No credit card.</p>
-		<a class="btn-primary" href={signupUrl}>Create your account →</a>
+		<ComingSoon />
 	</section>
 </Layout>
 
@@ -183,11 +182,6 @@ const capabilities = [
 		font-weight: 400;
 		letter-spacing: -0.01em;
 		margin: 0 0 12px;
-	}
-	.cta p {
-		font-family: system-ui, sans-serif;
-		color: var(--ink-dim);
-		margin: 0 0 28px;
 	}
 
 	@media (max-width: 720px) {
