@@ -31,3 +31,16 @@ describe('UpdateAccountDto timezone (OS-667)', () => {
     expect(errors.map((e) => e.property)).toEqual(['timezone']);
   });
 });
+
+describe('UpdateAccountDto lowStockThreshold (OS-668)', () => {
+  it.each([0, 5, 100000])('accepts %p', async (lowStockThreshold) => {
+    const dto = plainToInstance(UpdateAccountDto, { lowStockThreshold });
+    await expect(validate(dto)).resolves.toHaveLength(0);
+  });
+
+  it.each([-1, 1.5, 100001, '5'])('rejects %p', async (lowStockThreshold) => {
+    const dto = plainToInstance(UpdateAccountDto, { lowStockThreshold });
+    const errors = await validate(dto);
+    expect(errors.map((e) => e.property)).toEqual(['lowStockThreshold']);
+  });
+});

@@ -40,7 +40,7 @@ export function getInventoryPageQueryOptions(search: InventorySearch) {
         offset: pageOffset(search.page),
         q: search.q || undefined,
         locationId: search.locationId,
-        stockLte: search.lowStock ? 0 : undefined,
+        lowStock: search.lowStock,
       }),
     placeholderData: keepPreviousData,
   })

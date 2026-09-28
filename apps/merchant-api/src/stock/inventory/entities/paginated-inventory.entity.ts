@@ -13,6 +13,13 @@ export class PaginatedInventory {
 
   @ApiProperty({ type: Number })
   offset!: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      "the account's low-stock threshold — the one lowStock filtered by",
+  })
+  lowStockThreshold!: number;
 }
 
 export class PaginatedInventoryMovements {

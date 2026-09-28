@@ -4,7 +4,6 @@ import { HistoryIcon } from "lucide-react";
 import { type ColumnDef, type Row } from "@tanstack/react-table";
 import type { InventoryRecord } from "merchant-sdk";
 import { format } from "date-fns";
-import { Badge } from "ui/badge";
 import { Button } from "ui/button";
 import { cn } from "ui/utils";
 import {
@@ -21,10 +20,10 @@ import { PAGE_SIZE } from "../../../lib/list-search";
 import { useListLocationsQuery } from "../../locations/locations.hooks";
 import { useInventoryPageQuery } from "../inventory.hooks";
 import { AdjustStockSheet } from "../components/adjust-stock-sheet";
+import { StockLevel } from "../components/stock-level";
 import { usePermissions } from "../../auth/permission-context";
 
 const route = getRouteApi("/app/inventory/");
-const LOW_STOCK_THRESHOLD = 0;
 const ALL_LOCATIONS = "all";
 
 export function ListInventoryView() {
@@ -33,6 +32,9 @@ export function ListInventoryView() {
   const inventory = useInventoryPageQuery(search);
   const locations = useListLocationsQuery();
   const canAdjust = usePermissions().has("inventory:write");
+  // from the same response the lowStock filter ran on, so the Low badges and
+  // the filter always agree (OS-668)
+  const lowStockThreshold = inventory.data?.lowStockThreshold ?? 0;
   const [adjustingRecord, setAdjustingRecord] = useState<InventoryRecord | null>(
     null,
   );
@@ -48,12 +50,9 @@ export function ListInventoryView() {
     {
       accessorKey: "stock",
       header: "Stock",
-      cell: ({ row }) =>
-        row.original.stock <= LOW_STOCK_THRESHOLD ? (
-          <Badge variant="destructive">{row.original.stock}</Badge>
-        ) : (
-          row.original.stock
-        ),
+      cell: ({ row }) => (
+        <StockLevel stock={row.original.stock} threshold={lowStockThreshold} />
+      ),
     },
     {
       accessorKey: "updatedAt",

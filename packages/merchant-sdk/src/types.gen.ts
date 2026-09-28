@@ -1534,6 +1534,8 @@ export interface components {
             requireMfaAt: string | null;
             /** @example America/New_York */
             timezone: string;
+            /** @example 5 */
+            lowStockThreshold: number;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1545,6 +1547,7 @@ export interface components {
             requireMfa?: boolean;
             /** @example America/New_York */
             timezone?: string;
+            lowStockThreshold?: number;
         };
         CreateRoleDto: {
             name: string;
@@ -1784,6 +1787,8 @@ export interface components {
             total: number;
             limit: number;
             offset: number;
+            /** @description the account's low-stock threshold — the one lowStock filtered by */
+            lowStockThreshold: number;
         };
         CreateInventoryMovementDto: {
             variantId: number;
@@ -3997,6 +4002,8 @@ export interface operations {
                 locationId?: number;
                 /** @description only rows at or below this on-hand quantity */
                 stockLte?: number;
+                /** @description only rows at or below the account's low-stock threshold */
+                lowStock?: boolean;
             };
             header?: never;
             path?: never;

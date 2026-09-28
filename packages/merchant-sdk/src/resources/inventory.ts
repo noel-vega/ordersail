@@ -17,6 +17,8 @@ export function createInventoryResource(
       productId?: number;
       locationId?: number;
       stockLte?: number;
+      // at or below the account's lowStockThreshold (OS-668)
+      lowStock?: boolean;
     }) => {
       const query: NonNullable<
         paths["/inventory"]["get"]["parameters"]["query"]
@@ -29,6 +31,7 @@ export function createInventoryResource(
           ? { locationId: params.locationId }
           : {}),
         ...(params?.stockLte != null ? { stockLte: params.stockLte } : {}),
+        ...(params?.lowStock ? { lowStock: true } : {}),
       };
       const { data } = await doRequest(() =>
         client.GET("/inventory", { params: { query } }),

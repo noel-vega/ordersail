@@ -10,12 +10,12 @@ import {
 } from "ui/dropdown-menu";
 import { MoreVerticalIcon, PackageIcon, PencilIcon } from "lucide-react";
 import { formatCents } from "../../../lib/currency";
+import { StockLevel } from "../../inventory/components/stock-level";
 
-const LOW_STOCK_THRESHOLD = 0;
-
-export function getVariantColumns(handlers: {
+export function getVariantColumns(options: {
   onAdjustStock: (variant: ProductVariant) => void;
   onEdit: (variant: ProductVariant) => void;
+  lowStockThreshold: number;
 }): ColumnDef<ProductVariant>[] {
   return [
     {
@@ -47,12 +47,12 @@ export function getVariantColumns(handlers: {
     {
       accessorKey: "stock",
       header: "Stock",
-      cell: ({ row }) =>
-        row.original.stock <= LOW_STOCK_THRESHOLD ? (
-          <Badge variant="destructive">{row.original.stock}</Badge>
-        ) : (
-          row.original.stock
-        ),
+      cell: ({ row }) => (
+        <StockLevel
+          stock={row.original.stock}
+          threshold={options.lowStockThreshold}
+        />
+      ),
     },
     {
       id: "actions",
@@ -71,10 +71,10 @@ export function getVariantColumns(handlers: {
             <MoreVerticalIcon />
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => handlers.onEdit(row.original)}>
+            <DropdownMenuItem onClick={() => options.onEdit(row.original)}>
               <PencilIcon /> Edit variant
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handlers.onAdjustStock(row.original)}>
+            <DropdownMenuItem onClick={() => options.onAdjustStock(row.original)}>
               <PackageIcon /> Adjust stock
             </DropdownMenuItem>
           </DropdownMenuContent>

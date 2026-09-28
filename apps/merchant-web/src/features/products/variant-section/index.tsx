@@ -15,6 +15,7 @@ import { getVariantColumns } from "./variant-columns";
 import { EditVariantSheet } from "./edit-variant-sheet";
 import { useListLocationsQuery } from "../../locations/locations.hooks";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
+import { useProductInventoryQuery } from "../../inventory/inventory.hooks";
 
 export function VariantSection({
   productId,
@@ -52,9 +53,14 @@ export function VariantSection({
         }
       : null;
 
+  // shares ProductView's cached query; the threshold rides on the inventory
+  // response so staff without account:read still get Low badges (OS-668)
+  const { data: inventory } = useProductInventoryQuery(productId);
+  const lowStockThreshold = inventory?.lowStockThreshold ?? 0;
   const columns = getVariantColumns({
     onAdjustStock: (variant) => setAdjustingVariant(variant),
     onEdit: (variant) => setEditingVariant(variant),
+    lowStockThreshold,
   });
 
   return (

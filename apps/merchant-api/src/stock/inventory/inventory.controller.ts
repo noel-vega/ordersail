@@ -3,6 +3,7 @@ import {
   Controller,
   DefaultValuePipe,
   Get,
+  ParseBoolPipe,
   ParseEnumPipe,
   ParseIntPipe,
   Post,
@@ -53,6 +54,12 @@ export class InventoryController {
     type: Number,
     description: 'only rows at or below this on-hand quantity',
   })
+  @ApiQuery({
+    name: 'lowStock',
+    required: false,
+    type: Boolean,
+    description: "only rows at or below the account's low-stock threshold",
+  })
   findAll(
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
@@ -64,12 +71,15 @@ export class InventoryController {
     locationId?: number,
     @Query('stockLte', new ParseIntPipe({ optional: true }))
     stockLte?: number,
+    @Query('lowStock', new ParseBoolPipe({ optional: true }))
+    lowStock?: boolean,
   ) {
     return this.inventoryService.findAll(limit, offset, user.accountId, {
       q,
       productId,
       locationId,
       stockLte,
+      lowStock,
     });
   }
 

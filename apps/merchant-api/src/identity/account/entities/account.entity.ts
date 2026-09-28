@@ -21,6 +21,10 @@ export class Account implements SelectAccount {
   @ApiProperty({ example: 'America/New_York' })
   timezone!: string;
 
+  // see accountsTable.lowStockThreshold
+  @ApiProperty({ type: Number, example: 5 })
+  lowStockThreshold!: number;
+
   @ApiProperty()
   createdAt!: Date;
 
