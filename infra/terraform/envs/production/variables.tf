@@ -64,3 +64,24 @@ variable "environment_on" {
 # Alert recipients moved to a Secrets Manager secret (OS-375) — see
 # alerts-recipients.tf. A *.auto.tfvars only loads from the directory `terraform`
 # runs in, so an apply from a fresh checkout silently created zero subscriptions.
+
+variable "google_site_verification" {
+  description = "Google Workspace domain-verification TXT value, e.g. \"google-site-verification=…\" (OS-665). Public; from the Workspace admin console."
+  type        = string
+
+  validation {
+    condition     = startswith(var.google_site_verification, "google-site-verification=")
+    error_message = "Must be the full TXT value, starting with \"google-site-verification=\"."
+  }
+}
+
+variable "google_dkim_txt" {
+  description = "Google Workspace DKIM TXT value for selector \"google\", e.g. \"v=DKIM1; k=rsa; p=…\" (OS-665). Public key; from Admin → Gmail → Authenticate email. Null until generated: Google only offers DKIM after the domain is verified, so the verification record goes out first."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.google_dkim_txt == null || startswith(coalesce(var.google_dkim_txt, "x"), "v=DKIM1;")
+    error_message = "Must be the full DKIM TXT value, starting with \"v=DKIM1;\"."
+  }
+}
