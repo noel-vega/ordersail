@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   Sheet,
   SheetContent,
@@ -33,6 +34,7 @@ export function VariantSection({
   );
   const [editingVariant, setEditingVariant] = useState<ProductVariant | null>(null);
 
+  const navigate = useNavigate();
   const { data: locations } = useListLocationsQuery();
   // single-location for now — once there's more than one, adjusting stock
   // from here will need a location picker instead of a silent default
@@ -58,9 +60,16 @@ export function VariantSection({
   const { data: inventory } = useProductInventoryQuery(productId);
   const lowStockThreshold = inventory?.lowStockThreshold ?? 0;
   const columns = getVariantColumns({
-    onAdjustStock: (variant) => setAdjustingVariant(variant),
+    // an account has no location until the merchant creates one (OS-689);
+    // stock needs somewhere to live, so send them there first
+    onAdjustStock: (variant) =>
+      defaultLocation
+        ? setAdjustingVariant(variant)
+        : navigate({ to: "/app/locations/create" }),
     onEdit: (variant) => setEditingVariant(variant),
     lowStockThreshold,
+    // unknown while loading: assume there's one rather than flash the prompt
+    canAdjustStock: !locations || !!defaultLocation,
   });
 
   return (

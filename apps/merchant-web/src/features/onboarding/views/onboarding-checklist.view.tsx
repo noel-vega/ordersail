@@ -34,10 +34,12 @@ export function OnboardingChecklist() {
       permission: "payments:write",
     },
     {
-      label: "Add your location's address and phone so orders can ship",
+      // signup creates no location (OS-689): the merchant adds their first,
+      // with the address and phone a label needs, here
+      label: "Add your ship-from location (address and phone)",
       done: status.data.hasCompleteLocation,
-      cta: "Add details",
-      to: "/app/locations",
+      cta: "Add location",
+      to: "/app/locations/create",
       permission: "locations:write",
     },
     {

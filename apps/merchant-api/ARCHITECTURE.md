@@ -153,9 +153,9 @@ there must agree with this table).
 
 | Context | may import `db/…` |
 |---|---|
-| `identity` | `identity`, `stock`¹ |
-| `catalog` | `catalog`, `stock`² |
-| `stock` | `stock`, `catalog`², `identity` |
+| `identity` | `identity` |
+| `catalog` | `catalog`, `stock`¹ |
+| `stock` | `stock`, `catalog`¹, `identity` |
 | `sales` | `sales`, `catalog`, `stock`, `identity` |
 | `payments` | `payments`, `identity` |
 | `platform` | root `db` — exempt (`dashboard` read-model) |
@@ -163,15 +163,10 @@ there must agree with this table).
 
 **Known coupling — revisit later:**
 
-- **² `catalog ↔ stock` cycle** — `catalog` reads stock levels for product
+- **¹ `catalog ↔ stock` cycle** — `catalog` reads stock levels for product
   listings; `stock` reads product identity for inventory views. They change
   together. If it bites: merge the two contexts, or break the reads through
   service ports (OS-345 pattern).
-- **¹ `identity → stock`** — tenant provisioning (`identity/account`'s
-  `AccountService.provision`, called by signup) seeds the new tenant's default
-  `locations` row in the same transaction as the account. A provisioning
-  *write*, not a read. Revisit via an `account.created` domain event, emitted
-  from `provision`, so `stock` owns it.
 
 Reads still cross **only** these edges; a genuine service call between contexts
 goes through the barrel (see *Cross-context communication*), not raw table

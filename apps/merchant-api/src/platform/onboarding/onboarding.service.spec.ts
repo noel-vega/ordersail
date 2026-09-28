@@ -19,9 +19,9 @@ async function build() {
 }
 
 describe('OnboardingService.getStatus (OS-165)', () => {
-  it('is all-false for a fresh post-signup account (address-less Default location)', async () => {
+  // signup seeds no location (OS-689)
+  it('is all-false for a fresh post-signup account (no locations)', async () => {
     const account = await insertAccount(db);
-    await insertLocation(db, { accountId: account.id, withAddress: false });
     const service = await build();
 
     expect(await service.getStatus(account.id)).toEqual({

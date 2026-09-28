@@ -11,8 +11,9 @@ import { timestampAt } from "../utils.js";
 import { createInsertSchema, createSelectSchema } from "drizzle-orm/zod";
 import z from "zod";
 
-// a place stock can physically live — starts with a single seeded "Default"
-// row, grows into real warehouses/stores without reshaping anything below it
+// a place stock can physically live — an account has none until the merchant
+// creates their first (OS-689), then grows into real warehouses/stores
+// without reshaping anything below it
 export const locationsTable = pgTable(
   "locations",
   {
@@ -21,8 +22,8 @@ export const locationsTable = pgTable(
       .notNull()
       .references(() => accountsTable.id, { onDelete: "cascade" }),
     name: varchar({ length: 255 }).notNull(),
-    // nullable — a location can exist (e.g. the seeded "Default") without a
-    // shipping address; only needed once used as a ship-from origin
+    // nullable — a location can exist (e.g. a stock-only back room) without
+    // a shipping address; only needed once used as a ship-from origin
     addressLine1: varchar("address_line1", { length: 255 }),
     addressLine2: varchar("address_line2", { length: 255 }),
     addressCity: varchar("address_city", { length: 255 }),

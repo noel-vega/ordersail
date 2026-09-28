@@ -114,6 +114,11 @@ export class ProductsService {
       }
     }
 
+    const stockLocationId = await this.openingStockLocation(
+      accountId,
+      createProductDto.stock,
+    );
+
     const product = await this.db.transaction(async (tx) => {
       const [product] = await tx
         .insert(productsTable)
@@ -135,16 +140,13 @@ export class ProductsService {
         })
         .returning();
 
-      const [location] = await tx
-        .select({ id: locationsTable.id })
-        .from(locationsTable)
-        .where(eq(locationsTable.accountId, accountId))
-        .limit(1);
-      await tx.insert(inventoryTable).values({
-        variantId: variant.id,
-        locationId: location.id,
-        stock: createProductDto.stock,
-      });
+      if (stockLocationId !== null) {
+        await tx.insert(inventoryTable).values({
+          variantId: variant.id,
+          locationId: stockLocationId,
+          stock: createProductDto.stock,
+        });
+      }
 
       const barcodes = normalizeBarcodes(createProductDto.barcodes);
       if (barcodes.length > 0) {
@@ -333,6 +335,28 @@ export class ProductsService {
       ...variant,
       images: imagesByVariant.get(variant.id) ?? [],
     }));
+  }
+
+  // where a new variant's opening stock is held: the account's first
+  // location. An account can have none yet — signup no longer seeds one
+  // (OS-689) — and then there's nowhere to put stock: fine at 0, since no
+  // inventory row reads as 0 everywhere stock is summed, but a 400 otherwise
+  // rather than stock silently dropped.
+  private async openingStockLocation(
+    accountId: number,
+    stock: number,
+  ): Promise<number | null> {
+    const [location] = await this.db
+      .select({ id: locationsTable.id })
+      .from(locationsTable)
+      .where(eq(locationsTable.accountId, accountId))
+      .orderBy(locationsTable.id)
+      .limit(1);
+    if (location) return location.id;
+    if (stock > 0) {
+      throw new BadRequestException('Add a location before setting stock');
+    }
+    return null;
   }
 
   // every nested product resource (variants/options) is reached only via a
@@ -692,6 +716,11 @@ export class ProductsService {
   ): Promise<ProductVariant[]> {
     if (!(await this.productExists(productId, accountId))) return [];
 
+    const stockLocationId = await this.openingStockLocation(
+      accountId,
+      createVariantsDto.stock,
+    );
+
     const variantIds = await this.db.transaction(async (tx) => {
       const optionValueGroups: number[][] = [];
 
@@ -769,7 +798,6 @@ export class ProductsService {
       }
 
       const variantIds: number[] = [];
-      let defaultLocationId: number | undefined;
 
       for (const combination of combinations) {
         const existingVariantId = existingVariantIdByCombo.get(
@@ -785,20 +813,13 @@ export class ProductsService {
           .values({ productId, priceCents: createVariantsDto.priceCents })
           .returning();
 
-        if (defaultLocationId === undefined) {
-          const [location] = await tx
-            .select({ id: locationsTable.id })
-            .from(locationsTable)
-            .where(eq(locationsTable.accountId, accountId))
-            .limit(1);
-          defaultLocationId = location.id;
+        if (stockLocationId !== null) {
+          await tx.insert(inventoryTable).values({
+            variantId: variant.id,
+            locationId: stockLocationId,
+            stock: createVariantsDto.stock,
+          });
         }
-
-        await tx.insert(inventoryTable).values({
-          variantId: variant.id,
-          locationId: defaultLocationId,
-          stock: createVariantsDto.stock,
-        });
 
         await tx.insert(variantOptionValuesTable).values(
           combination.map((optionValueId) => ({

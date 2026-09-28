@@ -1,5 +1,14 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { insertAccount, insertProduct, useTestDb } from 'test-support';
+import {
+  insertAccount,
+  insertBrand,
+  insertLocation,
+  insertProduct,
+  useTestDb,
+} from 'test-support';
+import { eq, inventoryTable } from 'db/stock';
+import { productVariantsTable, productsTable } from 'db/catalog';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { StorageService } from 'src/shared/storage/storage.service';
 import { ProductsService } from './products.service';
@@ -94,5 +103,90 @@ describe('ProductsService.findAll (OS-159)', () => {
     const page = await service.findAll(20, 0, a.id);
     expect(page.total).toBe(1);
     expect(page.items[0]).toHaveProperty('thumbnailUrl', null);
+  });
+});
+
+// signup seeds no location (OS-689), so the first products can be created
+// before there's anywhere to hold stock
+describe('ProductsService opening stock with no location (OS-689)', () => {
+  async function setup() {
+    const account = await insertAccount(db);
+    const brand = await insertBrand(db, { accountId: account.id });
+    const service = await build();
+    const productBody = (stock: number) => ({
+      name: 'Tee',
+      description: 'A shirt',
+      priceCents: 2000,
+      brandId: brand.id,
+      sku: 'TEE-1',
+      stock,
+      status: 'active' as const,
+      categoryIds: [],
+      barcodes: [],
+    });
+    return { account, service, productBody };
+  }
+
+  async function inventoryRowsFor(productId: number) {
+    return db
+      .select({ stock: inventoryTable.stock })
+      .from(inventoryTable)
+      .innerJoin(
+        productVariantsTable,
+        eq(productVariantsTable.id, inventoryTable.variantId),
+      )
+      .where(eq(productVariantsTable.productId, productId));
+  }
+
+  it('creates a product at stock 0 without an inventory row', async () => {
+    const { account, service, productBody } = await setup();
+
+    const product = await service.create(productBody(0), account.id);
+
+    expect(await inventoryRowsFor(product.id)).toEqual([]);
+  });
+
+  it('refuses opening stock, and writes nothing, when there is no location', async () => {
+    const { account, service, productBody } = await setup();
+
+    await expect(service.create(productBody(5), account.id)).rejects.toThrow(
+      new BadRequestException('Add a location before setting stock'),
+    );
+    const products = await db
+      .select()
+      .from(productsTable)
+      .where(eq(productsTable.accountId, account.id));
+    expect(products).toEqual([]);
+  });
+
+  it("puts opening stock at the account's first location once one exists", async () => {
+    const { account, service, productBody } = await setup();
+    await insertLocation(db, { accountId: account.id });
+
+    const product = await service.create(productBody(5), account.id);
+
+    expect(await inventoryRowsFor(product.id)).toEqual([{ stock: 5 }]);
+  });
+
+  it('adds variants at stock 0 with no location, and refuses stock', async () => {
+    const { account, service, productBody } = await setup();
+    const product = await service.create(productBody(0), account.id);
+    const variants = (stock: number) => ({
+      options: [{ name: 'Size', values: ['S', 'M'] }],
+      priceCents: 2000,
+      stock,
+    });
+
+    await expect(
+      service.createVariants(product.id, variants(3), account.id),
+    ).rejects.toThrow('Add a location before setting stock');
+
+    const created = await service.createVariants(
+      product.id,
+      variants(0),
+      account.id,
+    );
+    expect(created.length).toBeGreaterThanOrEqual(2);
+    expect(await inventoryRowsFor(product.id)).toEqual([]);
   });
 });

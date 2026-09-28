@@ -42,7 +42,7 @@ const provisionInput = {
 
 // moved from AuthService.signup with the transaction it covers (OS-507)
 describe('AccountService.provision — first-run seed (OS-173)', () => {
-  it('seeds the account, api key, Default location, Owner user + role', async () => {
+  it('seeds the account, api key, Owner user + role — and no location (OS-689)', async () => {
     // permissions are normally upserted at boot by PermissionsService
     await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
     const service = await build();
@@ -69,8 +69,8 @@ describe('AccountService.provision — first-run seed (OS-173)', () => {
       .select()
       .from(locationsTable)
       .where(eq(locationsTable.accountId, result.account.id));
-    expect(locations).toHaveLength(1);
-    expect(locations[0]).toMatchObject({ name: 'Default', addressLine1: null });
+    // the merchant creates their first location as an onboarding step
+    expect(locations).toEqual([]);
 
     const [user] = await db
       .select()
@@ -113,7 +113,8 @@ describe('AccountService.provision — first-run seed (OS-173)', () => {
 
     const accounts = await db.select().from(accountsTable);
     expect(accounts).toHaveLength(1);
-    expect(await db.select().from(locationsTable)).toHaveLength(1);
+    // the API key is written in the same transaction, before the user
+    expect(await db.select().from(accountApiKeysTable)).toHaveLength(1);
   });
 });
 

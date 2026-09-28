@@ -16,6 +16,9 @@ export function getVariantColumns(options: {
   onAdjustStock: (variant: ProductVariant) => void;
   onEdit: (variant: ProductVariant) => void;
   lowStockThreshold: number;
+  // false while the account has no location to hold stock (OS-689) — the
+  // action then leads to creating one instead
+  canAdjustStock: boolean;
 }): ColumnDef<ProductVariant>[] {
   return [
     {
@@ -75,7 +78,10 @@ export function getVariantColumns(options: {
               <PencilIcon /> Edit variant
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => options.onAdjustStock(row.original)}>
-              <PackageIcon /> Adjust stock
+              <PackageIcon />{" "}
+              {options.canAdjustStock
+                ? "Adjust stock"
+                : "Add a location to adjust stock"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
