@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { canonicalTimeZone } from "../timezone"
 import {
   Combobox,
   ComboboxContent,
@@ -29,13 +30,17 @@ export function TimezoneCombobox(props: {
   onValueChange: (value: string) => void
   disabled?: boolean
 }) {
-  const items = useMemo(() => timeZoneOptions(props.value), [props.value])
+  // the stored value in this browser's spelling, so an API-canonical legacy
+  // name ("Asia/Calcutta") selects the listed "Asia/Kolkata" instead of
+  // appearing as a second entry that a save snaps back to
+  const value = canonicalTimeZone(props.value) ?? props.value
+  const items = useMemo(() => timeZoneOptions(value), [value])
 
   return (
     <Combobox
       autoHighlight
       items={items}
-      value={props.value}
+      value={value}
       itemToStringLabel={timeZoneLabel}
       onValueChange={(value: string | null) => {
         if (value) props.onValueChange(value)
