@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
+import { IsE164Phone } from 'src/shared/validation/is-e164-phone';
 
 export class UpdateLocationDto {
   @ApiProperty({ type: 'string', required: false, nullable: true })
@@ -31,4 +32,16 @@ export class UpdateLocationDto {
   @IsOptional()
   @IsString()
   addressCountry?: string | null;
+
+  // the contact a carrier reaches at this origin — required to buy a label
+  // from here. Stored as E.164; null clears it (OS-688)
+  @ApiProperty({
+    type: 'string',
+    required: false,
+    nullable: true,
+    example: '+12015550123',
+  })
+  @IsOptional()
+  @IsE164Phone()
+  phone?: string | null;
 }

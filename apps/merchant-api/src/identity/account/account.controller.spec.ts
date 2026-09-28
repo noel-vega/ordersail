@@ -29,11 +29,11 @@ describe('AccountController.update — requireMfa authorization (OS-473)', () =>
   it('allows an ordinary field edit with only account:write', async () => {
     const { controller, update } = build();
     await controller.update(
-      { phone: '+12015551234' },
+      { email: 'new@store.test' },
       user,
       new Set(['account:write']),
     );
-    expect(update).toHaveBeenCalledWith(1, { phone: '+12015551234' });
+    expect(update).toHaveBeenCalledWith(1, { email: 'new@store.test' });
   });
 
   it('rejects toggling requireMfa without account:manage_security', () => {

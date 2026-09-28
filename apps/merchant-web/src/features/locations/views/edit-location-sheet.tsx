@@ -15,6 +15,7 @@ import { Input } from "ui/input";
 import { Button } from "ui/button";
 import { LoaderCircleIcon } from "lucide-react";
 import { useUpdateLocationMutation } from "../locations.hooks";
+import { formatPhone, optionalPhoneSchema } from "../../../lib/phone";
 
 const EditLocationFormSchema = z.object({
   addressLine1: z.string().nullable(),
@@ -23,9 +24,11 @@ const EditLocationFormSchema = z.object({
   addressState: z.string().nullable(),
   addressPostalCode: z.string().nullable(),
   addressCountry: z.string().nullable(),
+  // the contact carriers reach at this origin; a blank box clears it (OS-688)
+  phone: optionalPhoneSchema,
 });
 
-type EditLocationForm = z.infer<typeof EditLocationFormSchema>;
+type EditLocationForm = z.input<typeof EditLocationFormSchema>;
 
 export function EditLocationSheet(props: {
   location: Location | null;
@@ -36,9 +39,10 @@ export function EditLocationSheet(props: {
     <Sheet open={props.open} onOpenChange={props.onOpenChange}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Edit address</SheetTitle>
+          <SheetTitle>Edit ship-from details</SheetTitle>
           <SheetDescription>
-            Used as the ship-from origin when quoting shipping rates.
+            Used as the ship-from origin when quoting shipping rates and buying
+            labels.
           </SheetDescription>
         </SheetHeader>
         {props.open && props.location && (
@@ -56,7 +60,11 @@ export function EditLocationSheet(props: {
 // snapshot of the location
 function EditLocationForm(props: { location: Location; onDone: () => void }) {
   const updateLocation = useUpdateLocationMutation();
-  const form = useForm<EditLocationForm>({
+  const form = useForm<
+    EditLocationForm,
+    unknown,
+    z.output<typeof EditLocationFormSchema>
+  >({
     resolver: zodResolver(EditLocationFormSchema),
     defaultValues: {
       addressLine1: props.location.addressLine1,
@@ -65,6 +73,8 @@ function EditLocationForm(props: { location: Location; onDone: () => void }) {
       addressState: props.location.addressState,
       addressPostalCode: props.location.addressPostalCode,
       addressCountry: props.location.addressCountry,
+      // stored as E.164; shown the way the merchant would type it
+      phone: props.location.phone ? formatPhone(props.location.phone) : "",
     },
   });
 
@@ -78,6 +88,8 @@ function EditLocationForm(props: { location: Location; onDone: () => void }) {
         addressState: data.addressState?.trim() || null,
         addressPostalCode: data.addressPostalCode?.trim() || null,
         addressCountry: data.addressCountry?.trim() || null,
+        // already E.164, or null for a blank box
+        phone: data.phone,
       },
       // errors surface as a toast; only close the sheet on success
       { onSuccess: () => props.onDone() },
@@ -171,6 +183,23 @@ function EditLocationForm(props: { location: Location; onDone: () => void }) {
                 value={field.value ?? ""}
                 onChange={(e) => field.onChange(e.currentTarget.value.toUpperCase())}
               />
+            </Field>
+          )}
+        />
+
+        <Controller
+          control={form.control}
+          name="phone"
+          render={({ field, fieldState }) => (
+            <Field data-invalid={!!fieldState.error}>
+              <FieldLabel>Phone</FieldLabel>
+              <Input type="tel" placeholder="(201) 555-0123" {...field} />
+              <p className="text-sm text-muted-foreground">
+                Carriers like USPS require one to buy a label from here.
+              </p>
+              {fieldState.error && (
+                <p className="text-sm text-destructive">{fieldState.error.message}</p>
+              )}
             </Field>
           )}
         />

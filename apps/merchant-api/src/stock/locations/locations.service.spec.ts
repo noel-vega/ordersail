@@ -46,6 +46,47 @@ describe('LocationsService.findAll (OS-162)', () => {
   });
 });
 
+describe('LocationsService.update — phone (OS-688)', () => {
+  it('sets and clears the ship-from phone', async () => {
+    const account = await insertAccount(db);
+    const location = await insertLocation(db, {
+      accountId: account.id,
+      phone: null,
+    });
+    const service = await build();
+
+    const set = await service.update(
+      location.id,
+      { phone: '+12015550123' },
+      account.id,
+    );
+    expect(set?.phone).toBe('+12015550123');
+
+    const cleared = await service.update(
+      location.id,
+      { phone: null },
+      account.id,
+    );
+    expect(cleared?.phone).toBeNull();
+  });
+
+  it('leaves the phone alone when the field is absent', async () => {
+    const account = await insertAccount(db);
+    const location = await insertLocation(db, {
+      accountId: account.id,
+      phone: '+12015550123',
+    });
+    const service = await build();
+
+    const updated = await service.update(
+      location.id,
+      { addressCity: 'Hoboken' },
+      account.id,
+    );
+    expect(updated?.phone).toBe('+12015550123');
+  });
+});
+
 describe('LocationsService.remove (OS-188)', () => {
   it('deletes a location with no references', async () => {
     const account = await insertAccount(db);

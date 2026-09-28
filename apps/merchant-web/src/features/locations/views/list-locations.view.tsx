@@ -84,7 +84,7 @@ function getColumns(handlers: {
                 <DropdownMenuContent>
                   {handlers.canWrite && (
                     <DropdownMenuItem onClick={() => handlers.onEdit(row.original)}>
-                      <PencilIcon /> Edit address
+                      <PencilIcon /> Edit ship-from details
                     </DropdownMenuItem>
                   )}
                   {handlers.canDelete && (

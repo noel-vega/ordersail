@@ -49,7 +49,7 @@ export class FulfillmentsService {
       await this.resolveRequest(dto, accountId);
 
     const [account] = await this.db
-      .select({ phone: accountsTable.phone, email: accountsTable.email })
+      .select({ email: accountsTable.email })
       .from(accountsTable)
       .where(eq(accountsTable.id, accountId));
 
@@ -63,7 +63,7 @@ export class FulfillmentsService {
           state: location.addressState ?? undefined,
           zip: location.addressPostalCode ?? undefined,
           country: location.addressCountry ?? 'US',
-          phone: account?.phone,
+          phone: location.phone,
           email: account?.email,
         },
         addressTo: {
@@ -287,6 +287,13 @@ export class FulfillmentsService {
         'That location has no shipping address on file',
       );
     }
+    // checked here rather than left to Shippo, whose rejection (USPS won't
+    // quote without an origin phone) comes back as an opaque rate failure
+    if (!location.phone) {
+      throw new BadRequestException(
+        `Add a phone number to ${location.name} before buying a label`,
+      );
+    }
 
     const requestedIds = dto.items.map((i) => i.orderItemId);
     const items = await this.db
@@ -328,6 +335,12 @@ export class FulfillmentsService {
         (item.weightOz ?? DEFAULT_ITEM_WEIGHT_OZ) * requested.quantity;
     }
 
-    return { order, shipping, location, totalWeightOz };
+    return {
+      order,
+      shipping,
+      // re-spread so the phone check above carries into the type
+      location: { ...location, phone: location.phone },
+      totalWeightOz,
+    };
   }
 }

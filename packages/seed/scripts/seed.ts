@@ -210,7 +210,7 @@ async function ensureAccount() {
   return await db.transaction(async (tx) => {
     const [account] = await tx
       .insert(accountsTable)
-      .values({ name: 'Sneaker Depot', phone: '+12015550100', email: OWNER_EMAIL })
+      .values({ name: 'Sneaker Depot', email: OWNER_EMAIL })
       .returning();
 
     await tx.insert(usersTable).values({
@@ -310,6 +310,8 @@ async function ensureDefaultLocation(accountId: number) {
       addressState: 'CA',
       addressPostalCode: '94114',
       addressCountry: 'US',
+      // carriers need a contact at the origin to buy a label (OS-688)
+      phone: '+14155550100',
     })
     .returning();
   return location;

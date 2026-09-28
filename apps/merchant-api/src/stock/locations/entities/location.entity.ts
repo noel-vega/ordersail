@@ -29,6 +29,10 @@ export class Location implements SelectLocation {
   @ApiProperty({ type: 'string', nullable: true })
   addressCountry!: string | null;
 
+  // E.164 — see locationsTable.phone
+  @ApiProperty({ type: 'string', nullable: true, example: '+12015550123' })
+  phone!: string | null;
+
   @ApiProperty()
   createdAt!: Date;
 

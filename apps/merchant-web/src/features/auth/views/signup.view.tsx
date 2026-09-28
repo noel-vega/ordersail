@@ -27,7 +27,6 @@ export function SignUpView() {
       firstName: "",
       lastName: "",
       email: "",
-      phone: "",
       password: "",
     },
   });
@@ -103,20 +102,6 @@ export function SignUpView() {
               <Field>
                 <FieldLabel>Email</FieldLabel>
                 <Input type="email" placeholder="john.smith@example.com" {...field} />
-              </Field>
-            )}
-          />
-
-          <Controller
-            control={form.control}
-            name="phone"
-            render={({ field, fieldState }) => (
-              <Field data-invalid={!!fieldState.error}>
-                <FieldLabel>Phone</FieldLabel>
-                <Input type="tel" placeholder="(201) 555-0123" {...field} />
-                {fieldState.error && (
-                  <p className="text-sm text-destructive">{fieldState.error.message}</p>
-                )}
               </Field>
             )}
           />

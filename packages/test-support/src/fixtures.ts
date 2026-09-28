@@ -70,7 +70,6 @@ export async function insertAccount(
   db: TestDb,
   over: {
     name?: string;
-    phone?: string;
     email?: string;
     timezone?: string;
     lowStockThreshold?: number;
@@ -81,7 +80,6 @@ export async function insertAccount(
       .insert(accountsTable)
       .values({
         name: over.name ?? 'Test Store',
-        phone: over.phone ?? '+12015550100',
         email: over.email ?? `owner-${uniq()}@store.test`,
         timezone: over.timezone,
         lowStockThreshold: over.lowStockThreshold,
@@ -492,10 +490,15 @@ export async function insertLocation(
     // "hasn't set up a shipping origin yet" path)
     withAddress?: boolean;
     address?: Partial<typeof DEFAULT_ADDRESS>;
+    // omitted → a phone alongside the address (a complete ship-from origin)
+    // and none without one; null → an address but no phone
+    phone?: string | null;
   },
 ): Promise<Row<typeof locationsTable>> {
   const addr =
     opts.withAddress === false ? null : { ...DEFAULT_ADDRESS, ...opts.address };
+  const phone =
+    opts.phone !== undefined ? opts.phone : addr ? '+12015550100' : null;
   return one(
     await db
       .insert(locationsTable)
@@ -508,6 +511,7 @@ export async function insertLocation(
         addressState: addr?.state ?? null,
         addressPostalCode: addr?.postalCode ?? null,
         addressCountry: addr?.country ?? null,
+        phone,
       })
       .returning(),
   );

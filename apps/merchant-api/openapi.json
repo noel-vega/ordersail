@@ -4419,10 +4419,6 @@
           "email": {
             "type": "string"
           },
-          "phone": {
-            "type": "string",
-            "example": "+12015550123"
-          },
           "password": {
             "type": "string"
           },
@@ -4436,7 +4432,6 @@
           "firstName",
           "lastName",
           "email",
-          "phone",
           "password"
         ]
       },
@@ -4913,9 +4908,6 @@
           "name": {
             "type": "string"
           },
-          "phone": {
-            "type": "string"
-          },
           "email": {
             "type": "string"
           },
@@ -4944,7 +4936,6 @@
         "required": [
           "id",
           "name",
-          "phone",
           "email",
           "requireMfaAt",
           "timezone",
@@ -4956,10 +4947,6 @@
       "UpdateAccountDto": {
         "type": "object",
         "properties": {
-          "phone": {
-            "type": "string",
-            "example": "+12015550123"
-          },
           "email": {
             "type": "string"
           },
@@ -6072,6 +6059,11 @@
             "type": "string",
             "nullable": true
           },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+12015550123"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -6091,6 +6083,7 @@
           "addressState",
           "addressPostalCode",
           "addressCountry",
+          "phone",
           "createdAt",
           "updatedAt"
         ]
@@ -6147,6 +6140,11 @@
           "addressCountry": {
             "type": "string",
             "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+12015550123"
           }
         }
       },

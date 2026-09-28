@@ -24,7 +24,7 @@ Started 2026-07-07. In active early development.
 **Accounts, auth & team access**
 - Multi-tenant account model — signup creates an account plus its first user
 - JWT-based sign in / sign up / logout / token refresh
-- Account profile management (name, shipping contact phone/email — required up front since some carriers reject label purchases without it)
+- Account profile management (name, shipping contact email); each location carries its own ship-from phone, which label purchases require
 - User management (list, view, update, delete) within an account
 - Custom staff roles built from a 28-key permission catalog, enforced end-to-end (API guards + dashboard nav/action gating) — one fixed, non-editable `Owner` role per account, everything else account-defined
 - Account-scoped developer API keys, issued and viewable from the merchant dashboard

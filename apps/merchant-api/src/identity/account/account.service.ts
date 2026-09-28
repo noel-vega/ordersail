@@ -28,7 +28,6 @@ const USERS_EMAIL_UNIQUE_CONSTRAINT = 'users_email_key';
 // the DTO satisfies this structurally anyway.
 export interface ProvisionAccountInput {
   businessName: string;
-  phone: string;
   email: string;
   firstName: string;
   lastName: string;
@@ -83,7 +82,6 @@ export class AccountService {
         .insert(accountsTable)
         .values({
           name: input.businessName,
-          phone: input.phone,
           email: input.email,
           timezone: input.timezone,
         })

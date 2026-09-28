@@ -9,9 +9,6 @@ export class Account implements SelectAccount {
   name!: string;
 
   @ApiProperty()
-  phone!: string;
-
-  @ApiProperty()
   email!: string;
 
   @ApiProperty({ type: Date, nullable: true })

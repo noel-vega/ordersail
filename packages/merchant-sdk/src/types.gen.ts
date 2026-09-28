@@ -1426,8 +1426,6 @@ export interface components {
             firstName: string;
             lastName: string;
             email: string;
-            /** @example +12015550123 */
-            phone: string;
             password: string;
             /** @example America/New_York */
             timezone?: string;
@@ -1563,7 +1561,6 @@ export interface components {
         Account: {
             id: number;
             name: string;
-            phone: string;
             email: string;
             /** Format: date-time */
             requireMfaAt: string | null;
@@ -1577,8 +1574,6 @@ export interface components {
             updatedAt: string;
         };
         UpdateAccountDto: {
-            /** @example +12015550123 */
-            phone?: string;
             email?: string;
             requireMfa?: boolean;
             /** @example America/New_York */
@@ -1869,6 +1864,8 @@ export interface components {
             addressState: string | null;
             addressPostalCode: string | null;
             addressCountry: string | null;
+            /** @example +12015550123 */
+            phone: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1887,6 +1884,8 @@ export interface components {
             addressState?: string | null;
             addressPostalCode?: string | null;
             addressCountry?: string | null;
+            /** @example +12015550123 */
+            phone?: string | null;
         };
         OrderListItem: {
             id: number;

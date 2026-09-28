@@ -160,7 +160,6 @@ const signupDto = {
   firstName: 'Dana',
   lastName: 'Scully',
   email: 'dana@cactus.test',
-  phone: '+12015550100',
   password: 'supersecret',
 };
 
@@ -410,7 +409,6 @@ describe('AuthService.requestPasswordReset — an emailed link, and no account e
       .insert(accountsTable)
       .values({
         name: 'Reset Co',
-        phone: '+12015550100',
         email: 'reset-co@store.test',
       })
       .returning();
@@ -425,7 +423,6 @@ describe('AuthService.resetPassword — a new password ends every Session', () =
       .insert(accountsTable)
       .values({
         name: 'Reset Co',
-        phone: '+12015550100',
         email: 'reset-co2@store.test',
       })
       .returning();
