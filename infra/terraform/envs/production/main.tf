@@ -441,8 +441,9 @@ module "frontend_website" {
   aliases             = [var.domain_name]
   acm_certificate_arn = aws_acm_certificate_validation.frontends.certificate_arn
 
-  # pre-launch gate (OS-363)
-  basic_auth_credentials = local.frontend_basic_auth_credentials
+  # Public since OS-666 — no basic_auth_credentials. The site is a pre-launch
+  # "coming soon" site with no route into the merchant app (OS-663), so it's
+  # safe to open; merchant-web above stays behind the OS-363 gate.
 
   # multi-page Astro site (directory build):
   #  - resolve /features -> /features/index.html at the edge (OS-365)

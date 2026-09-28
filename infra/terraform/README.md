@@ -80,10 +80,12 @@ change only on a GitHub owner/repo **transfer** — update the tfvars and re-app
 
 ## Pre-launch frontend gate (OS-363)
 
-`ordersail.com` and `merchant.ordersail.com` sit behind one shared HTTP Basic
-credential, enforced by a CloudFront Function on `viewer-request` over each
-distribution's default cache behavior (`/api/*` on merchant-web is **not**
-gated). The credential lives in a Secrets Manager secret, created out of band —
+`merchant.ordersail.com` sits behind a shared HTTP Basic credential, enforced by
+a CloudFront Function on `viewer-request` over the distribution's default cache
+behavior (`/api/*` is **not** gated). **`ordersail.com` is public** since OS-666:
+a pre-launch "coming soon" site with no route into the merchant app (OS-663). Its
+distribution keeps its viewer-request function for the directory-index rewrite
+(OS-365), just without the auth check. The credential lives in a Secrets Manager secret, created out of band —
 never in git or tfvars.
 
 **Prerequisite — the secret must exist before `terraform apply`** (same as the
@@ -100,25 +102,29 @@ Terraform turns the `{"user":"pass"}` map into a `["user:pass"]` allow-list bake
 into the function. An empty `{}` (or no secret) means the gate is off — plan and
 apply are unaffected.
 
-The `plan` for a first-time enable is: 2 new `aws_cloudfront_function`, 2
-in-place distribution updates (one `function_association` each), no
-replacements. Each distribution update takes ~15–20 min.
+Gating or ungating a site is per module: the `basic_auth_credentials` line on
+that `module "frontend_*"` block. For a site with `directory_index` (the
+website), toggling it only re-publishes the function's code in place. Each
+distribution update takes ~15–20 min.
 
 **Rotate:** `aws secretsmanager put-secret-value --secret-id
 ordersail/production/frontend/basic-auth --secret-string '{"crew":"…"}'`, then
-`terraform apply` (re-renders + re-publishes the functions).
+`terraform apply` (re-renders + re-publishes the function). The value is only
+base64-embedded in the published function, never in git — keep it that way.
 
-**Lift at launch:** set the secret to `{}` and `terraform apply`, or open a PR
-that deletes `envs/production/frontend-auth.tf` and the two
-`basic_auth_credentials` lines in `main.tf`. Emergency: detach the
-`viewer-request` function on both distributions in the CloudFront console (~5 min
-to propagate), reconcile Terraform after.
+**Lift at launch:** open a PR that deletes `envs/production/frontend-auth.tf` and
+the `basic_auth_credentials` line on `module "frontend_merchant_web"`, then apply
+(emptying the secret to `{}` also works). Emergency: detach the `viewer-request`
+function on the merchant-web distribution in the CloudFront console (~5 min to
+propagate), reconcile Terraform after. **Don't detach the website's function**:
+it also does the directory-index rewrite, and `/features` etc. would 404.
 
 **Verify:**
 
 ```bash
-curl -sI https://ordersail.com                              # 401
-curl -sI -u 'crew:<pass>' https://ordersail.com             # 200
+curl -sI https://ordersail.com                              # 200 (public since OS-666)
+curl -sI https://ordersail.com/features/                    # 200 (directory index)
+curl -sI https://merchant.ordersail.com                     # 401
 curl -sI -u 'crew:<pass>' https://merchant.ordersail.com    # 200
 curl -sI https://merchant.ordersail.com/api/                # not the Basic realm
 ```
