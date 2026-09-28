@@ -106,6 +106,26 @@ describe('InventoryService.findAll (OS-161)', () => {
 
     const page = await service.findAll(20, 0, account.id, { lowStock: true });
     expect(page.total).toBe(1);
+    expect(page.lowStockThreshold).toBe(5);
+  });
+
+  // the client badges rows with this, so it must be the threshold the
+  // filter used — even for staff who can't read GET /account
+  it('returns the threshold with every page, filtered or not', async () => {
+    const { account } = await seed();
+    await db
+      .update(accountsTable)
+      .set({ lowStockThreshold: 12 })
+      .where(eq(accountsTable.id, account.id));
+    const service = await build();
+
+    expect((await service.findAll(20, 0, account.id)).lowStockThreshold).toBe(
+      12,
+    );
+    expect(
+      (await service.findAll(20, 0, account.id, { lowStock: true }))
+        .lowStockThreshold,
+    ).toBe(12);
   });
 
   it('is scoped to the account', async () => {

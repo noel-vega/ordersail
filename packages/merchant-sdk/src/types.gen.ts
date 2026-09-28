@@ -1787,6 +1787,8 @@ export interface components {
             total: number;
             limit: number;
             offset: number;
+            /** @description the account's low-stock threshold — the one lowStock filtered by */
+            lowStockThreshold: number;
         };
         CreateInventoryMovementDto: {
             variantId: number;

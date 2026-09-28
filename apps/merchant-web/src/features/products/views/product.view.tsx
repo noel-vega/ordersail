@@ -291,7 +291,10 @@ export function ProductView({ id }: { id: number }) {
         </TabsContent>
 
         <TabsContent value="inventory" className="pt-6">
-          <ProductInventoryTab records={productInventory} />
+          <ProductInventoryTab
+            records={productInventory}
+            lowStockThreshold={inventory?.lowStockThreshold ?? 0}
+          />
         </TabsContent>
 
         <TabsContent value="images" className="pt-6">

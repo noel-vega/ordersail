@@ -47,11 +47,12 @@ export function getVariantColumns(options: {
     {
       accessorKey: "stock",
       header: "Stock",
-      cell: ({ row }) =>
+      cell: ({ row }) => (
         <StockLevel
           stock={row.original.stock}
           threshold={options.lowStockThreshold}
-        />,
+        />
+      ),
     },
     {
       id: "actions",

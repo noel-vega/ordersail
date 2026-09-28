@@ -18,7 +18,7 @@ import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
 import { useListLocationsQuery } from "../../locations/locations.hooks";
-import { useInventoryPageQuery, useLowStockThreshold } from "../inventory.hooks";
+import { useInventoryPageQuery } from "../inventory.hooks";
 import { AdjustStockSheet } from "../components/adjust-stock-sheet";
 import { StockLevel } from "../components/stock-level";
 import { usePermissions } from "../../auth/permission-context";
@@ -32,7 +32,9 @@ export function ListInventoryView() {
   const inventory = useInventoryPageQuery(search);
   const locations = useListLocationsQuery();
   const canAdjust = usePermissions().has("inventory:write");
-  const lowStockThreshold = useLowStockThreshold();
+  // from the same response the lowStock filter ran on, so the Low badges and
+  // the filter always agree (OS-668)
+  const lowStockThreshold = inventory.data?.lowStockThreshold ?? 0;
   const [adjustingRecord, setAdjustingRecord] = useState<InventoryRecord | null>(
     null,
   );
@@ -48,8 +50,9 @@ export function ListInventoryView() {
     {
       accessorKey: "stock",
       header: "Stock",
-      cell: ({ row }) =>
-        <StockLevel stock={row.original.stock} threshold={lowStockThreshold} />,
+      cell: ({ row }) => (
+        <StockLevel stock={row.original.stock} threshold={lowStockThreshold} />
+      ),
     },
     {
       accessorKey: "updatedAt",

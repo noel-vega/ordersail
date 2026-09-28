@@ -55,7 +55,14 @@ export class InventoryService {
     filter: InventoryFilter = {},
   ): Promise<PaginatedInventory> {
     const { limit: take, offset: skip } = resolvePageParams(limit, offset);
-    const where = this.inventoryWhere(accountId, filter);
+    // read once and returned with the page, so the client's Low badges use
+    // the exact threshold the lowStock filter applied — callers without
+    // account:read can't fetch it from GET /account (OS-668)
+    const [{ lowStockThreshold }] = await this.db
+      .select({ lowStockThreshold: accountsTable.lowStockThreshold })
+      .from(accountsTable)
+      .where(eq(accountsTable.id, accountId));
+    const where = this.inventoryWhere(accountId, lowStockThreshold, filter);
 
     const [items, [{ total }]] = await Promise.all([
       this.db
@@ -101,7 +108,7 @@ export class InventoryService {
         .where(where),
     ]);
 
-    return { items, total, limit: take, offset: skip };
+    return { items, total, limit: take, offset: skip, lowStockThreshold };
   }
 
   // insert a ledger entry and atomically fold its delta into the
@@ -201,6 +208,7 @@ export class InventoryService {
 
   private inventoryWhere(
     accountId: number,
+    lowStockThreshold: number,
     filter: InventoryFilter,
   ): SQL | undefined {
     const clauses: SQL[] = [eq(productsTable.accountId, accountId)];
@@ -215,12 +223,7 @@ export class InventoryService {
       clauses.push(lte(inventoryTable.stock, filter.stockLte));
     }
     if (filter.lowStock) {
-      clauses.push(
-        lte(
-          inventoryTable.stock,
-          sql`(select ${accountsTable.lowStockThreshold} from ${accountsTable} where ${accountsTable.id} = ${accountId})`,
-        ),
-      );
+      clauses.push(lte(inventoryTable.stock, lowStockThreshold));
     }
 
     const term = filter.q?.trim();

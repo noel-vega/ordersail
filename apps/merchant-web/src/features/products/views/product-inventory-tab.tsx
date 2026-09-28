@@ -5,33 +5,35 @@ import { DataTable } from "../../../components/data-table";
 import { Button } from "ui/button";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
 import { StockLevel } from "../../inventory/components/stock-level";
-import { useLowStockThreshold } from "../../inventory/inventory.hooks";
 
 function getColumns(lowStockThreshold: number): ColumnDef<InventoryRecord>[] {
   return [
-  {
-    accessorKey: "sku",
-    header: "SKU",
-    cell: ({ row }) => row.original.sku ?? "—",
-  },
-  {
-    accessorKey: "locationName",
-    header: "Location",
-  },
-  {
-    accessorKey: "stock",
-    header: "Stock",
-    cell: ({ row }) =>
-      <StockLevel stock={row.original.stock} threshold={lowStockThreshold} />,
-  },
+    {
+      accessorKey: "sku",
+      header: "SKU",
+      cell: ({ row }) => row.original.sku ?? "—",
+    },
+    {
+      accessorKey: "locationName",
+      header: "Location",
+    },
+    {
+      accessorKey: "stock",
+      header: "Stock",
+      cell: ({ row }) => (
+        <StockLevel stock={row.original.stock} threshold={lowStockThreshold} />
+      ),
+    },
   ];
 }
 
-export function ProductInventoryTab(props: { records: InventoryRecord[] }) {
+export function ProductInventoryTab(props: {
+  records: InventoryRecord[];
+  lowStockThreshold: number;
+}) {
   const [adjustingRecord, setAdjustingRecord] = useState<InventoryRecord | null>(
     null,
   );
-  const lowStockThreshold = useLowStockThreshold();
 
   const actionColumn: ColumnDef<InventoryRecord> = {
     id: "actions",
@@ -50,7 +52,9 @@ export function ProductInventoryTab(props: { records: InventoryRecord[] }) {
   return (
     <div className="space-y-4">
       <DataTable
-        columns={[...getColumns(lowStockThreshold), actionColumn]} data={props.records} />
+        columns={[...getColumns(props.lowStockThreshold), actionColumn]}
+        data={props.records}
+      />
 
       <AdjustStockSheet
         record={adjustingRecord}

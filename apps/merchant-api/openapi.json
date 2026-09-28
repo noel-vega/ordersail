@@ -5756,13 +5756,18 @@
           },
           "offset": {
             "type": "number"
+          },
+          "lowStockThreshold": {
+            "type": "number",
+            "description": "the account's low-stock threshold — the one lowStock filtered by"
           }
         },
         "required": [
           "items",
           "total",
           "limit",
-          "offset"
+          "offset",
+          "lowStockThreshold"
         ]
       },
       "CreateInventoryMovementDto": {

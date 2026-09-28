@@ -222,6 +222,8 @@ describe('AccountService — low-stock threshold (OS-668)', () => {
 
     await expect(
       service.update(account.id, { lowStockThreshold: -1 }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({
+      cause: { constraint: 'accounts_low_stock_threshold_nonneg' },
+    });
   });
 });

@@ -9,8 +9,6 @@ import type { InventoryMovementRecord } from "merchant-sdk"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { PAGE_SIZE, pageOffset, listSearchSchema } from "../../lib/list-search"
-import { getAccountQueryOptions } from "../account/account.hooks"
-import { usePermissions } from "../auth/permission-context"
 
 export const MOVEMENT_REASONS: InventoryMovementRecord["reason"][] = [
   "received",
@@ -94,18 +92,4 @@ export function useCreateInventoryMovementMutation() {
       queryClient.invalidateQueries({ queryKey: ["products"] })
     },
   })
-}
-
-// the account's low-stock threshold (OS-668). Stock screens are gated on
-// inventory/products perms, not account:read — without it the threshold is
-// unknown, so fall back to 0: only "out of stock" is flagged, never a
-// guessed "low"
-export function useLowStockThreshold(): number {
-  const canReadAccount = usePermissions().has("account:read")
-  const account = useQuery({
-    ...getAccountQueryOptions(),
-    enabled: canReadAccount,
-    throwOnError: false,
-  })
-  return account.data?.lowStockThreshold ?? 0
 }
