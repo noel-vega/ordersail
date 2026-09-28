@@ -32,7 +32,10 @@ export function SignUpView() {
   });
 
   async function handleSubmit(formData: SignUpRequestBody) {
-    signUpMutation.mutate(formData, {
+    // the account's reporting timezone starts as this browser's (OS-667);
+    // editable later in Settings
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    signUpMutation.mutate({ ...formData, timezone }, {
       onError: () => {
         setErrorMessage(
           "Unable to create account. This email may already be in use.",

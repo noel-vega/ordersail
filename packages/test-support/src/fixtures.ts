@@ -68,7 +68,12 @@ async function one<T>(rows: T[]): Promise<T> {
 
 export async function insertAccount(
   db: TestDb,
-  over: { name?: string; phone?: string; email?: string } = {},
+  over: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    timezone?: string;
+  } = {},
 ): Promise<Row<typeof accountsTable>> {
   return one(
     await db
@@ -77,6 +82,7 @@ export async function insertAccount(
         name: over.name ?? 'Test Store',
         phone: over.phone ?? '5555550100',
         email: over.email ?? `owner-${uniq()}@store.test`,
+        timezone: over.timezone,
       })
       .returning(),
   );

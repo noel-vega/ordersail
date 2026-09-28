@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { IsStrongPassword } from 'password-policy';
+import { IsTimeZone } from 'src/shared/validation/is-time-zone';
 
 export class SignUpDto {
   @ApiProperty()
@@ -34,6 +35,14 @@ export class SignUpDto {
   @MinLength(12)
   @IsStrongPassword(['email', 'firstName', 'lastName', 'businessName'])
   password: string;
+
+  // the account's reporting timezone (IANA), sent by merchant-web from the
+  // browser. Omitted -> 'UTC' (the column default); an unknown zone is a 400
+  // rather than a silent fallback, since only our own client sends it (OS-667)
+  @ApiProperty({ required: false, example: 'America/New_York' })
+  @IsOptional()
+  @IsTimeZone()
+  timezone?: string;
 
   constructor(
     businessName: string,

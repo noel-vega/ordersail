@@ -1396,6 +1396,8 @@ export interface components {
             email: string;
             phone: string;
             password: string;
+            /** @example America/New_York */
+            timezone?: string;
         };
         AcceptInviteDto: {
             token: string;
@@ -1530,6 +1532,8 @@ export interface components {
             email: string;
             /** Format: date-time */
             requireMfaAt: string | null;
+            /** @example America/New_York */
+            timezone: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1539,6 +1543,8 @@ export interface components {
             phone?: string;
             email?: string;
             requireMfa?: boolean;
+            /** @example America/New_York */
+            timezone?: string;
         };
         CreateRoleDto: {
             name: string;

@@ -170,3 +170,35 @@ describe('AccountService.update — requireMfa toggle (OS-473)', () => {
     expect(row?.requireMfaAt).not.toBeNull();
   });
 });
+
+describe('AccountService — reporting timezone (OS-667)', () => {
+  beforeEach(async () => {
+    await db.insert(permissionsTable).values(PERMISSIONS_CATALOG);
+  });
+
+  it('provisions with the captured timezone', async () => {
+    const service = await build();
+    const { account } = await service.provision({
+      ...provisionInput,
+      timezone: 'America/New_York',
+    });
+    expect(account.timezone).toBe('America/New_York');
+  });
+
+  it("defaults to 'UTC' when signup sends none", async () => {
+    const service = await build();
+    const { account } = await service.provision(provisionInput);
+    expect(account.timezone).toBe('UTC');
+  });
+
+  it('updates the timezone and round-trips through findOne', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    await service.update(account.id, { timezone: 'Europe/London' });
+
+    await expect(service.findOne(account.id)).resolves.toMatchObject({
+      timezone: 'Europe/London',
+    });
+  });
+});

@@ -35,6 +35,8 @@ export interface ProvisionAccountInput {
   // plaintext — hashed here, so no caller can hand over an unhashed value
   // under a "hashed" name
   password: string;
+  // IANA zone, already validated by the caller; omitted -> the column's 'UTC'
+  timezone?: string;
 }
 
 @Injectable()
@@ -83,6 +85,7 @@ export class AccountService {
           name: input.businessName,
           phone: input.phone,
           email: input.email,
+          timezone: input.timezone,
         })
         .returning();
 
