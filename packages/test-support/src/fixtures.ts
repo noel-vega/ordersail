@@ -73,6 +73,7 @@ export async function insertAccount(
     phone?: string;
     email?: string;
     timezone?: string;
+    lowStockThreshold?: number;
   } = {},
 ): Promise<Row<typeof accountsTable>> {
   return one(
@@ -83,6 +84,7 @@ export async function insertAccount(
         phone: over.phone ?? '5555550100',
         email: over.email ?? `owner-${uniq()}@store.test`,
         timezone: over.timezone,
+        lowStockThreshold: over.lowStockThreshold,
       })
       .returning(),
   );

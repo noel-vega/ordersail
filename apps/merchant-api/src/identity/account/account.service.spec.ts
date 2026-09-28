@@ -202,3 +202,26 @@ describe('AccountService — reporting timezone (OS-667)', () => {
     });
   });
 });
+
+describe('AccountService — low-stock threshold (OS-668)', () => {
+  it('defaults to 5 and updates', async () => {
+    const account = await insertAccount(db);
+    expect(account.lowStockThreshold).toBe(5);
+    const service = await build();
+
+    await service.update(account.id, { lowStockThreshold: 12 });
+
+    await expect(service.findOne(account.id)).resolves.toMatchObject({
+      lowStockThreshold: 12,
+    });
+  });
+
+  it('the CHECK constraint refuses a negative threshold below the DTO', async () => {
+    const account = await insertAccount(db);
+    const service = await build();
+
+    await expect(
+      service.update(account.id, { lowStockThreshold: -1 }),
+    ).rejects.toThrow();
+  });
+});

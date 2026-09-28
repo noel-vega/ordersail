@@ -15,6 +15,7 @@ import { getVariantColumns } from "./variant-columns";
 import { EditVariantSheet } from "./edit-variant-sheet";
 import { useListLocationsQuery } from "../../locations/locations.hooks";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
+import { useLowStockThreshold } from "../../inventory/inventory.hooks";
 
 export function VariantSection({
   productId,
@@ -52,9 +53,11 @@ export function VariantSection({
         }
       : null;
 
+  const lowStockThreshold = useLowStockThreshold();
   const columns = getVariantColumns({
     onAdjustStock: (variant) => setAdjustingVariant(variant),
     onEdit: (variant) => setEditingVariant(variant),
+    lowStockThreshold,
   });
 
   return (

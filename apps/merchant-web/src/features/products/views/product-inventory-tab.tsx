@@ -3,12 +3,12 @@ import type { ColumnDef } from "@tanstack/react-table";
 import type { InventoryRecord } from "merchant-sdk";
 import { DataTable } from "../../../components/data-table";
 import { Button } from "ui/button";
-import { Badge } from "ui/badge";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
+import { StockLevel } from "../../inventory/components/stock-level";
+import { useLowStockThreshold } from "../../inventory/inventory.hooks";
 
-const LOW_STOCK_THRESHOLD = 0;
-
-const columns: ColumnDef<InventoryRecord>[] = [
+function getColumns(lowStockThreshold: number): ColumnDef<InventoryRecord>[] {
+  return [
   {
     accessorKey: "sku",
     header: "SKU",
@@ -22,18 +22,16 @@ const columns: ColumnDef<InventoryRecord>[] = [
     accessorKey: "stock",
     header: "Stock",
     cell: ({ row }) =>
-      row.original.stock <= LOW_STOCK_THRESHOLD ? (
-        <Badge variant="destructive">{row.original.stock}</Badge>
-      ) : (
-        row.original.stock
-      ),
+      <StockLevel stock={row.original.stock} threshold={lowStockThreshold} />,
   },
-];
+  ];
+}
 
 export function ProductInventoryTab(props: { records: InventoryRecord[] }) {
   const [adjustingRecord, setAdjustingRecord] = useState<InventoryRecord | null>(
     null,
   );
+  const lowStockThreshold = useLowStockThreshold();
 
   const actionColumn: ColumnDef<InventoryRecord> = {
     id: "actions",
@@ -51,7 +49,8 @@ export function ProductInventoryTab(props: { records: InventoryRecord[] }) {
 
   return (
     <div className="space-y-4">
-      <DataTable columns={[...columns, actionColumn]} data={props.records} />
+      <DataTable
+        columns={[...getColumns(lowStockThreshold), actionColumn]} data={props.records} />
 
       <AdjustStockSheet
         record={adjustingRecord}

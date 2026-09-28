@@ -1,4 +1,5 @@
-import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { check, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { timestampAt } from "../utils.js";
 import { createInsertSchema, createSelectSchema } from "drizzle-orm/zod";
 import z from "zod";
@@ -22,9 +23,15 @@ export const accountsTable = pgTable("accounts", {
   // in this zone, so every staffer sees the same totals. Captured from the
   // browser at signup; validated as a real zone at the API edge, not here.
   timezone: text("timezone").notNull().default("UTC"),
+  // on-hand quantity at or below which stock counts as "low" (0 or less is
+  // "out"). Account-wide for now; a per-variant override could fall back to
+  // this later without reshaping it (OS-668)
+  lowStockThreshold: integer("low_stock_threshold").notNull().default(5),
   createdAt: timestampAt("created_at"),
   updatedAt: timestampAt("updated_at"),
-});
+}, (t) => [
+  check("accounts_low_stock_threshold_nonneg", sql`${t.lowStockThreshold} >= 0`),
+]);
 
 export const SelectAccountSchema = createSelectSchema(accountsTable);
 export type SelectAccount = z.infer<typeof SelectAccountSchema>;

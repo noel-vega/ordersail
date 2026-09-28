@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { accountsTable, eq } from 'db/identity';
 import {
   insertAccount,
   insertLocation,
@@ -72,6 +73,39 @@ describe('InventoryService.findAll (OS-161)', () => {
         (r) => r.sku,
       ),
     ).toEqual(['CAP-1']);
+  });
+
+  // seed(): BEANIE-1 at 3, CAP-1 at 50; the account threshold defaults to 5
+  it("lowStock filters at or below the account's threshold (OS-668)", async () => {
+    const { account } = await seed();
+    const service = await build();
+    const lowSkus = async () =>
+      (await service.findAll(20, 0, account.id, { lowStock: true })).items.map(
+        (r) => r.sku,
+      );
+
+    expect(await lowSkus()).toEqual(['BEANIE-1']);
+
+    await db
+      .update(accountsTable)
+      .set({ lowStockThreshold: 50 })
+      .where(eq(accountsTable.id, account.id));
+    expect(await lowSkus()).toEqual(['BEANIE-1', 'CAP-1']);
+
+    await db
+      .update(accountsTable)
+      .set({ lowStockThreshold: 2 })
+      .where(eq(accountsTable.id, account.id));
+    expect(await lowSkus()).toEqual([]);
+  });
+
+  it("lowStock uses the caller's account threshold, not another's", async () => {
+    const { account } = await seed();
+    await insertAccount(db, { lowStockThreshold: 100 });
+    const service = await build();
+
+    const page = await service.findAll(20, 0, account.id, { lowStock: true });
+    expect(page.total).toBe(1);
   });
 
   it('is scoped to the account', async () => {

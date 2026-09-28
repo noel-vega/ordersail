@@ -2751,6 +2751,15 @@
             "schema": {
               "type": "number"
             }
+          },
+          {
+            "name": "lowStock",
+            "required": false,
+            "in": "query",
+            "description": "only rows at or below the account's low-stock threshold",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -4791,6 +4800,10 @@
             "type": "string",
             "example": "America/New_York"
           },
+          "lowStockThreshold": {
+            "type": "number",
+            "example": 5
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -4807,6 +4820,7 @@
           "email",
           "requireMfaAt",
           "timezone",
+          "lowStockThreshold",
           "createdAt",
           "updatedAt"
         ]
@@ -4826,6 +4840,11 @@
           "timezone": {
             "type": "string",
             "example": "America/New_York"
+          },
+          "lowStockThreshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000
           }
         }
       },

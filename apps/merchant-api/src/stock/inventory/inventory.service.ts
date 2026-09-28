@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { resolvePageParams } from 'src/shared/pagination';
-import { usersTable } from 'db/identity';
+import { accountsTable, usersTable } from 'db/identity';
 import { productsTable, productVariantsTable } from 'db/catalog';
 import {
   and,
@@ -34,6 +34,8 @@ export interface InventoryFilter {
   productId?: number;
   locationId?: number;
   stockLte?: number;
+  // stock <= the account's lowStockThreshold, resolved in the same query
+  lowStock?: boolean;
 }
 
 export interface MovementFilter {
@@ -211,6 +213,14 @@ export class InventoryService {
     }
     if (filter.stockLte != null) {
       clauses.push(lte(inventoryTable.stock, filter.stockLte));
+    }
+    if (filter.lowStock) {
+      clauses.push(
+        lte(
+          inventoryTable.stock,
+          sql`(select ${accountsTable.lowStockThreshold} from ${accountsTable} where ${accountsTable.id} = ${accountId})`,
+        ),
+      );
     }
 
     const term = filter.q?.trim();

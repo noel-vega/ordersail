@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { IsTimeZone } from 'src/shared/validation/is-time-zone';
 
 // the shipping contact used as the addressFrom phone/email for every
@@ -29,4 +37,13 @@ export class UpdateAccountDto {
   @IsOptional()
   @IsTimeZone()
   timezone?: string;
+
+  // stock at or below this counts as "low" (OS-668); the column has a
+  // matching >= 0 CHECK, the upper bound just keeps typos out
+  @ApiProperty({ required: false, type: Number, minimum: 0, maximum: 100000 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  lowStockThreshold?: number;
 }
