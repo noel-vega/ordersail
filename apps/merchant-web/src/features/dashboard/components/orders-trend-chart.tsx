@@ -3,13 +3,13 @@ import type { DashboardSalesTimeseries } from "merchant-sdk"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { ChartTooltip, type ChartConfig } from "ui/chart"
 import { hasNoOrders } from "../dashboard-trend"
+import { TrendChartCard } from "./trend-chart-card"
 import {
   TREND_CHART_MARGIN,
-  TrendChartCard,
   bucketXAxisProps,
   trendTooltipContent,
   type TrendColumn,
-} from "./trend-chart-card"
+} from "./trend-chart"
 
 const config = {
   orderCount: { label: "Orders", color: "var(--chart-1)" },

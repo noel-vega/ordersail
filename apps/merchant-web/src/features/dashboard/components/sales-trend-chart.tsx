@@ -11,13 +11,13 @@ import {
 import { ChartTooltip, type ChartConfig } from "ui/chart"
 import { formatCents, formatCompactCents } from "../../../lib/currency"
 import { hasNoSales } from "../dashboard-trend"
+import { TrendChartCard } from "./trend-chart-card"
 import {
   TREND_CHART_MARGIN,
-  TrendChartCard,
   bucketXAxisProps,
   trendTooltipContent,
   type TrendColumn,
-} from "./trend-chart-card"
+} from "./trend-chart"
 
 const config = {
   netSalesCents: { label: "Net sales", color: "var(--chart-1)" },
