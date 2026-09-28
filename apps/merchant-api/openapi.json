@@ -7484,6 +7484,14 @@
             ],
             "description": "chosen from the span: ≤ 31 days → day, ≤ 184 days → week, else month"
           },
+          "from": {
+            "type": "string",
+            "example": "2026-09-01"
+          },
+          "to": {
+            "type": "string",
+            "example": "2026-09-30"
+          },
           "timezone": {
             "type": "string",
             "example": "America/New_York"
@@ -7497,6 +7505,8 @@
         },
         "required": [
           "granularity",
+          "from",
+          "to",
           "timezone",
           "points"
         ]

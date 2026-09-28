@@ -2230,6 +2230,10 @@ export interface components {
              * @enum {string}
              */
             granularity: "day" | "week" | "month";
+            /** @example 2026-09-01 */
+            from: string;
+            /** @example 2026-09-30 */
+            to: string;
             /** @example America/New_York */
             timezone: string;
             points: components["schemas"]["SalesTimeseriesPoint"][];

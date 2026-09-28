@@ -179,6 +179,8 @@ export class DashboardService {
 
     return {
       granularity,
+      from: range.from,
+      to: range.to,
       timezone,
       points: rows.map((row) => {
         // sums are bigint, which node-postgres returns as strings
