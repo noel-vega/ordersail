@@ -11,14 +11,10 @@ import {
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { OrdersService } from '../orders/orders.service';
 import { FulfillmentsService } from './fulfillments.service';
+import { SHIPPO } from './fulfillments.constants';
 
-// the Shippo client is a module-level singleton, so it is swapped out here
 const mockCreateShipment = jest.fn<Promise<unknown>, unknown[]>();
-jest.mock('./shippo.client', () => ({
-  shippo: {
-    shipments: { create: (...args: unknown[]) => mockCreateShipment(...args) },
-  },
-}));
+const shippo = { shipments: { create: mockCreateShipment } };
 
 const db = useTestDb();
 
@@ -27,6 +23,7 @@ async function build() {
     providers: [
       FulfillmentsService,
       { provide: DRIZZLE, useValue: db },
+      { provide: SHIPPO, useValue: shippo },
       {
         provide: OrdersService,
         useValue: {

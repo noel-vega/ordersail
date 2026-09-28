@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Shippo } from 'shippo';
 import { Logger } from 'logging';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { accountsTable } from 'db/identity';
@@ -24,7 +25,7 @@ import { OrderDetail } from '../orders/entities/order-detail.entity';
 import { ShippingRate } from './entities/shipping-rate.entity';
 import { GetFulfillmentRatesDto } from './dto/get-fulfillment-rates.dto';
 import { CreateFulfillmentDto } from './dto/create-fulfillment.dto';
-import { shippo } from './shippo.client';
+import { SHIPPO } from './fulfillments.constants';
 
 // same defaults used by storefront-api's checkout-time quoting and the old
 // orders.service.ts's getShippingRates — see that module's comment for why
@@ -39,6 +40,7 @@ export class FulfillmentsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private readonly ordersService: OrdersService,
+    @Inject(SHIPPO) private readonly shippo: Shippo,
   ) {}
 
   async getRates(
@@ -53,7 +55,7 @@ export class FulfillmentsService {
       .from(accountsTable)
       .where(eq(accountsTable.id, accountId));
 
-    const shipment = await shippo.shipments
+    const shipment = await this.shippo.shipments
       .create({
         addressFrom: {
           name: location.name,
@@ -121,7 +123,7 @@ export class FulfillmentsService {
     // the over-fulfillment race
     const fulfillmentId = await this.reserve(dto);
 
-    const transaction = await shippo.transactions
+    const transaction = await this.shippo.transactions
       .create({ rate: dto.rateObjectId, labelFileType: 'PDF', async: false })
       .catch((err: unknown) => {
         this.logger.error(
