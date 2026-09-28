@@ -13,7 +13,8 @@ export type ProductListItem = components["schemas"]["ProductListItem"];
 export type PaginatedProducts = components["schemas"]["PaginatedProducts"];
 export type ProductDetail = components["schemas"]["ProductDetail"];
 export type ProductDetailOption = components["schemas"]["ProductDetailOption"];
-export type ProductDetailVariant = components["schemas"]["ProductDetailVariant"];
+export type ProductDetailVariant =
+  components["schemas"]["ProductDetailVariant"];
 export type Category = components["schemas"]["Category"];
 export type PaginatedCategories = components["schemas"]["PaginatedCategories"];
 export type CategoryDetail = components["schemas"]["CategoryDetail"];
@@ -24,7 +25,8 @@ export type Cart = components["schemas"]["Cart"];
 export type CartItem = components["schemas"]["CartItem"];
 export type CheckoutSession = components["schemas"]["CheckoutSession"];
 export type CheckoutConfig = components["schemas"]["CheckoutConfig"];
-export type CheckoutSessionStatus = components["schemas"]["CheckoutSessionStatus"];
+export type CheckoutSessionStatus =
+  components["schemas"]["CheckoutSessionStatus"];
 export type Customer = components["schemas"]["Customer"];
 export type CustomerSignUpDto = components["schemas"]["CustomerSignUpDto"];
 export type CustomerSignInDto = components["schemas"]["CustomerSignInDto"];
@@ -68,6 +70,10 @@ export class StorefrontClient {
   refreshToken: string | undefined;
   client: Client<paths>;
   private onTokensChanged?: StorefrontClientOptions["onTokensChanged"];
+  private refreshInFlight: Promise<string | undefined> | undefined;
+  // bumped whenever the session is replaced (signUp/signIn/logout) — a
+  // refresh started under an older session discards its result on landing
+  private sessionGeneration = 0;
 
   products: ReturnType<typeof createProductsResource>;
   categories: ReturnType<typeof createCategoriesResource>;
@@ -127,6 +133,7 @@ export class StorefrontClient {
   async signUp(signup: CustomerSignUpDto) {
     const result = await this.client.POST("/auth/signup", { body: signup });
     const tokens = unwrap(result);
+    this.supersedeSession();
     this.accessToken = tokens.access_token;
     this.refreshToken = tokens.refresh_token;
     this.emitTokensChanged();
@@ -141,6 +148,7 @@ export class StorefrontClient {
       headers: this.cartToken ? { "x-cart-token": this.cartToken } : {},
     });
     const tokens = unwrap(result);
+    this.supersedeSession();
     this.accessToken = tokens.access_token;
     this.refreshToken = tokens.refresh_token;
     this.emitTokensChanged();
@@ -155,15 +163,37 @@ export class StorefrontClient {
   // the response's refresh_token replaces this.refreshToken, and the old
   // value must not be reused, so onTokensChanged is the only reliable way
   // to keep a persisted copy in sync.
-  async refreshAccessToken() {
+  //
+  // Single-flight (OS-690): concurrent callers share the one in-flight
+  // refresh instead of each redeeming the same single-use token — the
+  // second redemption would look like reuse and revoke the whole session.
+  // Cleared once it settles either way, so a failed refresh isn't handed
+  // out again to the next caller.
+  refreshAccessToken(): Promise<string | undefined> {
+    if (!this.refreshInFlight) {
+      const inFlight = this.redeemRefreshToken().finally(() => {
+        // a superseded refresh mustn't clear a newer session's one
+        if (this.refreshInFlight === inFlight) this.refreshInFlight = undefined;
+      });
+      this.refreshInFlight = inFlight;
+    }
+    return this.refreshInFlight;
+  }
+
+  private async redeemRefreshToken() {
     if (!this.refreshToken) {
       this.accessToken = undefined;
       this.emitTokensChanged();
       return undefined;
     }
+    const generation = this.sessionGeneration;
     const result = await this.client.POST("/auth/token/refresh", {
       body: { refresh_token: this.refreshToken },
     });
+    // logged out or signed in as someone else while this was in flight —
+    // applying it would resurrect (or overwrite) the session. Hand callers
+    // whatever the current session holds instead.
+    if (generation !== this.sessionGeneration) return this.accessToken;
     const tokens = unwrapOrUndefinedOn(result, 401);
     this.accessToken = tokens?.access_token;
     this.refreshToken = tokens?.refresh_token;
@@ -179,6 +209,7 @@ export class StorefrontClient {
   // state, since the local tokens are dropped either way.
   async logout(): Promise<void> {
     const refreshToken = this.refreshToken;
+    this.supersedeSession();
     this.accessToken = undefined;
     this.refreshToken = undefined;
     this.emitTokensChanged();
@@ -194,6 +225,14 @@ export class StorefrontClient {
     }
   }
 
+  // a new session (or none) replaces the current one — any refresh still in
+  // flight belongs to the old session, so later callers start fresh rather
+  // than joining it
+  private supersedeSession() {
+    this.sessionGeneration++;
+    this.refreshInFlight = undefined;
+  }
+
   private emitTokensChanged() {
     this.onTokensChanged?.({
       accessToken: this.accessToken,
@@ -205,9 +244,14 @@ export class StorefrontClient {
   private async do<T>(
     request: () => Promise<{ data?: T; error?: unknown; response: Response }>,
   ) {
+    const accessTokenSent = this.accessToken;
     const result = await request();
     if (result.response.status === 401) {
-      await this.refreshAccessToken();
+      // if another call already refreshed while this one was in flight, its
+      // 401 is stale — retry with the new token rather than rotating again
+      if (this.accessToken === accessTokenSent) {
+        await this.refreshAccessToken();
+      }
       return await request();
     }
     return result;
