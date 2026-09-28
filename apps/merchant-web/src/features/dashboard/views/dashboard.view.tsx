@@ -89,6 +89,7 @@ export function DashboardView() {
           preset={preset}
           from={sales?.range.from}
           to={sales?.range.to}
+          today={sales?.range.today}
           onPresetChange={(range) => navigate({ search: { range } })}
           onCustomChange={({ from, to }) => navigate({ search: { from, to } })}
         />

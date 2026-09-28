@@ -26,6 +26,9 @@ export function DateRangePicker(props: {
   // the preset's name until then
   from?: string
   to?: string
+  // today in the account's zone, from the API; days after it are disabled.
+  // Not the browser's today — the two differ when the zones do (OS-193)
+  today?: string
   onPresetChange: (preset: RangePreset) => void
   onCustomChange: (range: { from: string; to: string }) => void
 }) {
@@ -117,7 +120,9 @@ export function DateRangePicker(props: {
               selected={draft?.from ? { from: draft.from, to: draft.to } : undefined}
               onSelect={(range) => setDraft(range)}
               defaultMonth={draft?.to ?? draft?.from}
-              disabled={{ after: new Date() }}
+              disabled={{
+                after: props.today ? toLocalDate(props.today) : new Date(),
+              }}
               numberOfMonths={1}
             />
             <div className="flex items-center justify-between gap-2 border-t p-2">

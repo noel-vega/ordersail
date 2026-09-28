@@ -3755,7 +3755,7 @@
             "name": "to",
             "required": false,
             "in": "query",
-            "description": "last day (YYYY-MM-DD); default: today in the account's zone",
+            "description": "last day (YYYY-MM-DD), no later than today in the account's zone; default: today",
             "schema": {
               "example": "2026-09-30",
               "type": "string"
@@ -7303,6 +7303,11 @@
             "type": "string",
             "example": "2026-09-30"
           },
+          "today": {
+            "type": "string",
+            "example": "2026-09-30",
+            "description": "today in `timezone` — the latest `to` the API accepts"
+          },
           "previousFrom": {
             "type": "string",
             "example": "2026-08-02"
@@ -7319,6 +7324,7 @@
         "required": [
           "from",
           "to",
+          "today",
           "previousFrom",
           "previousTo",
           "timezone"

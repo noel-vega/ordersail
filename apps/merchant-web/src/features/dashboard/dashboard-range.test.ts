@@ -36,19 +36,6 @@ describe("toApiRange", () => {
     )
   })
 
-  it.each([
-    [{ from: "2026-09-01" }],
-    [{ from: "2026-09-15", to: "2026-09-01" }],
-    [{ from: "2024-09-27", to: "2026-09-28" }], // 732 days
-  ])("an incomplete / reversed / too-long custom range falls back: %p", (s) => {
-    expect(toApiRange(s)).toEqual({ params: { range: "30d" }, preset: "30d" })
-  })
-
-  it("allows exactly the API's 731-day maximum", () => {
-    expect(toApiRange({ from: "2024-09-28", to: "2026-09-28" }).preset).toBe(
-      "custom",
-    )
-  })
 })
 
 describe("dashboardSearchSchema", () => {
@@ -60,6 +47,26 @@ describe("dashboardSearchSchema", () => {
         to: "yesterday",
       }),
     ).toEqual({ range: undefined, from: undefined, to: undefined })
+  })
+
+  it.each([
+    [{ range: "7d", from: "2026-09-01" }],
+    [{ range: "7d", to: "2026-09-01" }],
+    [{ range: "7d", from: "2026-09-15", to: "2026-09-01" }],
+    [{ range: "7d", from: "2024-09-27", to: "2026-09-28" }], // 732 days
+  ])("drops an incomplete / reversed / too-long custom range: %p", (s) => {
+    const search = dashboardSearchSchema.parse(s)
+    expect(search).toEqual({ range: "7d", from: undefined, to: undefined })
+    expect(toApiRange(search)).toEqual({
+      params: { range: "7d" },
+      preset: "7d",
+    })
+  })
+
+  it("keeps exactly the API's 731-day maximum", () => {
+    expect(
+      dashboardSearchSchema.parse({ from: "2024-09-28", to: "2026-09-28" }),
+    ).toMatchObject({ from: "2024-09-28", to: "2026-09-28" })
   })
 })
 
@@ -94,6 +101,13 @@ describe("percentChange", () => {
     expect(percentChange(50, 100)).toBe(-0.5)
     expect(percentChange(100, 100)).toBe(0)
     expect(percentChange(100, 0)).toBeNull()
+  })
+
+  it("rounds to the displayed 0.1%, so a sliver of change is flat", () => {
+    expect(percentChange(100_040, 100_000)).toBe(0)
+    expect(percentChange(99_960, 100_000)).toBe(0) // 0, not -0
+    expect(percentChange(100_060, 100_000)).toBe(0.001)
+    expect(percentChange(1, 3)).toBe(-0.667)
   })
 
   it("measures against the magnitude of a negative previous (refund-heavy)", () => {

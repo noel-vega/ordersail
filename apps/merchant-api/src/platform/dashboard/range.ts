@@ -8,6 +8,9 @@ import { BadRequestException } from '@nestjs/common';
 export interface ReportingRange {
   from: string;
   to: string;
+  // today in the account's zone — the latest `to` allowed; the client caps
+  // its calendar here, since it can't know the account's "today" itself
+  today: string;
   // the equal-length window immediately before, for period comparison
   previousFrom: string;
   previousTo: string;
@@ -72,7 +75,13 @@ export function resolveRange(input: {
   timezone: string;
   now: Date;
 }): ReportingRange {
-  const to = parseDate(input.to ?? todayIn(input.timezone, input.now), 'to');
+  const today = todayIn(input.timezone, input.now);
+  const to = parseDate(input.to ?? today, 'to');
+  // a day that hasn't started in the account's zone would pad the window
+  // with empty days and shift the comparison period
+  if (to > parseDate(today, 'today')) {
+    throw new BadRequestException('to cannot be after today');
+  }
   const days = input.range ? PRESET_DAYS[input.range] : DEFAULT_RANGE_DAYS;
   const from =
     input.from !== undefined
@@ -93,6 +102,7 @@ export function resolveRange(input: {
   return {
     from: formatDate(from),
     to: formatDate(to),
+    today,
     previousFrom: formatDate(previousTo - (span - 1) * DAY_MS),
     previousTo: formatDate(previousTo),
   };

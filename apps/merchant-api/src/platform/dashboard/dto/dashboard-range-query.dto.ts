@@ -18,7 +18,8 @@ export class DashboardRangeQueryDto {
   @ApiProperty({
     required: false,
     example: '2026-09-30',
-    description: "last day (YYYY-MM-DD); default: today in the account's zone",
+    description:
+      "last day (YYYY-MM-DD), no later than today in the account's zone; default: today",
   })
   @IsOptional()
   @IsString()

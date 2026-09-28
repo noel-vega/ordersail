@@ -25,6 +25,14 @@ async function build() {
 
 const at = (iso: string) => new Date(iso);
 
+// pinned so the fixed test dates are never "after today" (OS-193)
+const NOW = new Date('2027-01-01T12:00:00Z');
+const getSales = (
+  service: DashboardService,
+  accountId: number,
+  query: Parameters<DashboardService['getSales']>[1],
+) => service.getSales(accountId, query, NOW);
+
 // a paid order with its tender, and optionally a refund row dated `refundAt`
 async function sale(
   accountId: number,
@@ -78,11 +86,12 @@ describe('DashboardService.getSales (OS-669)', () => {
     const service = await build();
 
     await expect(
-      service.getSales(account.id, { from: '2026-09-01', to: '2026-09-30' }),
+      getSales(service, account.id, { from: '2026-09-01', to: '2026-09-30' }),
     ).resolves.toEqual({
       range: {
         from: '2026-09-01',
         to: '2026-09-30',
+        today: '2027-01-01',
         previousFrom: '2026-08-02',
         previousTo: '2026-08-31',
         timezone: 'UTC',
@@ -109,7 +118,7 @@ describe('DashboardService.getSales (OS-669)', () => {
     });
     const service = await build();
 
-    const { current } = await service.getSales(account.id, {
+    const { current } = await getSales(service, account.id, {
       from: '2026-09-01',
       to: '2026-09-30',
     });
@@ -150,7 +159,7 @@ describe('DashboardService.getSales (OS-669)', () => {
     });
     const service = await build();
 
-    const { current } = await service.getSales(account.id, {
+    const { current } = await getSales(service, account.id, {
       from: '2026-09-01',
       to: '2026-09-30',
     });
@@ -172,7 +181,7 @@ describe('DashboardService.getSales (OS-669)', () => {
     });
     const service = await build();
 
-    const { current, previous } = await service.getSales(account.id, {
+    const { current, previous } = await getSales(service, account.id, {
       from: '2026-09-01',
       to: '2026-09-30',
     });
@@ -199,7 +208,7 @@ describe('DashboardService.getSales (OS-669)', () => {
     await sale(account.id, { cents: 400, placedAt: '2026-09-01T03:30:00Z' });
     const service = await build();
 
-    const sales = await service.getSales(account.id, {
+    const sales = await getSales(service, account.id, {
       from: '2026-09-01',
       to: '2026-09-30',
     });
@@ -221,7 +230,7 @@ describe('DashboardService.getSales (OS-669)', () => {
     await sale(account.id, { cents: 1000, placedAt: '2026-11-01T03:30:00Z' });
     const service = await build();
 
-    const { current, previous } = await service.getSales(account.id, {
+    const { current, previous } = await getSales(service, account.id, {
       from: '2026-11-01',
       to: '2026-11-01',
     });
@@ -236,7 +245,7 @@ describe('DashboardService.getSales (OS-669)', () => {
     await sale(account.id, { cents: 400, placedAt: '2026-08-24T23:59:00Z' }); // neither
     const service = await build();
 
-    const sales = await service.getSales(account.id, {
+    const sales = await getSales(service, account.id, {
       from: '2026-09-07',
       to: '2026-09-07',
     });
@@ -245,7 +254,7 @@ describe('DashboardService.getSales (OS-669)', () => {
       previousTo: '2026-09-06',
     });
 
-    const week = await service.getSales(account.id, {
+    const week = await getSales(service, account.id, {
       from: '2026-09-01',
       to: '2026-09-07',
     });
@@ -263,7 +272,7 @@ describe('DashboardService.getSales (OS-669)', () => {
     await sale(other.id, { cents: 999, placedAt: '2026-09-02T12:00:00Z' });
     const service = await build();
 
-    const { current } = await service.getSales(account.id, {
+    const { current } = await getSales(service, account.id, {
       from: '2026-09-01',
       to: '2026-09-30',
     });
@@ -275,7 +284,7 @@ describe('DashboardService.getSales (OS-669)', () => {
     const service = await build();
 
     await expect(
-      service.getSales(account.id, { from: '2026-09-30', to: '2026-09-01' }),
+      getSales(service, account.id, { from: '2026-09-30', to: '2026-09-01' }),
     ).rejects.toThrow(BadRequestException);
   });
 });

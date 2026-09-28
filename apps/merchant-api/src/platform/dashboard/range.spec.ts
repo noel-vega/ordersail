@@ -17,6 +17,7 @@ describe('resolveRange (OS-669)', () => {
     expect(resolveRange({ timezone: 'America/New_York', now })).toEqual({
       from: '2026-08-29',
       to: '2026-09-27',
+      today: '2026-09-27',
       previousFrom: '2026-07-30',
       previousTo: '2026-08-28',
     });
@@ -33,6 +34,7 @@ describe('resolveRange (OS-669)', () => {
     ).toEqual({
       from: '2026-09-01',
       to: '2026-09-07',
+      today: '2026-09-28',
       previousFrom: '2026-08-25',
       previousTo: '2026-08-31',
     });
@@ -56,7 +58,7 @@ describe('resolveRange (OS-669)', () => {
         from: '2026-10-29',
         to: '2026-11-04',
         timezone: 'America/New_York',
-        now,
+        now: new Date('2026-12-01T12:00:00Z'),
       }),
     ).toMatchObject({ previousFrom: '2026-10-22', previousTo: '2026-10-28' });
   });
@@ -117,7 +119,13 @@ describe('resolveRange presets (OS-193)', () => {
     (range, from, previousFrom, previousTo) => {
       expect(
         resolveRange({ range, timezone: 'America/New_York', now }),
-      ).toEqual({ from, to: '2026-09-27', previousFrom, previousTo });
+      ).toEqual({
+        from,
+        to: '2026-09-27',
+        today: '2026-09-27',
+        previousFrom,
+        previousTo,
+      });
     },
   );
 
@@ -137,5 +145,25 @@ describe('resolveRange presets (OS-193)', () => {
     expect(
       resolveRange({ range: '7d', to: '2026-06-30', timezone: 'UTC', now }),
     ).toMatchObject({ from: '2026-06-24', to: '2026-06-30' });
+  });
+});
+
+describe('resolveRange future dates (OS-193)', () => {
+  it('accepts today in the account zone, rejects the day after', () => {
+    // the 28th has begun in UTC but not in New York
+    expect(() =>
+      resolveRange({ to: '2026-09-28', timezone: 'UTC', now }),
+    ).not.toThrow();
+    expect(() =>
+      resolveRange({ to: '2026-09-28', timezone: 'America/New_York', now }),
+    ).toThrow(/after today/);
+    expect(() =>
+      resolveRange({
+        from: '2026-09-01',
+        to: '2026-09-29',
+        timezone: 'UTC',
+        now,
+      }),
+    ).toThrow(BadRequestException);
   });
 });

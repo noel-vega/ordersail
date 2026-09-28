@@ -40,33 +40,41 @@ const isoDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine((value) => !Number.isNaN(parseDate(value)))
 
-export const dashboardSearchSchema = z.object({
-  range: z.enum(RANGE_PRESETS).optional().catch(undefined),
-  from: isoDate.optional().catch(undefined),
-  to: isoDate.optional().catch(undefined),
-})
-export type DashboardSearch = z.infer<typeof dashboardSearchSchema>
-
 // inclusive day count, 0 or less when reversed
 export function rangeDays(from: string, to: string): number {
   return (parseDate(to) - parseDate(from)) / DAY_MS + 1
 }
 
-// The API params for what the URL asks for, and which preset (or "custom")
-// the picker should show as selected. A custom span only counts when it's
-// complete and valid — otherwise fall back to the preset rather than let the
-// API 400 the whole dashboard over a hand-edited URL.
+// from/to only when they form a valid custom span (see below)
+export type DashboardSearch = { range?: RangePreset; from?: string; to?: string }
+
+// A custom span only survives when it's complete and valid; otherwise both
+// ends are dropped here, in validation, so the URL is cleaned the same way as
+// junk values and the dashboard falls back to the preset rather than let the
+// API 400 over a hand-edited URL. (A `to` after the account's today can't be
+// caught here — only the API knows that date.)
+export const dashboardSearchSchema = z
+  .object({
+    range: z.enum(RANGE_PRESETS).optional().catch(undefined),
+    from: isoDate.optional().catch(undefined),
+    to: isoDate.optional().catch(undefined),
+  })
+  .transform(({ range, from, to }): DashboardSearch => {
+    if (from && to) {
+      const days = rangeDays(from, to)
+      if (days >= 1 && days <= MAX_RANGE_DAYS) return { range, from, to }
+    }
+    return { range, from: undefined, to: undefined }
+  })
+
+// The API params for what the (validated) URL asks for, and which preset (or
+// "custom") the picker should show as selected
 export function toApiRange(search: DashboardSearch): {
   params: DashboardRangeParams
   preset: RangePreset | "custom"
 } {
   const { from, to } = search
-  if (from && to) {
-    const days = rangeDays(from, to)
-    if (days >= 1 && days <= MAX_RANGE_DAYS) {
-      return { params: { from, to }, preset: "custom" }
-    }
-  }
+  if (from && to) return { params: { from, to }, preset: "custom" }
   const preset = search.range ?? DEFAULT_PRESET
   return { params: { range: preset }, preset }
 }
@@ -97,9 +105,13 @@ export function formatRangeLabel(from: string, to: string): string {
   return `${format(a, "MMM d")} – ${format(b, "MMM d, yyyy")}`
 }
 
-// change vs the previous period as a fraction (0.25 = +25%); null when
-// there's nothing to compare against (previous 0) — a % of zero is undefined
+// change vs the previous period as a fraction (0.25 = +25%), rounded to the
+// 0.1% the cards display so a +0.04% reads as flat, not a green "+0%"; null
+// when there's nothing to compare against (previous 0) — a % of zero is
+// undefined
 export function percentChange(current: number, previous: number): number | null {
   if (previous === 0) return null
-  return (current - previous) / Math.abs(previous)
+  const change = (current - previous) / Math.abs(previous)
+  // `|| 0` turns a rounded -0 into 0, so it never renders as "-0%"
+  return Math.round(change * 1000) / 1000 || 0
 }
