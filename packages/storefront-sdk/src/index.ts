@@ -68,6 +68,7 @@ export class StorefrontClient {
   refreshToken: string | undefined;
   client: Client<paths>;
   private onTokensChanged?: StorefrontClientOptions["onTokensChanged"];
+  private refreshInFlight: Promise<string | undefined> | undefined;
 
   products: ReturnType<typeof createProductsResource>;
   categories: ReturnType<typeof createCategoriesResource>;
@@ -155,7 +156,20 @@ export class StorefrontClient {
   // the response's refresh_token replaces this.refreshToken, and the old
   // value must not be reused, so onTokensChanged is the only reliable way
   // to keep a persisted copy in sync.
-  async refreshAccessToken() {
+  //
+  // Single-flight (OS-690): concurrent callers share the one in-flight
+  // refresh instead of each redeeming the same single-use token — the
+  // second redemption would look like reuse and revoke the whole session.
+  // Cleared once it settles either way, so a failed refresh isn't handed
+  // out again to the next caller.
+  refreshAccessToken(): Promise<string | undefined> {
+    this.refreshInFlight ??= this.redeemRefreshToken().finally(() => {
+      this.refreshInFlight = undefined;
+    });
+    return this.refreshInFlight;
+  }
+
+  private async redeemRefreshToken() {
     if (!this.refreshToken) {
       this.accessToken = undefined;
       this.emitTokensChanged();
@@ -205,9 +219,14 @@ export class StorefrontClient {
   private async do<T>(
     request: () => Promise<{ data?: T; error?: unknown; response: Response }>,
   ) {
+    const accessTokenSent = this.accessToken;
     const result = await request();
     if (result.response.status === 401) {
-      await this.refreshAccessToken();
+      // if another call already refreshed while this one was in flight, its
+      // 401 is stale — retry with the new token rather than rotating again
+      if (this.accessToken === accessTokenSent) {
+        await this.refreshAccessToken();
+      }
       return await request();
     }
     return result;

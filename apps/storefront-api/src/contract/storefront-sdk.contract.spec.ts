@@ -277,6 +277,195 @@ describe('storefront-sdk contract', () => {
     await expect(client.refreshAccessToken()).resolves.toBeUndefined();
   }, 30000);
 
+  // OS-690: a client restored from a stored refresh token has no access
+  // token, so its first authenticated calls all 401 at once. Each used to
+  // refresh on its own with the same single-use token — the second
+  // redemption looks like reuse (above) and signs the customer out.
+  describe('concurrent refresh (single-flight)', () => {
+    let fetchSpy: jest.SpiedFunction<typeof fetch> | undefined;
+
+    afterEach(() => {
+      fetchSpy?.mockRestore();
+      fetchSpy = undefined;
+    });
+
+    // Wraps the real fetch so a test can count — and perturb — what the SDK
+    // actually sends. openapi-fetch captures globalThis.fetch when the
+    // client is constructed, so call this before `new StorefrontClient()`.
+    function spyOnFetch(
+      intercept?: (
+        path: string,
+        send: () => Promise<Response>,
+      ) => Promise<Response>,
+    ) {
+      const realFetch = globalThis.fetch;
+      const paths: string[] = [];
+      fetchSpy = jest
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation((input, init) => {
+          const url = input instanceof Request ? input.url : input.toString();
+          const path = new URL(url).pathname;
+          paths.push(path);
+          const send = () => realFetch(input, init);
+          return intercept ? intercept(path, send) : send();
+        });
+      return {
+        refreshCount: () =>
+          paths.filter((path) => path === '/auth/token/refresh').length,
+      };
+    }
+
+    async function waitFor(condition: () => boolean, timeoutMs = 5000) {
+      const deadline = Date.now() + timeoutMs;
+      while (!condition()) {
+        if (Date.now() > deadline) throw new Error('waitFor timed out');
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    }
+
+    // a live session's refresh token, as a storefront would restore it from
+    // storage on page load
+    async function restoredSession(label: string) {
+      const account = await insertAccount(db);
+      const apiKey = await insertApiKey(db, { accountId: account.id });
+      const signedIn = new StorefrontClient(baseUrl, apiKey.key);
+      const email = `${label}-${account.id}@buyer.test`;
+      await signedIn.signUp({
+        firstName: 'Concurrent',
+        lastName: 'Tester',
+        email,
+        password: 'a-real-password-123',
+      });
+      return { appKey: apiKey.key, refreshToken: signedIn.refreshToken, email };
+    }
+
+    it('concurrent 401s share one refresh and the session survives', async () => {
+      const session = await restoredSession('concurrent');
+      const fetches = spyOnFetch();
+      const client = new StorefrontClient(
+        baseUrl,
+        session.appKey,
+        undefined,
+        session.refreshToken,
+      );
+
+      const [customer, orders, sameOrders] = await Promise.all([
+        client.customer.get(),
+        client.customer.orders.list(),
+        client.customer.orders.list(),
+      ]);
+
+      expect(customer?.email).toBe(session.email);
+      expect(orders.total).toBe(0);
+      expect(sameOrders.total).toBe(0);
+      expect(fetches.refreshCount()).toBe(1);
+      // a reuse-revoked family would make this undefined
+      await expect(client.refreshAccessToken()).resolves.toEqual(
+        expect.any(String),
+      );
+    }, 30000);
+
+    it('a 401 that lands after the refresh retries with the new token instead of rotating again', async () => {
+      const session = await restoredSession('late');
+      let heldOnce = false;
+      const fetches = spyOnFetch(async (path, send) => {
+        const response = await send();
+        // hold customer.get()'s 401 until the other call's refresh has
+        // fully landed on the client
+        if (path === '/customer' && !heldOnce) {
+          heldOnce = true;
+          await waitFor(() => client.accessToken !== undefined);
+        }
+        return response;
+      });
+      // only read by the interceptor once requests start, after this runs
+      const client = new StorefrontClient(
+        baseUrl,
+        session.appKey,
+        undefined,
+        session.refreshToken,
+      );
+
+      const [customer, orders] = await Promise.all([
+        client.customer.get(),
+        client.customer.orders.list(),
+      ]);
+
+      expect(customer?.email).toBe(session.email);
+      expect(orders.total).toBe(0);
+      expect(fetches.refreshCount()).toBe(1);
+    }, 30000);
+
+    it('a failed refresh rejects every waiting caller, and the next call refreshes again', async () => {
+      const session = await restoredSession('flaky');
+      let failNextRefresh = true;
+      let unauthorized = 0;
+      const fetches = spyOnFetch(async (path, send) => {
+        if (path === '/auth/token/refresh' && failNextRefresh) {
+          failNextRefresh = false;
+          // fail only once all three callers' 401s are back, so all three
+          // are waiting on this one refresh rather than starting their own
+          await waitFor(() => unauthorized >= 3);
+          throw new TypeError('fetch failed');
+        }
+        const response = await send();
+        if (response.status === 401) unauthorized++;
+        return response;
+      });
+      const client = new StorefrontClient(
+        baseUrl,
+        session.appKey,
+        undefined,
+        session.refreshToken,
+      );
+
+      const results = await Promise.allSettled([
+        client.customer.get(),
+        client.customer.orders.list(),
+        client.customer.orders.list(),
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual([
+        'rejected',
+        'rejected',
+        'rejected',
+      ]);
+      expect(fetches.refreshCount()).toBe(1);
+
+      // the failed attempt never reached the server, so the token is still
+      // good — and the rejected refresh mustn't be handed out again
+      await expect(client.customer.get()).resolves.toMatchObject({
+        email: session.email,
+      });
+      expect(fetches.refreshCount()).toBe(2);
+    }, 30000);
+
+    it('an invalid refresh token is refreshed once and every caller sees signed-out', async () => {
+      const account = await insertAccount(db);
+      const apiKey = await insertApiKey(db, { accountId: account.id });
+      const fetches = spyOnFetch();
+      const client = new StorefrontClient(
+        baseUrl,
+        apiKey.key,
+        undefined,
+        'not-a-real-refresh-token',
+      );
+
+      const [customer, orders] = await Promise.allSettled([
+        client.customer.get(),
+        client.customer.orders.list(),
+      ]);
+
+      expect(customer).toEqual({ status: 'fulfilled', value: undefined });
+      expect(orders).toMatchObject({
+        status: 'rejected',
+        reason: { status: 401 },
+      });
+      expect(fetches.refreshCount()).toBe(1);
+      expect(client.refreshToken).toBeUndefined();
+    }, 30000);
+  });
+
   // OS-458: logout must actually revoke server-side, not just forget the
   // tokens locally — verified by having a second client try to use the same
   // refresh token afterward

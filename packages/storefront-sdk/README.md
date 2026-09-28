@@ -129,6 +129,15 @@ const storefront = new StorefrontClient(
 await storefront.refreshAccessToken();
 ```
 
+**Use one client per signed-in session.** A client restored from a refresh
+token has no access token yet, so its first authenticated calls refresh
+first. Calls on the _same_ client share that one refresh, so
+`Promise.all([...])` is safe. Two _separate_ `StorefrontClient` instances
+restored from the same stored token can't see each other's refresh, though:
+each redeems the token, and the second redemption revokes the session. Create
+one client for the session and share it (in the browser, a module-level
+instance works) rather than one per component or request.
+
 Neither token is persisted by the SDK itself: a storefront can be hosted on
 any merchant-owned domain, and a cookie set by `storefront-api` never rides
 along on a genuinely cross-site request, so there's no cookie to rely on —
