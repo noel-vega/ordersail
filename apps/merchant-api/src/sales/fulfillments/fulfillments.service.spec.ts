@@ -8,13 +8,18 @@ import {
   insertOrderShipping,
   useTestDb,
 } from 'test-support';
+import { fulfillmentsTable } from 'db/sales';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { OrdersService } from '../orders/orders.service';
 import { FulfillmentsService } from './fulfillments.service';
 import { SHIPPO } from './fulfillments.constants';
 
 const mockCreateShipment = jest.fn<Promise<unknown>, unknown[]>();
-const shippo = { shipments: { create: mockCreateShipment } };
+const mockCreateTransaction = jest.fn<Promise<unknown>, unknown[]>();
+const shippo = {
+  shipments: { create: mockCreateShipment },
+  transactions: { create: mockCreateTransaction },
+};
 
 const db = useTestDb();
 
@@ -55,7 +60,10 @@ async function seedOrder(opts: { phone: string | null }) {
   };
 }
 
-beforeEach(() => mockCreateShipment.mockReset());
+beforeEach(() => {
+  mockCreateShipment.mockReset();
+  mockCreateTransaction.mockReset();
+});
 
 // USPS won't quote a label without a contact phone at the origin, and that
 // phone now belongs to the ship-from location, not the account (OS-688)
@@ -67,7 +75,7 @@ describe('FulfillmentsService.getRates — ship-from phone (OS-688)', () => {
     const attempt = service.getRates(dto, accountId);
     await expect(attempt).rejects.toThrow(BadRequestException);
     await expect(attempt).rejects.toThrow(
-      'Add a phone number to Hoboken Warehouse before buying a label',
+      'Add a phone number to Hoboken Warehouse before shipping from it',
     );
     expect(mockCreateShipment).not.toHaveBeenCalled();
   });
@@ -97,5 +105,30 @@ describe('FulfillmentsService.getRates — ship-from phone (OS-688)', () => {
       name: 'Hoboken Warehouse',
       phone: '+12015550123',
     });
+  });
+});
+
+// create() goes through the same ship-from check as getRates — it must
+// refuse before reserving quantities or buying anything
+describe('FulfillmentsService.create — ship-from phone (OS-688)', () => {
+  it('refuses a location with no phone before reserving or buying a label', async () => {
+    const { accountId, dto } = await seedOrder({ phone: null });
+    const service = await build();
+
+    const attempt = service.create(
+      {
+        ...dto,
+        rateObjectId: 'rate_1',
+        provider: 'USPS',
+        servicelevel: 'Ground Advantage',
+        amountCents: 510,
+      },
+      accountId,
+    );
+    await expect(attempt).rejects.toThrow(
+      'Add a phone number to Hoboken Warehouse before shipping from it',
+    );
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    await expect(db.select().from(fulfillmentsTable)).resolves.toHaveLength(0);
   });
 });

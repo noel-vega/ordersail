@@ -1852,6 +1852,14 @@ export interface components {
             offset: number;
         };
         CreateLocationDto: {
+            addressLine1?: string | null;
+            addressLine2?: string | null;
+            addressCity?: string | null;
+            addressState?: string | null;
+            addressPostalCode?: string | null;
+            addressCountry?: string | null;
+            /** @example +12015550123 */
+            phone?: string | null;
             name: string;
         };
         Location: {

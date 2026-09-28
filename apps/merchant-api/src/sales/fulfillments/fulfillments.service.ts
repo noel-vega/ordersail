@@ -26,6 +26,7 @@ import { ShippingRate } from './entities/shipping-rate.entity';
 import { GetFulfillmentRatesDto } from './dto/get-fulfillment-rates.dto';
 import { CreateFulfillmentDto } from './dto/create-fulfillment.dto';
 import { SHIPPO } from './fulfillments.constants';
+import { toShipFrom } from './ship-from';
 
 // same defaults used by storefront-api's checkout-time quoting and the old
 // orders.service.ts's getShippingRates — see that module's comment for why
@@ -59,7 +60,7 @@ export class FulfillmentsService {
       .create({
         addressFrom: {
           name: location.name,
-          street1: location.addressLine1!,
+          street1: location.addressLine1,
           street2: location.addressLine2 ?? undefined,
           city: location.addressCity ?? undefined,
           state: location.addressState ?? undefined,
@@ -275,7 +276,7 @@ export class FulfillmentsService {
       );
     }
 
-    const [location] = await this.db
+    const [row] = await this.db
       .select()
       .from(locationsTable)
       .where(
@@ -284,18 +285,7 @@ export class FulfillmentsService {
           eq(locationsTable.accountId, accountId),
         ),
       );
-    if (!location?.addressLine1) {
-      throw new BadRequestException(
-        'That location has no shipping address on file',
-      );
-    }
-    // checked here rather than left to Shippo, whose rejection (USPS won't
-    // quote without an origin phone) comes back as an opaque rate failure
-    if (!location.phone) {
-      throw new BadRequestException(
-        `Add a phone number to ${location.name} before buying a label`,
-      );
-    }
+    const location = toShipFrom(row);
 
     const requestedIds = dto.items.map((i) => i.orderItemId);
     const items = await this.db
@@ -340,8 +330,7 @@ export class FulfillmentsService {
     return {
       order,
       shipping,
-      // re-spread so the phone check above carries into the type
-      location: { ...location, phone: location.phone },
+      location,
       totalWeightOz,
     };
   }

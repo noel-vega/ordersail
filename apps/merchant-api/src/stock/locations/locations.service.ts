@@ -25,7 +25,7 @@ export class LocationsService {
   async create(createLocationDto: CreateLocationDto, accountId: number) {
     const [location] = await this.db
       .insert(locationsTable)
-      .values({ name: createLocationDto.name, accountId })
+      .values({ ...createLocationDto, accountId })
       .returning();
     return location;
   }
