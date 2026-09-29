@@ -19,6 +19,8 @@ export function getVariantColumns(options: {
   // false while the account has no location to hold stock (OS-689) — the
   // action then leads to creating one instead
   canAdjustStock: boolean;
+  // inventory:write — without it the action isn't offered at all (OS-672)
+  showAdjustStock: boolean;
 }): ColumnDef<ProductVariant>[] {
   return [
     {
@@ -77,12 +79,14 @@ export function getVariantColumns(options: {
             <DropdownMenuItem onClick={() => options.onEdit(row.original)}>
               <PencilIcon /> Edit variant
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => options.onAdjustStock(row.original)}>
-              <PackageIcon />{" "}
-              {options.canAdjustStock
-                ? "Adjust stock"
-                : "Add a location to adjust stock"}
-            </DropdownMenuItem>
+            {options.showAdjustStock && (
+              <DropdownMenuItem onClick={() => options.onAdjustStock(row.original)}>
+                <PackageIcon />{" "}
+                {options.canAdjustStock
+                  ? "Adjust stock"
+                  : "Add a location to adjust stock"}
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       ),

@@ -9,6 +9,7 @@ import type { InventoryMovementRecord } from "merchant-sdk"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { PAGE_SIZE, pageOffset, listSearchSchema } from "../../lib/list-search"
+import { usePermissions } from "../auth/permission-context"
 
 export const MOVEMENT_REASONS: InventoryMovementRecord["reason"][] = [
   "received",
@@ -76,8 +77,17 @@ export function getProductInventoryQueryOptions(productId: number) {
   })
 }
 
+// Read on the product page, which only needs products:read — so, like the
+// locations picker (OS-177), it's skipped without inventory:read rather than
+// letting a 403 throw the whole page to the error boundary (OS-672). `data`
+// is undefined then; callers treat that as "no inventory to show".
 export function useProductInventoryQuery(productId: number) {
-  return useQuery(getProductInventoryQueryOptions(productId))
+  const canReadInventory = usePermissions().has("inventory:read")
+  return useQuery({
+    ...getProductInventoryQueryOptions(productId),
+    enabled: canReadInventory,
+    throwOnError: false,
+  })
 }
 
 export function useCreateInventoryMovementMutation() {

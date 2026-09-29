@@ -5,6 +5,7 @@ import { DataTable } from "../../../components/data-table";
 import { Button } from "ui/button";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
 import { StockLevel } from "../../inventory/components/stock-level";
+import { usePermissions } from "../../auth/permission-context";
 
 function getColumns(lowStockThreshold: number): ColumnDef<InventoryRecord>[] {
   return [
@@ -34,6 +35,8 @@ export function ProductInventoryTab(props: {
   const [adjustingRecord, setAdjustingRecord] = useState<InventoryRecord | null>(
     null,
   );
+  // the tab needs inventory:read; adjusting is inventory:write (OS-672)
+  const canWriteInventory = usePermissions().has("inventory:write");
 
   const actionColumn: ColumnDef<InventoryRecord> = {
     id: "actions",
@@ -52,7 +55,10 @@ export function ProductInventoryTab(props: {
   return (
     <div className="space-y-4">
       <DataTable
-        columns={[...getColumns(props.lowStockThreshold), actionColumn]}
+        columns={[
+          ...getColumns(props.lowStockThreshold),
+          ...(canWriteInventory ? [actionColumn] : []),
+        ]}
         data={props.records}
       />
 

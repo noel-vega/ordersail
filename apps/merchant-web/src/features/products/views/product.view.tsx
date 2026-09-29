@@ -187,7 +187,9 @@ export function ProductView({ id }: { id: number }) {
           <TabsTrigger value="variants" className="px-4">
             Variants & Pricing
           </TabsTrigger>
-          <TabsTrigger value="inventory" className="px-4">Inventory</TabsTrigger>
+          <Can permission="inventory:read">
+            <TabsTrigger value="inventory" className="px-4">Inventory</TabsTrigger>
+          </Can>
           <TabsTrigger value="images" className="px-4">Images</TabsTrigger>
         </TabsList>
         <Separator className="mt-0" />
@@ -290,12 +292,14 @@ export function ProductView({ id }: { id: number }) {
           <VariantSection productId={id} productName={data.name} />
         </TabsContent>
 
-        <TabsContent value="inventory" className="pt-6">
-          <ProductInventoryTab
-            records={productInventory}
-            lowStockThreshold={inventory?.lowStockThreshold ?? 0}
-          />
-        </TabsContent>
+        <Can permission="inventory:read">
+          <TabsContent value="inventory" className="pt-6">
+            <ProductInventoryTab
+              records={productInventory}
+              lowStockThreshold={inventory?.lowStockThreshold ?? 0}
+            />
+          </TabsContent>
+        </Can>
 
         <TabsContent value="images" className="pt-6">
           <ProductImagesTab productId={id} images={data.images} />
