@@ -111,7 +111,7 @@ export type ConfigureLoggingOptions = {
 // Deliberately absent: `to` (also means a status transition target),
 // `code` (Stripe/Node error codes), `address`/`name` (too generic). Call
 // sites that would put PII under those keys are fixed instead.
-const SENSITIVE_KEYS = [
+export const SENSITIVE_KEYS = [
   'password',
   'newPassword',
   'currentPassword',
@@ -454,6 +454,54 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
 // errors — one exception filter for HTTP, one crash path for the process
 // ---------------------------------------------------------------------------
 
+// What the error sites below tell an error tracker alongside the error itself.
+export type ErrorReport = {
+  // the event the error was logged under, e.g. 'http.unhandled_error'
+  event: string;
+  // the process is about to exit
+  fatal: boolean;
+  route?: string | null;
+  status?: number;
+};
+
+// An error tracker (Sentry, via packages/observability) plugs in here instead of
+// being imported: this package stays free of any vendor SDK, and the exception
+// filter + crash path below stay the only places unhandled errors are seen.
+// capture() runs inside the failing request's / job's log context.
+export type ErrorReporter = {
+  capture(err: unknown, report: ErrorReport): void;
+  // resolves once reports queued so far are sent, or after timeoutMs
+  flush(timeoutMs: number): Promise<unknown>;
+};
+
+let errorReporter: ErrorReporter | undefined;
+
+export function setErrorReporter(reporter: ErrorReporter | undefined): void {
+  errorReporter = reporter;
+}
+
+// A broken reporter must never turn into a second failure: the 500 still goes
+// out and the process still exits.
+function reportError(err: unknown, report: ErrorReport): void {
+  if (!errorReporter) return;
+  try {
+    errorReporter.capture(err, report);
+  } catch (reporterErr) {
+    new Logger('ErrorReporter').warn(
+      { err: reporterErr, event: 'error_reporter.capture_failed' },
+      'Error reporter threw',
+    );
+  }
+}
+
+async function flushErrorReporter(timeoutMs: number): Promise<void> {
+  try {
+    await errorReporter?.flush(timeoutMs);
+  } catch {
+    // nothing left to do with it — the log line is already written
+  }
+}
+
 // Resolves once everything pino has accepted is written. Production stdout is
 // already synchronous (configureLogging), so this matters for the pino-pretty
 // transport in dev, which ships lines to a worker thread.
@@ -469,13 +517,14 @@ export function flushLogs(): Promise<void> {
 
 // Logs one fatal line, flushes, exits 1. The single place a process goes down on
 // purpose — bootstrap failure and uncaught errors both land here, so the last
-// thing in the log stream is always a structured line an alarm can match.
-// (Sentry's crash capture joins here, OS-69.)
+// thing in the log stream is always a structured line an alarm can match, and
+// the error reporter (if any) gets the crash before the process goes.
 export async function exitOnFatal(err: unknown, event: string): Promise<never> {
   new Logger('Process').fatal({ err, event }, 'Process exiting after a fatal error');
+  reportError(err, { event, fatal: true });
   // don't let a wedged stream keep a crashed process alive
   setTimeout(() => process.exit(1), 2000);
-  await flushLogs();
+  await Promise.all([flushLogs(), flushErrorReporter(1500)]);
   process.exit(1);
 }
 
@@ -603,6 +652,7 @@ export class LoggingExceptionFilter extends BaseExceptionFilter {
         { err: exception, event: 'http.unhandled_error', route, status },
         'Unhandled error',
       );
+      reportError(exception, { event: 'http.unhandled_error', fatal: false, route, status });
       return;
     }
     // a rejected request isn't an error in the code — no stack, just why

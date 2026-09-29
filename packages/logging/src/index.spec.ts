@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
@@ -24,7 +24,9 @@ import {
   requestLoggingMiddleware,
   runWithLogContext,
   setLogContext,
+  setErrorReporter,
   setRequestRoute,
+  type ErrorReport,
 } from './index.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -614,6 +616,62 @@ describe('LoggingExceptionFilter', () => {
     new LoggingExceptionFilter(fakeAdapter().adapter).catch(new Error('x'), httpHost({ raw }));
     assert.equal(lines[0].route, '/webhooks/stripe');
   });
+
+  describe('error reporter', () => {
+    function recordingReporter() {
+      const reports: { err: unknown; report: ErrorReport; context: unknown }[] = [];
+      setErrorReporter({
+        capture: (err, report) => void reports.push({ err, report, context: getLogContext() }),
+        flush: async () => true,
+      });
+      return reports;
+    }
+
+    afterEach(() => setErrorReporter(undefined));
+
+    it('reports a 5xx once, inside the request\'s log context', async () => {
+      captureAll();
+      const reports = recordingReporter();
+      const err = new Error('db exploded');
+      await runWithLogContext({ correlationId: 'req-1', accountId: 42 }, async () => {
+        new LoggingExceptionFilter(fakeAdapter().adapter).catch(err, httpHost(expressRequest));
+      });
+      assert.deepEqual(reports, [
+        {
+          err,
+          report: { event: 'http.unhandled_error', fatal: false, route: '/orders/:id', status: 500 },
+          context: { correlationId: 'req-1', accountId: 42 },
+        },
+      ]);
+    });
+
+    it('never reports a 4xx', () => {
+      captureAll();
+      const reports = recordingReporter();
+      const filter = new LoggingExceptionFilter(fakeAdapter().adapter);
+      filter.catch(new UnauthorizedException(), httpHost(expressRequest));
+      filter.catch(new NotFoundException(), httpHost(expressRequest));
+      filter.catch(Object.assign(new Error('too large'), { statusCode: 413 }), httpHost(expressRequest));
+      assert.deepEqual(reports, []);
+    });
+
+    it('a reporter that throws still lets the 500 go out, and logs a warn', () => {
+      const lines = captureAll();
+      setErrorReporter({
+        capture: () => {
+          throw new Error('sentry is down');
+        },
+        flush: async () => true,
+      });
+      const { adapter, replies } = fakeAdapter();
+      new LoggingExceptionFilter(adapter).catch(new Error('db exploded'), httpHost(expressRequest));
+      assert.deepEqual(replies, [{ body: { statusCode: 500, message: 'Internal server error' }, status: 500 }]);
+      assert.deepEqual(
+        lines.map((line) => [line.level, line.event]),
+        [[50, 'http.unhandled_error'], [40, 'error_reporter.capture_failed']],
+      );
+    });
+  });
 });
 
 // Process-level behaviour needs a real process: run a tiny script against this
@@ -692,6 +750,37 @@ describe('process handlers', () => {
     `);
     assert.equal(code, 1);
     assert.deepEqual(lines.map((line) => [line.level, line.event]), [[60, 'process.uncaught_exception']]);
+  });
+
+  it('a fatal error is reported and flushed before the process exits', async () => {
+    const { code, lines } = await runScript(`
+      logging.setErrorReporter({
+        capture: (err, report) => console.log(JSON.stringify({ event: 'test.captured', report, message: err.message })),
+        flush: () => new Promise((resolve) => setTimeout(() => {
+          console.log(JSON.stringify({ event: 'test.flushed' }));
+          resolve(true);
+        }, 50)),
+      });
+      logging.installProcessHandlers();
+      Promise.reject(new Error('nobody caught me'));
+    `);
+    assert.equal(code, 1);
+    assert.deepEqual(lines.map((line) => line.event), [
+      'process.unhandled_rejection',
+      'test.captured',
+      'test.flushed',
+    ]);
+    assert.deepEqual(lines[1].report, { event: 'process.unhandled_rejection', fatal: true });
+    assert.equal(lines[1].message, 'nobody caught me');
+  });
+
+  it('a reporter whose flush never settles cannot keep a crashed process alive', async () => {
+    const { code, lines } = await runScript(`
+      logging.setErrorReporter({ capture: () => undefined, flush: () => new Promise(() => undefined) });
+      logging.exitOnFatal(new Error('boom'), 'app.boot_failed');
+    `);
+    assert.equal(code, 1);
+    assert.deepEqual(lines.map((line) => line.event), ['app.boot_failed']);
   });
 
   it('a failed bootstrap logs app.boot_failed and exits 1', async () => {

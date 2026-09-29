@@ -283,11 +283,19 @@ module "ecs_service_merchant_api" {
     { name = "MINIO_BUCKET", value = module.secrets.product_images_bucket_name },
     { name = "MINIO_PUBLIC_BASE_URL", value = "https://${module.secrets.product_images_bucket_name}.s3.${var.region}.amazonaws.com" },
     { name = "MINIO_FORCE_PATH_STYLE", value = "false" },
+    # SENTRY_RELEASE is not here: cd.yml stamps the deployed git SHA into each
+    # task def revision it registers (OS-67)
+    { name = "SENTRY_ENVIRONMENT", value = "production" },
   ]
 
   secrets = [
     { name = "DATABASE_URL", valueFrom = module.secrets.database_url_secret_arn },
     { name = "STAFF_JWT_SECRET", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:STAFF_JWT_SECRET::" },
+    # Sentry project DSN (OS-67). Not a secret in the credential sense, but the
+    # repo is public and a DSN lets anyone spend the project's event quota. Key
+    # must exist in the ordersail/production/merchant-api secret JSON (Sentry →
+    # merchant-api project → Settings → Client Keys) before this deploys.
+    { name = "SENTRY_DSN", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:SENTRY_DSN::" },
     # AES-256-GCM key for TOTP secrets at rest (OS-316). Key must exist in
     # the ordersail/production/merchant-api secret JSON — generate with
     # `openssl rand -hex 32` and add it there before this deploys.

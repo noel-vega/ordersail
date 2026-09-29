@@ -57,4 +57,11 @@ export const envSchema = z.object({
     .default('development'),
   // unset → info in production, debug elsewhere (see docs/observability.md)
   LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
+
+  // Sentry error tracking (OS-67). Unset DSN → Sentry is off (local dev, tests,
+  // CI). SENTRY_RELEASE is the deployed git SHA, stamped into the task def by
+  // cd.yml at deploy time — see packages/observability.
+  SENTRY_DSN: z.url().optional(),
+  SENTRY_ENVIRONMENT: z.string().min(1).default('development'),
+  SENTRY_RELEASE: z.string().min(1).optional(),
 });

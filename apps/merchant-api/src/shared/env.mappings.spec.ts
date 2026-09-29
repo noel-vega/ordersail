@@ -13,6 +13,8 @@ const FINE_UNSET_IN_PRODUCTION: Record<string, string> = {
   MINIO_ACCESS_KEY: 'S3 credentials come from the ECS task role in production',
   MINIO_SECRET_KEY: 'S3 credentials come from the ECS task role in production',
   LOG_LEVEL: 'unset → info in production (docs/observability.md)',
+  SENTRY_RELEASE:
+    'stamped into each registered task def by cd.yml (the deployed git SHA), not rendered by Terraform',
 };
 
 describe('merchant-api env → production task def', () => {
