@@ -17,6 +17,7 @@ import { EditVariantSheet } from "./edit-variant-sheet";
 import { useStockLocation } from "../../locations/locations.hooks";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
 import { useProductInventoryQuery } from "../../inventory/inventory.hooks";
+import { usePermissions } from "../../auth/permission-context";
 
 export function VariantSection({
   productId,
@@ -58,7 +59,12 @@ export function VariantSection({
   // shares ProductView's cached query; the threshold rides on the inventory
   // response so staff without account:read still get Low badges (OS-668)
   const { data: inventory } = useProductInventoryQuery(productId);
+  // 0 without inventory:read (no threshold to read, OS-672): only out-of-stock
+  // is flagged, never a guessed "low"
   const lowStockThreshold = inventory?.lowStockThreshold ?? 0;
+  const permissions = usePermissions();
+  const canWriteInventory = permissions.has("inventory:write");
+  const canWriteProducts = permissions.has("products:write");
   const columns = getVariantColumns({
     // an account has no location until the merchant creates one (OS-689);
     // stock needs somewhere to live, so send them there first
@@ -70,6 +76,8 @@ export function VariantSection({
     lowStockThreshold,
     // unknown while loading: assume there's one rather than flash the prompt
     canAdjustStock: !locationsLoaded || !!stockLocation,
+    showAdjustStock: canWriteInventory,
+    showEdit: canWriteProducts,
   });
 
   return (

@@ -8,6 +8,7 @@ import type { Location } from "merchant-sdk"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { PAGE_SIZE, pageOffset, type ListSearch } from "../../lib/list-search"
+import { usePermissions } from "../auth/permission-context"
 
 // No `search` → the full list (capped at 100) for the location pickers. With a
 // `search` → one page for the Locations list route.
@@ -42,8 +43,14 @@ export function useListLocationsQuery(search?: ListSearch) {
 // openingStockLocationId). Not the list's first item — the list sorts by name,
 // so a rename would silently move it. `location` is undefined both while
 // loading and when the account has none (OS-689); `isLoaded` tells them apart.
+// Used on product pages, which need only products:read — so without
+// locations:read it doesn't fetch (no 403, OS-672) and stays not-loaded.
 export function useStockLocation() {
-  const locations = useListLocationsQuery()
+  const canReadLocations = usePermissions().has("locations:read")
+  const locations = useQuery({
+    ...getListLocationsQueryOptions(),
+    enabled: canReadLocations,
+  })
   const location = locations.data?.items.reduce<Location | undefined>(
     (lowest, l) => (!lowest || l.id < lowest.id ? l : lowest),
     undefined,
