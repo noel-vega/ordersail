@@ -21,6 +21,8 @@ export function getVariantColumns(options: {
   canAdjustStock: boolean;
   // inventory:write — without it the action isn't offered at all (OS-672)
   showAdjustStock: boolean;
+  // products:write — the edit is refused server-side without it (OS-672)
+  showEdit: boolean;
 }): ColumnDef<ProductVariant>[] {
   return [
     {
@@ -61,35 +63,39 @@ export function getVariantColumns(options: {
     },
     {
       id: "actions",
-      cell: ({ row }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Variant actions"
-              />
-            }
-          >
-            <MoreVerticalIcon />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => options.onEdit(row.original)}>
-              <PencilIcon /> Edit variant
-            </DropdownMenuItem>
-            {options.showAdjustStock && (
-              <DropdownMenuItem onClick={() => options.onAdjustStock(row.original)}>
-                <PackageIcon />{" "}
-                {options.canAdjustStock
-                  ? "Adjust stock"
-                  : "Add a location to adjust stock"}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ),
+      // a role with neither action gets no menu at all, not an empty one
+      cell: ({ row }) =>
+        (options.showEdit || options.showAdjustStock) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Variant actions"
+                />
+              }
+            >
+              <MoreVerticalIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {options.showEdit && (
+                <DropdownMenuItem onClick={() => options.onEdit(row.original)}>
+                  <PencilIcon /> Edit variant
+                </DropdownMenuItem>
+              )}
+              {options.showAdjustStock && (
+                <DropdownMenuItem onClick={() => options.onAdjustStock(row.original)}>
+                  <PackageIcon />{" "}
+                  {options.canAdjustStock
+                    ? "Adjust stock"
+                    : "Add a location to adjust stock"}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
     },
   ];
 }

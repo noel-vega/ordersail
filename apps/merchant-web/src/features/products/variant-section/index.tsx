@@ -62,7 +62,9 @@ export function VariantSection({
   // 0 without inventory:read (no threshold to read, OS-672): only out-of-stock
   // is flagged, never a guessed "low"
   const lowStockThreshold = inventory?.lowStockThreshold ?? 0;
-  const canWriteInventory = usePermissions().has("inventory:write");
+  const permissions = usePermissions();
+  const canWriteInventory = permissions.has("inventory:write");
+  const canWriteProducts = permissions.has("products:write");
   const columns = getVariantColumns({
     // an account has no location until the merchant creates one (OS-689);
     // stock needs somewhere to live, so send them there first
@@ -75,6 +77,7 @@ export function VariantSection({
     // unknown while loading: assume there's one rather than flash the prompt
     canAdjustStock: !locationsLoaded || !!stockLocation,
     showAdjustStock: canWriteInventory,
+    showEdit: canWriteProducts,
   });
 
   return (
