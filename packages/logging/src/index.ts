@@ -111,7 +111,7 @@ export type ConfigureLoggingOptions = {
 // Deliberately absent: `to` (also means a status transition target),
 // `code` (Stripe/Node error codes), `address`/`name` (too generic). Call
 // sites that would put PII under those keys are fixed instead.
-export const SENSITIVE_KEYS = [
+const SENSITIVE_KEYS = [
   'password',
   'newPassword',
   'currentPassword',

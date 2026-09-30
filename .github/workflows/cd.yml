@@ -165,6 +165,11 @@ jobs:
       matrix:
         app: [merchant-api, storefront-api, worker, pos-api]
     steps:
+      # only for scripts/render-taskdef.jq
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
@@ -180,19 +185,12 @@ jobs:
 
           # The task definition (env vars + secrets + roles) is rendered by
           # Terraform (envs/production) and published to SSM — the single source
-          # of truth. Read it, swap in the freshly-built image tag, register.
+          # of truth. Read it, swap in the freshly-built image tag (and the same
+          # SHA as SENTRY_RELEASE — scripts/render-taskdef.jq), register.
           # Env/secret changes committed to main.tf reach production here, with
-          # no manual register-task-definition (OS-361). SENTRY_RELEASE is the
-          # same SHA, so Sentry tags every event with the code that threw it
-          # (OS-67) — set here rather than in Terraform because it changes on
-          # every deploy. Upserted, so a rewrite can never duplicate it.
+          # no manual register-task-definition (OS-361).
           NEW=$(aws ssm get-parameter --name /ordersail/production/ecs/${{ matrix.app }}-taskdef --query 'Parameter.Value' --output text \
-            | jq --arg IMAGE "$IMAGE_URI:${{ github.sha }}" --arg RELEASE "${{ github.sha }}" '
-                .containerDefinitions[0].image = $IMAGE
-                | .containerDefinitions[0].environment = (
-                    [(.containerDefinitions[0].environment // [])[] | select(.name != "SENTRY_RELEASE")]
-                    + [{ name: "SENTRY_RELEASE", value: $RELEASE }]
-                  )')
+            | jq --arg IMAGE "$IMAGE_URI:${{ github.sha }}" --arg RELEASE "${{ github.sha }}" -f scripts/render-taskdef.jq)
 
           NEW_REVISION_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW" --query 'taskDefinition.taskDefinitionArn' --output text)
 

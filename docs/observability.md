@@ -216,49 +216,53 @@ Worker job failures log from the `failed` handlers:
 
 ## Error tracking (Sentry)
 
-`packages/observability` reports errors to Sentry. It adds no new capture points. It subscribes to
-the two that `logging` already has, through `onUnhandledError()`, so every Sentry event also has
-the log line written just before it:
+`packages/observability` reports errors to Sentry. Sentry runs in **minimal mode**: it's a plain
+"send this error" client. `packages/logging` already decides what counts as an unhandled error,
+and this package subscribes to exactly those two places through `onUnhandledError()`. So every
+Sentry event also has the log line written just before it:
 
 - the `LoggingExceptionFilter` **5xx** branch. 4xx is never sent, and neither is a failing
   `/health`: Terminus answers 503 while Postgres or Redis is down, and the SNS alarms already
   page on that;
 - **`exitOnFatal`**, which covers uncaught exceptions, unhandled rejections and failed boots. The
-  event is sent and flushed before the process exits. Sentry's own `uncaughtException` /
-  `unhandledRejection` handlers are turned off, because they would exit on their own and race
-  ours.
+  event is sent and flushed before the process exits.
+
+**Nothing is automatic.** `initSentry` runs with `defaultIntegrations: false` and
+`enableRuntimeChannelInjection: false`. The only integrations it allowlists are `LinkedErrors`
+(the `cause` chain) and `ContextLines` (source lines around each stack frame). So Sentry:
+
+- doesn't instrument http, Nest, `@OnEvent`, BullMQ or cron, and never captures on its own;
+- installs no process handlers (`installProcessHandlers()` owns the crash path);
+- attaches no request data (URL, headers, cookies, body, query), no breadcrumbs and no local
+  variables, and adds no `sentry-trace` / `baggage` headers to outgoing calls.
+
+A spec pins this list of integrations. **Add an integration only by allowlisting it on purpose.**
+The SDK's defaults would bring back double-reporting and the data we keep out.
 
 **Wiring.** `src/instrument.ts` calls `initSentry({ service, dsn, environment, release })` and
-is the first import in `main.ts`, because Sentry has to load before Nest. If `SENTRY_DSN` is
-unset, nothing is initialised and nothing is sent, so local dev and tests never report. There is
-one Sentry project per deployable (`merchant-api`, `storefront-api`, `pos-api`, `worker`,
-`merchant-web`), so one noisy service can't use up another's quota. Only errors are sent:
-`tracesSampleRate: 0`, and no `sentry-trace` / `baggage` headers are added to outgoing calls.
+is the first import in `main.ts`. If `SENTRY_DSN` is unset, nothing is initialised and nothing
+is sent, so local dev and tests never report. A second call is a no-op. There is one Sentry
+project per deployable (`merchant-api`, `storefront-api`, `pos-api`, `worker`, `merchant-web`),
+so one noisy service can't use up another's quota.
 
 **Env.** `SENTRY_DSN` is a key in the service's Secrets Manager secret. The repo is public, and a
 DSN lets anyone send events to the project. `SENTRY_ENVIRONMENT` is `production` in the task def,
-and falls back to `NODE_ENV`. `SENTRY_RELEASE` is the deployed git SHA: `cd.yml` writes it into
-every task-def revision, and `environment.yml`'s resume step restores it.
+and falls back to `NODE_ENV`. `SENTRY_RELEASE` is the deployed git SHA. `scripts/render-taskdef.jq`
+stamps it into every task-def revision, and both `cd.yml` (deploy) and `environment.yml` (resume)
+use that script.
 
 **Tags** on every event: `service`, `release`, `environment`, `correlation_id`, plus
 `account_id` / `user_id` / `customer_id` / `device_id` when the request's log context has them.
 HTTP errors also carry `method`, `route` (the template, never the concrete path) and `status`,
-and fatal ones carry `event`.
+and fatal ones carry `event`. These tags are what you triage with, because there's no request
+data on the event.
 
-**What's never sent.** Sentry v11 collects everything by default. `initSentry` turns each
-category off through `dataCollection`, and `scrubEvent` (`beforeSend`) is a second net:
+**What's scrubbed.** An event holds only the error and our tags, but the error's own message can
+still carry customer data. `scrubEvent` (`beforeSend`) keeps Drizzle's failed-query statement and
+drops its bound values: `params: [REDACTED]`. The same rules as the logs apply: don't put PII in
+an error message.
 
-- request bodies, cookies and query strings are never sent. Search params can carry customer
-  emails;
-- only the request headers `accept`, `content-type`, `content-length`, `user-agent` and
-  `x-request-id` are kept. Anything else (auth, cookies, `stripe-signature`, app keys, device
-  and cart tokens) is dropped;
-- stack-frame local variables, database query parameters, queue job arguments and user info
-  (IP) are not collected;
-- the `SENSITIVE_KEYS` list from logging (`password`, `token`, `email`, …) is censored at any
-  depth in `extra`, `contexts` and breadcrumb data, and breadcrumb URLs lose their query string.
-
-**Alerts.** A new Sentry issue sends an email. Paging stays on SNS (see
+**Alerts.** A new or regressed Sentry issue sends an email. Paging stays on SNS (see
 `docs/runbooks/alerts.md`), so there is still one pager. Sentry is for triage and deduplication.
 
 ## Personal data & secrets
