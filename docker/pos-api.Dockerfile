@@ -23,6 +23,7 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/email-templates/package.json packages/email-templates/package.json
 COPY packages/logging/package.json packages/logging/package.json
+COPY packages/observability/package.json packages/observability/package.json
 COPY packages/pos-sdk/package.json packages/pos-sdk/package.json
 COPY packages/queue/package.json packages/queue/package.json
 COPY packages/storage/package.json packages/storage/package.json
@@ -53,6 +54,7 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/email-templates/package.json packages/email-templates/package.json
 COPY packages/logging/package.json packages/logging/package.json
+COPY packages/observability/package.json packages/observability/package.json
 COPY packages/pos-sdk/package.json packages/pos-sdk/package.json
 COPY packages/queue/package.json packages/queue/package.json
 COPY packages/storage/package.json packages/storage/package.json

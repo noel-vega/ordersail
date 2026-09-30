@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
@@ -21,6 +21,7 @@ import {
   LoggingExceptionFilter,
   maskEmail,
   normalizeLogArgs,
+  onUnhandledError,
   requestLoggingMiddleware,
   runWithLogContext,
   setLogContext,
@@ -607,6 +608,71 @@ describe('LoggingExceptionFilter', () => {
     assert.equal(lines[0].event, 'http.unhandled_error');
   });
 
+  describe('unhandled-error hooks', () => {
+    const unsubscribes: (() => void)[] = [];
+    afterEach(() => unsubscribes.splice(0).forEach((unsubscribe) => unsubscribe()));
+
+    function recordHook() {
+      const calls: { err: unknown; info: unknown; context: unknown }[] = [];
+      unsubscribes.push(
+        onUnhandledError((err, info) => void calls.push({ err, info, context: getLogContext() })),
+      );
+      return calls;
+    }
+
+    it('a 5xx runs the hooks once, inside the request\'s log context', async () => {
+      captureAll();
+      const calls = recordHook();
+      const err = new Error('db exploded');
+      await runWithLogContext({ correlationId: 'req-1', accountId: 42 }, async () => {
+        new LoggingExceptionFilter(fakeAdapter().adapter).catch(err, httpHost(expressRequest));
+      });
+      assert.deepEqual(calls, [
+        {
+          err,
+          info: { kind: 'http', event: 'http.unhandled_error', method: 'GET', route: '/orders/:id', status: 500 },
+          context: { correlationId: 'req-1', accountId: 42 },
+        },
+      ]);
+    });
+
+    it('4xx never reaches the hooks', () => {
+      captureAll();
+      const calls = recordHook();
+      const filter = new LoggingExceptionFilter(fakeAdapter().adapter);
+      filter.catch(new UnauthorizedException(), httpHost(expressRequest));
+      filter.catch(new NotFoundException(), httpHost(expressRequest));
+      filter.catch(Object.assign(new Error('too large'), { statusCode: 413 }), httpHost(expressRequest));
+      assert.deepEqual(calls, []);
+    });
+
+    it('a throwing hook does not change the response, and is logged', async () => {
+      const lines = captureAll();
+      unsubscribes.push(
+        onUnhandledError(() => {
+          throw new Error('reporter down');
+        }),
+      );
+      const { adapter, replies } = fakeAdapter();
+      new LoggingExceptionFilter(adapter).catch(new Error('boom'), httpHost(expressRequest));
+      assert.deepEqual(replies, [{ body: { statusCode: 500, message: 'Internal server error' }, status: 500 }]);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.deepEqual(
+        lines.map((line) => line.event),
+        ['http.unhandled_error', 'process.error_hook_failed'],
+      );
+    });
+
+    it('unsubscribing stops the hook', () => {
+      captureAll();
+      const calls: unknown[] = [];
+      const unsubscribe = onUnhandledError((err) => void calls.push(err));
+      unsubscribe();
+      new LoggingExceptionFilter(fakeAdapter().adapter).catch(new Error('x'), httpHost(expressRequest));
+      assert.deepEqual(calls, []);
+    });
+  });
+
   it('reads the route template off a Fastify request\'s raw Node request', () => {
     const lines = captureAll();
     const raw = { method: 'POST' } as IncomingMessage;
@@ -702,6 +768,34 @@ describe('process handlers', () => {
     assert.equal(code, 1);
     assert.equal(lines[0].event, 'app.boot_failed');
     assert.equal(lines[0].err.message, 'redis unreachable');
+  });
+
+  it('exitOnFatal waits for the hooks before exiting', async () => {
+    const { code, lines } = await runScript(`
+      const logger = new logging.Logger('Reporter');
+      logging.onUnhandledError(async (err, info) => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        logger.info({ event: 'reporter.sent', kind: info.kind, fatalEvent: info.event, message: err.message }, 'sent');
+      });
+      logging.exitOnFatal(new Error('redis unreachable'), 'app.boot_failed');
+    `);
+    assert.equal(code, 1);
+    assert.deepEqual(
+      lines.map((line) => [line.event, line.kind, line.fatalEvent, line.message ?? line.err?.message]),
+      [
+        ['app.boot_failed', undefined, undefined, 'redis unreachable'],
+        ['reporter.sent', 'fatal', 'app.boot_failed', 'redis unreachable'],
+      ],
+    );
+  });
+
+  it('a hook that never settles cannot keep a crashed process alive', async () => {
+    const { code, lines } = await runScript(`
+      logging.onUnhandledError(() => new Promise(() => undefined));
+      logging.exitOnFatal(new Error('boom'), 'app.boot_failed');
+    `);
+    assert.equal(code, 1);
+    assert.deepEqual(lines.map((line) => line.event), ['app.boot_failed']);
   });
 
   it('SIGTERM closes the app, flushes and exits 0', async () => {

@@ -14,12 +14,13 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | Tool | Answers | Status |
 |---|---|---|
 | **pino → CloudWatch Logs** | *What happened, step by step?* — searched on demand | this doc |
-| **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
+| **Sentry** | *What broke, how often, since which release?* — emails us | merchant-api (OS-67); other services OS-68–72 |
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md` |
 | **OpenTelemetry traces** | *Where did the time go across services?* | deferred (OS-94) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
-`correlationId` field on every log line, rides on every BullMQ job, and (later) is a Sentry tag.
+`correlationId` field on every log line, rides on every BullMQ job, and is the `correlation_id`
+tag on every Sentry event.
 
 ## The log line
 
@@ -213,6 +214,53 @@ Worker job failures log from the `failed` handlers:
 - The last attempt logs at `error` (`order_job.failed`, `email_job.failed`), with
   `{ err, queue, jobId, jobName, attemptsMade, attempts }`.
 
+## Error tracking (Sentry)
+
+`packages/observability` reports errors to Sentry. It adds no new capture points. It subscribes to
+the two that `logging` already has, through `onUnhandledError()`, so every Sentry event also has
+the log line written just before it:
+
+- the `LoggingExceptionFilter` **5xx** branch. 4xx is never sent, and neither is a failing
+  `/health`: Terminus answers 503 while Postgres or Redis is down, and the SNS alarms already
+  page on that;
+- **`exitOnFatal`**, which covers uncaught exceptions, unhandled rejections and failed boots. The
+  event is sent and flushed before the process exits. Sentry's own `uncaughtException` /
+  `unhandledRejection` handlers are turned off, because they would exit on their own and race
+  ours.
+
+**Wiring.** `src/instrument.ts` calls `initSentry({ service, dsn, environment, release })` and
+is the first import in `main.ts`, because Sentry has to load before Nest. If `SENTRY_DSN` is
+unset, nothing is initialised and nothing is sent, so local dev and tests never report. There is
+one Sentry project per deployable (`merchant-api`, `storefront-api`, `pos-api`, `worker`,
+`merchant-web`), so one noisy service can't use up another's quota. Only errors are sent:
+`tracesSampleRate: 0`, and no `sentry-trace` / `baggage` headers are added to outgoing calls.
+
+**Env.** `SENTRY_DSN` is a key in the service's Secrets Manager secret. The repo is public, and a
+DSN lets anyone send events to the project. `SENTRY_ENVIRONMENT` is `production` in the task def,
+and falls back to `NODE_ENV`. `SENTRY_RELEASE` is the deployed git SHA: `cd.yml` writes it into
+every task-def revision, and `environment.yml`'s resume step restores it.
+
+**Tags** on every event: `service`, `release`, `environment`, `correlation_id`, plus
+`account_id` / `user_id` / `customer_id` / `device_id` when the request's log context has them.
+HTTP errors also carry `method`, `route` (the template, never the concrete path) and `status`,
+and fatal ones carry `event`.
+
+**What's never sent.** Sentry v11 collects everything by default. `initSentry` turns each
+category off through `dataCollection`, and `scrubEvent` (`beforeSend`) is a second net:
+
+- request bodies, cookies and query strings are never sent. Search params can carry customer
+  emails;
+- only the request headers `accept`, `content-type`, `content-length`, `user-agent` and
+  `x-request-id` are kept. Anything else (auth, cookies, `stripe-signature`, app keys, device
+  and cart tokens) is dropped;
+- stack-frame local variables, database query parameters, queue job arguments and user info
+  (IP) are not collected;
+- the `SENSITIVE_KEYS` list from logging (`password`, `token`, `email`, …) is censored at any
+  depth in `extra`, `contexts` and breadcrumb data, and breadcrumb URLs lose their query string.
+
+**Alerts.** A new Sentry issue sends an email. Paging stays on SNS (see
+`docs/runbooks/alerts.md`), so there is still one pager. Sentry is for triage and deduplication.
+
 ## Personal data & secrets
 
 Logs are retained 30 days and readable by anyone with CloudWatch access. **Log IDs, not people.**
@@ -247,7 +295,8 @@ If an address is genuinely needed to debug (rare), use `maskEmail()` from `loggi
 **Find the correlation ID**
 
 - From the browser: the `x-request-id` response header in devtools (readable from JS too).
-- From a Sentry issue: the `correlation_id` tag — *pending: no Sentry integration yet (OS-67, OS-72)*.
+- From a Sentry event: the `correlation_id` tag (merchant-api today; the other services with
+  OS-68/69). The reverse also works: search Sentry for `correlation_id:<id>`.
 - From an order or job: search by `orderId` / `jobId` first, then read `correlationId` off the line.
 
 **Local dev** — the apps log to the terminal running `npm run dev` (`npm run logs` only

@@ -1,4 +1,5 @@
-import { env } from './shared/env'; // validates process.env before anything else loads
+import './instrument'; // env validation + Sentry — must stay the first import
+import { env } from './shared/env';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';

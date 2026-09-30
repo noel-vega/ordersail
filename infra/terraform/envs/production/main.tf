@@ -283,6 +283,9 @@ module "ecs_service_merchant_api" {
     { name = "MINIO_BUCKET", value = module.secrets.product_images_bucket_name },
     { name = "MINIO_PUBLIC_BASE_URL", value = "https://${module.secrets.product_images_bucket_name}.s3.${var.region}.amazonaws.com" },
     { name = "MINIO_FORCE_PATH_STYLE", value = "false" },
+    # SENTRY_RELEASE is not here: cd.yml sets it to the deployed SHA when it
+    # registers each revision (OS-67)
+    { name = "SENTRY_ENVIRONMENT", value = "production" },
   ]
 
   secrets = [
@@ -297,6 +300,11 @@ module "ecs_service_merchant_api" {
     # M9/OS-360. Key must exist in the ordersail/production/merchant-api secret JSON.
     { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:STRIPE_WEBHOOK_SECRET::" },
     { name = "SHIPPO_API_KEY", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:SHIPPO_API_KEY::" },
+    # Sentry project `merchant-api` (OS-67). A secret, not a plain env var: the
+    # repo is public and a backend DSN lets anyone spend the event quota. Key
+    # must exist in the ordersail/production/merchant-api secret JSON —
+    # verify:contracts fails the deploy otherwise.
+    { name = "SENTRY_DSN", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:SENTRY_DSN::" },
   ]
 
   secrets_manager_secret_arns = [

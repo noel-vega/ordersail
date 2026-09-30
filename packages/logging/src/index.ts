@@ -111,7 +111,7 @@ export type ConfigureLoggingOptions = {
 // Deliberately absent: `to` (also means a status transition target),
 // `code` (Stripe/Node error codes), `address`/`name` (too generic). Call
 // sites that would put PII under those keys are fixed instead.
-const SENSITIVE_KEYS = [
+export const SENSITIVE_KEYS = [
   'password',
   'newPassword',
   'currentPassword',
@@ -467,14 +467,54 @@ export function flushLogs(): Promise<void> {
   });
 }
 
-// Logs one fatal line, flushes, exits 1. The single place a process goes down on
-// purpose — bootstrap failure and uncaught errors both land here, so the last
-// thing in the log stream is always a structured line an alarm can match.
-// (Sentry's crash capture joins here, OS-69.)
+// ---------------------------------------------------------------------------
+// unhandled-error hooks
+// ---------------------------------------------------------------------------
+
+export type UnhandledErrorInfo =
+  // a 5xx out of LoggingExceptionFilter
+  | { kind: 'http'; event: 'http.unhandled_error'; method?: string; route: string | null; status: number }
+  // the process is going down (exitOnFatal)
+  | { kind: 'fatal'; event: string };
+
+export type UnhandledErrorHook = (err: unknown, info: UnhandledErrorInfo) => void | Promise<void>;
+
+const unhandledErrorHooks = new Set<UnhandledErrorHook>();
+
+// Lets an error reporter (packages/observability → Sentry) see every error this
+// package already logs as unhandled — without logging depending on it. Called
+// after the error line is written, inside the request's log context, so
+// getLogContext() still works in the hook. Returns an unsubscribe.
+export function onUnhandledError(hook: UnhandledErrorHook): () => void {
+  unhandledErrorHooks.add(hook);
+  return () => void unhandledErrorHooks.delete(hook);
+}
+
+// A reporter that throws or rejects must never change the response or stop a
+// crash from exiting — log it and move on.
+function runUnhandledErrorHooks(err: unknown, info: UnhandledErrorInfo): Promise<void> {
+  const settled = [...unhandledErrorHooks].map(async (hook) => {
+    try {
+      await hook(err, info);
+    } catch (hookErr) {
+      new Logger('Process').warn(
+        { err: hookErr, event: 'process.error_hook_failed' },
+        'An unhandled-error hook failed',
+      );
+    }
+  });
+  return Promise.all(settled).then(() => undefined);
+}
+
+// Logs one fatal line, runs the unhandled-error hooks (Sentry capture + flush),
+// flushes the logs, exits 1. The single place a process goes down on purpose —
+// bootstrap failure and uncaught errors both land here, so the last thing in
+// the log stream is always a structured line an alarm can match.
 export async function exitOnFatal(err: unknown, event: string): Promise<never> {
   new Logger('Process').fatal({ err, event }, 'Process exiting after a fatal error');
-  // don't let a wedged stream keep a crashed process alive
+  // don't let a wedged stream or reporter keep a crashed process alive
   setTimeout(() => process.exit(1), 2000);
+  await runUnhandledErrorHooks(err, { kind: 'fatal', event });
   await flushLogs();
   process.exit(1);
 }
@@ -603,6 +643,13 @@ export class LoggingExceptionFilter extends BaseExceptionFilter {
         { err: exception, event: 'http.unhandled_error', route, status },
         'Unhandled error',
       );
+      void runUnhandledErrorHooks(exception, {
+        kind: 'http',
+        event: 'http.unhandled_error',
+        method: (request.raw ?? request).method,
+        route,
+        status,
+      });
       return;
     }
     // a rejected request isn't an error in the code — no stack, just why

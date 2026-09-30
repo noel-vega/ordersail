@@ -193,9 +193,16 @@ jobs:
 
           # Re-render from the Terraform-owned SSM contract (OS-361) so a Redis
           # endpoint that changed while ElastiCache was torn down (OS-380) is
-          # picked up, then register a fresh revision.
+          # picked up, then register a fresh revision. The contract carries no
+          # SENTRY_RELEASE (cd.yml sets it per deploy) — restore it from the
+          # image tag, which is that same SHA (OS-67).
           NEW=$(aws ssm get-parameter --name /ordersail/production/ecs/${{ matrix.app }}-taskdef --query Parameter.Value --output text \
-            | jq --arg IMG "$IMAGE_URI:$TAG" '.containerDefinitions[0].image = $IMG')
+            | jq --arg IMG "$IMAGE_URI:$TAG" --arg RELEASE "$TAG" '
+                .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment = (
+                    [(.containerDefinitions[0].environment // [])[] | select(.name != "SENTRY_RELEASE")]
+                    + [{ name: "SENTRY_RELEASE", value: $RELEASE }]
+                  )')
 
           if echo "$NEW" | jq -e '.containerDefinitions[0].environment[] | select(.name == "REDIS_HOST")' >/dev/null; then
             HOST=$(echo "$NEW" | jq -r '.containerDefinitions[0].environment[] | select(.name == "REDIS_HOST") | .value')

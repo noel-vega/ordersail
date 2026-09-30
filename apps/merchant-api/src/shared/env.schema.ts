@@ -57,4 +57,14 @@ export const envSchema = z.object({
     .default('development'),
   // unset → info in production, debug elsewhere (see docs/observability.md)
   LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
+
+  // Sentry error tracking (docs/observability.md → Error tracking). No DSN →
+  // Sentry is off, which is the default everywhere but production. The DSN is
+  // a Secrets Manager key, not a plain env var: the repo is public and a
+  // backend DSN lets anyone spend the project's event quota.
+  SENTRY_DSN: z.url().optional(),
+  // unset → NODE_ENV
+  SENTRY_ENVIRONMENT: z.string().min(1).optional(),
+  // the deployed git SHA — cd.yml injects it into every task def revision
+  SENTRY_RELEASE: z.string().min(1).optional(),
 });
