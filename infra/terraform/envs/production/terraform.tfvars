@@ -19,3 +19,9 @@ ses_verified_email = "noelvegajr94@gmail.com"
 google_site_verification = "google-site-verification=o8MTNIKX8nvDf_6g1duGU_RHvmCeM5XGzo9asfMkerA"
 # DKIM public key, selector "google" (2048-bit) — Admin → Gmail → Authenticate email
 google_dkim_txt = "v=DKIM1;k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkxlbr/t10yvqpbP//IBA72xit/KKEeKIFMV/dwYslC0HMkDURFzFnw3cbRn5hOMA/inizpfOa/ksvm5IsOHp7/W0INFVbvr34QnyJ8H7j17vjjcal4aPPuxY7GtePL6ikCyBGi6efVej0DeGLicneGs95JFSVyB7HG+S1Wg4da29g5B9iWWCqTgwf8ItigOBZCJ2dv2j9OJ80IOz1yfE7qmKUD2/tmiHtq7anr9R8dYEU4f+A7iHQVVHFPUSogEldc9vAbGI7pWAFE766J1TMZ0WKKPSSNrpuc152gNojI0YTpuyHvPLTj5wGRUyAbybB1bFISd/FxSfdtTzrG0EkQIDAQAB"
+
+# Log shipping to Grafana Cloud Loki (logging.tf) — merchant-api only for now.
+# Leave commented to keep every service on CloudWatch. From grafana.com → your
+# stack → Loki → Details. Put the token in Secrets Manager first (logging.tf).
+# loki_host = "logs-prod-000.grafana.net"
+# loki_user = "000000"

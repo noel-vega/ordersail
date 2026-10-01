@@ -95,7 +95,7 @@ Each row is added by its issue's PR. `→` is the topic the alarm notifies.
 | _ElastiCache CPU / swap / connections_ | OS-79 | sustained high | warning |
 | _Order-job dead-letter_ | OS-73 `apps/worker` | an `orders` job exhausts all 8 attempts | critical |
 | _Alert lines_ | OS-99 `modules/ecs-service` | the service logs any `alert: true` line (≥1 in 5 min) | critical |
-| _Error lines_ | OS-99 `modules/ecs-service` | > 10 `level >= 50` lines in 5 min (per service, `alarm_error_lines_threshold`) | warning |
+| _Error lines_ | OS-99 `modules/ecs-service` | > 10 `error`/`fatal` lines in 5 min (per service, `alarm_error_lines_threshold`) | warning |
 | _SES bounce rate_ | OS-659 `envs/production/ses.tf` | account `Reputation.BounceRate` > 2% (warning) / > 4% (critical) | warning / critical |
 | _SES complaint rate_ | OS-659 `envs/production/ses.tf` | account `Reputation.ComplaintRate` > 0.05% (warning) / > 0.08% (critical) | warning / critical |
 

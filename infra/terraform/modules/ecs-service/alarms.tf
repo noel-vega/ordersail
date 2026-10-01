@@ -42,7 +42,7 @@ resource "aws_cloudwatch_metric_alarm" "running_below_desired" {
 #
 #   alert-lines — any `alert: true` line (a paid checkout with no order, a new
 #                 dispute): a human must act → critical, on the first one.
-#   error-lines — `level >= 50` (error + fatal) volume above a per-service
+#   error-lines — `level` error or fatal: volume above a per-service
 #                 threshold: something is failing repeatedly → warning.
 #
 # What each means and the Logs Insights query to find the lines:
@@ -99,7 +99,10 @@ resource "aws_cloudwatch_metric_alarm" "alert_lines" {
 resource "aws_cloudwatch_log_metric_filter" "error_lines" {
   name           = "${var.name_prefix}-${var.name}-error-lines"
   log_group_name = aws_cloudwatch_log_group.this.name
-  pattern        = "{ $.level >= 50 }"
+  # `level` is its name since the logger switched from pino's numbers; the
+  # numeric arm keeps a task still running the older image counted until the
+  # next deploy replaces it, and can go after that.
+  pattern = "{ $.level = \"error\" || $.level = \"fatal\" || $.level >= 50 }"
 
   metric_transformation {
     namespace = local.log_metric_namespace

@@ -26,7 +26,7 @@ All of these run from the repo root:
 ```bash
 npm ci
 npm run setup       # .env from every .env.example
-npm run up          # Postgres + Redis + MinIO + Mailpit, waits until healthy
+npm run up          # Postgres + Redis + MinIO + Mailpit + local Loki/Grafana, waits until healthy
 npm run bootstrap   # wait for Postgres, drizzle push, seed the demo catalog
 npm run dev         # merchant-api, storefront-api, pos-api, worker, merchant-web in parallel
 npm run reset       # wipe volumes, re-up, re-bootstrap

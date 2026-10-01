@@ -49,7 +49,7 @@ locals {
 
     "Errors by service" = <<-EOT
       # error + fatal lines, grouped; drill in with Request timeline
-      filter level >= 50
+      filter level in ["error", "fatal"]
       | stats count() as lines by service, event
       | sort lines desc
     EOT

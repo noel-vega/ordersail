@@ -59,14 +59,26 @@ export function parseValueFrom(valueFrom) {
   return { secretArn: parts.slice(0, 7).join(':'), jsonKey: parts[7] || null };
 }
 
-// `resolveKeys(secretArn)` returns a Set of JSON keys, null for a plain-string
-// secret, or undefined when the secret can't be read. Injected so the checks
-// stay pure and testable without AWS.
+// `resolveKeys(secretArn)` returns the secret's JSON keys — a Map of key →
+// "is its value empty?" (a plain Set of keys also works, as in the fixtures) —
+// null for a plain-string secret, or undefined when the secret can't be read.
+// Injected so the checks stay pure and testable without AWS.
 export function checkContract(app, container, resolveKeys) {
   const problems = [];
   const note = (variable, detail, fix) => problems.push({ app, variable, detail, fix });
 
-  for (const { name, valueFrom } of container.secrets ?? []) {
+  // Every workflow that touches a task definition (cd.yml, rollback.yml,
+  // environment.yml) and this script address the app as containerDefinitions[0].
+  // The FireLens `log-router` sidecar must therefore come second.
+  if (container.firelensConfiguration) {
+    note('(container order)', `containerDefinitions[0] is the log router "${container.name}", not the app`, 'list the app container first in the Terraform task-definition template');
+  }
+
+  // The log driver's secretOptions (the Loki token) resolve at task start
+  // exactly like `secrets` — a missing key stops the task before the app runs.
+  const secretRefs = [...(container.secrets ?? []), ...(container.logConfiguration?.secretOptions ?? [])];
+
+  for (const { name, valueFrom } of secretRefs) {
     const { secretArn, jsonKey } = parseValueFrom(valueFrom);
     const keys = resolveKeys(secretArn);
 
@@ -79,6 +91,11 @@ export function checkContract(app, container, resolveKeys) {
       note(name, `expects JSON key "${jsonKey}" but the secret is a plain string`, 'fix the valueFrom mapping, or store the secret as JSON');
     } else if (!keys.has(jsonKey)) {
       note(name, `JSON key "${jsonKey}" is absent from ${secretArn.split(':secret:')[1]}`, `add "${jsonKey}" to that secret — the container exits at boot without it`);
+    } else if (keys.get?.(jsonKey) === true) {
+      // Terraform seeds some secrets with their keys and empty values (the
+      // Grafana Cloud token) so the key names are never guesswork. An empty
+      // value still starts the task — it just doesn't work.
+      note(name, `JSON key "${jsonKey}" in ${secretArn.split(':secret:')[1]} is still empty`, `set its real value with \`aws secretsmanager put-secret-value\``);
     }
   }
 
@@ -152,6 +169,34 @@ function selfTest() {
       expect: 'SMTP_PASS',
     },
     {
+      name: 'log driver secret key absent (task would not start, so no logs to say why)',
+      container: {
+        logConfiguration: {
+          logDriver: 'awsfirelens',
+          secretOptions: [{ name: 'Http_Passwd', valueFrom: 'arn:aws:secretsmanager:us-east-1:1:secret:ordersail/production/grafana-cloud-DDDD:LOKI_TOKEN::' }],
+        },
+      },
+      resolveKeys: () => new Set(),
+      expect: 'Http_Passwd',
+    },
+    {
+      name: 'log driver secret key still empty (task starts, logs are rejected and go nowhere)',
+      container: {
+        logConfiguration: {
+          logDriver: 'awsfirelens',
+          secretOptions: [{ name: 'Http_Passwd', valueFrom: 'arn:aws:secretsmanager:us-east-1:1:secret:ordersail/production/grafana-cloud-DDDD:LOKI_TOKEN::' }],
+        },
+      },
+      resolveKeys: () => new Map([['LOKI_TOKEN', true]]),
+      expect: 'Http_Passwd',
+    },
+    {
+      name: 'log router listed before the app (deploys would retag the sidecar)',
+      container: { name: 'log-router', firelensConfiguration: { type: 'fluentbit' } },
+      resolveKeys: () => new Set(),
+      expect: '(container order)',
+    },
+    {
       name: 'dev default reaching production',
       container: { environment: [{ name: 'REDIS_HOST', value: 'localhost' }] },
       resolveKeys: () => new Set(),
@@ -207,7 +252,8 @@ function secretKeyResolver() {
       const raw = aws('secretsmanager', 'get-secret-value', '--secret-id', secretArn, '--query', 'SecretString', '--output', 'text');
       // A secret is either a JSON object of keys or a single opaque string
       // (DATABASE_URL is the latter, shared by all four services).
-      keys = raw.startsWith('{') ? new Set(Object.keys(JSON.parse(raw))) : null;
+      // key → whether its value is empty; the values themselves are dropped here
+      keys = raw.startsWith('{') ? new Map(Object.entries(JSON.parse(raw)).map(([key, value]) => [key, value === ''])) : null;
     } catch {
       keys = undefined;
     }

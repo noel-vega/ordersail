@@ -37,7 +37,7 @@ describe('parseEnv', () => {
     assert.equal(stderr, '');
     const lines = stdout.trim().split('\n').map((line) => JSON.parse(line));
     assert.equal(lines.length, 1);
-    assert.equal(lines[0].level, 60);
+    assert.equal(lines[0].level, 'fatal');
     assert.equal(lines[0].event, 'app.boot_failed');
     assert.equal(lines[0].service, 'test-service');
     assert.deepEqual(lines[0].issues.map((issue: { path: string }) => issue.path), ['DATABASE_URL']);

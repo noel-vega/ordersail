@@ -14,6 +14,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | Tool | Answers | Status |
 |---|---|---|
 | **pino → CloudWatch Logs** | *What happened, step by step?* — searched on demand | this doc |
+| **pino → Grafana Cloud Loki** | the same, for services that ship there — merchant-api only so far | [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md` |
 | **OpenTelemetry traces** | *Where did the time go across services?* | deferred (OS-94) |
@@ -23,12 +24,13 @@ The **correlation ID** ties them together: it's the `x-request-id` response head
 
 ## The log line
 
-In production every line is one JSON object on stdout; ECS ships it to CloudWatch. In local
-dev the same data is pretty-printed.
+In production every line is one JSON object on stdout; ECS ships it to CloudWatch, or to
+Grafana Cloud Loki for a service with [log shipping](#log-shipping-to-grafana-cloud-loki) on.
+In local dev the same data is pretty-printed.
 
 ```json
 {
-  "level": 30,
+  "level": "info",
   "time": 1789012345678,
   "service": "merchant-api",
   "env": "production",
@@ -47,7 +49,7 @@ dev the same data is pretty-printed.
 
 | Field | Set by | Notes |
 |---|---|---|
-| `level` | pino | numeric: 20 debug, 30 info, 40 warn, 50 error, 60 fatal |
+| `level` | pino | the name: `debug`, `info`, `warn`, `error`, `fatal` |
 | `time` | pino | epoch ms |
 | `service`, `env` | `configureLogging()` in `main.ts` | constant per process |
 | `context` | `new Logger(X.name)` | class that logged |
@@ -77,7 +79,7 @@ before the guard runs (or on a public route) has only `correlationId`.
 one line per HTTP request when the response finishes:
 
 ```json
-{"level":40,"service":"merchant-api","correlationId":"…","context":"HTTP","event":"http.request",
+{"level":"warn","service":"merchant-api","correlationId":"…","context":"HTTP","event":"http.request",
  "req":{"method":"GET"},"route":"/orders/:id","res":{"statusCode":401},"responseTime":1.5,
  "msg":"GET /orders/:id 401"}
 ```
@@ -242,6 +244,69 @@ If an address is genuinely needed to debug (rare), use `maskEmail()` from `loggi
   `rawResponse`/`body`) never reach the log. A non-`Error` value (a rejected plain object, an
   object `cause`, or Nest-style `detail`) is reduced to its type and a string `message`.
 
+## Log shipping to Grafana Cloud Loki
+
+A service's stdout goes to exactly one place. By default that is its CloudWatch log group.
+With log shipping on, ECS FireLens hands stdout to a Fluent Bit sidecar (`log-router`) in
+the same task, which pushes each line to Grafana Cloud Loki over HTTPS. The app is unchanged
+— it still just writes JSON to stdout.
+
+| Service | Production logs are in |
+|---|---|
+| merchant-api | Grafana Cloud Loki, once `loki_host` / `loki_user` are set in `terraform.tfvars`; CloudWatch until then |
+| storefront-api, pos-api, worker, migrator | CloudWatch |
+
+- **Wiring:** `infra/terraform/envs/production/logging.tf` and the `log_shipping` variable of
+  `modules/ecs-service`. The token lives in the `ordersail/production/grafana-cloud` secret.
+- **Labels:** only `service_name` and `deployment_environment`. Everything else stays in the
+  line and is parsed when you query: `{service_name="merchant-api"} | json | correlationId="…"`.
+  Don't add IDs as labels — every distinct value becomes its own stream.
+- **Levels** are names, which Grafana detects by itself (colours, the level filter). In a
+  query: `| json | level=~"error|fatal"`.
+- **When lines are missing**, read Fluent Bit's own output in the CloudWatch log group
+  `/ecs/ordersail-log-router` — a rejected token or an unreachable Loki only shows up there.
+- A service that moves to Loki stops writing to its CloudWatch log group, so its `alert-lines`
+  / `error-lines` alarms (OS-99) and the saved queries below no longer see it.
+
+### Logs in local Grafana
+
+`npm run up` starts a local Loki, Grafana and Fluent Bit next to Postgres and Redis. Nothing
+local ever talks to Grafana Cloud.
+
+Under `npm run dev` each service keeps pretty-printing to the terminal and also writes the
+same lines as JSON to `.logs/<service>.log` (git-ignored, emptied each time the service
+starts). Fluent Bit tails that folder and pushes to Loki. Open <http://localhost:3300> →
+Explore:
+
+```logql
+{deployment_environment="development"} | json                                  # everything
+{service_name="worker"} | json | level=~"warn|error|fatal"                     # one service, warn and up
+{deployment_environment="development"} | json | correlationId="PASTE-ID"       # one request, API → worker
+```
+
+The lines, labels and queries are the same as production's; only
+`deployment_environment` differs. Logs last until `npm run down`. If the containers aren't
+running, the services still log to the terminal as usual.
+
+**Production rehearsal.** The file tail above doesn't exercise how ECS hands stdout to Fluent
+Bit. To check that path — before changing the Fluent Bit image or its output options — run
+the real merchant-api image the way production does (`NODE_ENV=production`, JSON on stdout,
+Docker's `fluentd` log driver, which is what FireLens uses):
+
+```bash
+npm run log-shipping:up     # builds the merchant-api image the first time; serves on :3020
+curl -H 'x-request-id: try-me' localhost:3020/orders
+npm run log-shipping:down   # stops the whole local stack, like `npm run down`
+```
+
+Its lines are labelled `deployment_environment="production-rehearsal"`, and each should be
+the raw pino JSON, not a wrapper around it.
+
+Fluent Bit's local config is `docker/fluent-bit/dev.conf`. The rehearsal's output options
+mirror the ones in `modules/ecs-service`, apart from the destination (no TLS or credentials
+locally): change the line-shaping keys in both places together, and keep the Fluent Bit image
+tag the same in `docker-compose.yml` and the module.
+
 ## Tracing a bug
 
 **Find the correlation ID**
@@ -251,14 +316,19 @@ If an address is genuinely needed to debug (rare), use `maskEmail()` from `loggi
 - From an order or job: search by `orderId` / `jobId` first, then read `correlationId` off the line.
 
 **Local dev** — the apps log to the terminal running `npm run dev` (`npm run logs` only
-follows the Docker infra containers). To search, capture it to a file:
+follows the Docker infra containers). To search, use the local Grafana at
+<http://localhost:3300> → Explore ([Logs in local Grafana](#logs-in-local-grafana)):
 
-```bash
-npm run dev 2>&1 | tee dev.log          # in one terminal
-grep 0b7e6c1e-2f7a-4c1a-9a55-3f0f1b1d2c3e dev.log
+```logql
+{deployment_environment="development"} | json | correlationId="0b7e6c1e-2f7a-4c1a-9a55-3f0f1b1d2c3e"
 ```
 
-**Production** — CloudWatch Logs Insights → **Saved queries** → the `ordersail/` folder
+Or grep the same lines on disk: `grep 0b7e6c1e .logs/*.log`.
+
+**Production (merchant-api, once shipping to Loki)** — Grafana Cloud → Explore →
+`{service_name="merchant-api", deployment_environment="production"} | json | correlationId="…"`.
+
+**Production (everything else)** — CloudWatch Logs Insights → **Saved queries** → the `ordersail/` folder
 (`infra/terraform/envs/production/log-queries.tf`, OS-98). Each one is pre-set to all four
 service log groups — `/ecs/ordersail-merchant-api`, `-storefront-api`, `-pos-api`, `-worker` —
 so API → worker hops show up in one timeline. Pick the time range, edit the placeholder on the

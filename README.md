@@ -115,7 +115,7 @@ All commands run from the repo root.
 ```bash
 npm ci
 npm run setup       # .env from every .env.example — placeholder secrets, see "Secrets"
-npm run up          # Postgres + Redis + MinIO + Mailpit (waits until healthy)
+npm run up          # Postgres + Redis + MinIO + Mailpit + local Loki/Grafana (waits until healthy)
 npm run bootstrap   # wait for Postgres, drizzle push, seed the demo catalog
                     #  ↳ copy the "Created storefront API key: sfk_…" line it prints
 npm run dev         # the five coupled app servers, in parallel
@@ -145,6 +145,7 @@ copy-pasteable local flow.
 | Redis | `localhost:6379` | |
 | MinIO | http://localhost:9000 · console http://localhost:9001 | `minioadmin` / `minioadmin` |
 | Mailpit | http://localhost:8025 | catches all outbound dev email |
+| Grafana | http://localhost:3300 | searchable logs from `npm run dev` — see [docs/observability.md](./docs/observability.md#logs-in-local-grafana) |
 
 ### Standalone apps — website, pos & storefront-web
 

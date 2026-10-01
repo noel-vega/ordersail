@@ -3,6 +3,10 @@ output "app_secret_arns" {
   value       = { for k, v in aws_secretsmanager_secret.app : k => v.arn }
 }
 
+output "grafana_cloud_secret_arn" {
+  value = aws_secretsmanager_secret.grafana_cloud.arn
+}
+
 output "database_url_secret_arn" {
   value = aws_secretsmanager_secret.database_url.arn
 }
