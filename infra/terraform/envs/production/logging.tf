@@ -1,8 +1,9 @@
 # Log shipping to Grafana Cloud Loki (ECS FireLens + Fluent Bit).
 #
-# Only merchant-api ships to Loki so far; storefront-api, pos-api, worker and the
-# migrator still use the `awslogs` driver. A service opts in by passing
-# `log_shipping = local.log_shipping` to modules/ecs-service.
+# All four services (merchant-api, storefront-api, pos-api, worker) ship to Loki:
+# each passes `log_shipping = local.log_shipping` to modules/ecs-service. The
+# migrator stays on `awslogs` — migrate.yml prints its CloudWatch stream into the
+# CD run, and a one-shot task can exit before a sidecar flushes.
 #
 # Off until var.loki_host and var.loki_user are set (terraform.tfvars). Before
 # turning it on, put the real token in the `ordersail/production/grafana-cloud`

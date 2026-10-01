@@ -319,6 +319,7 @@ module "ecs_service_storefront_api" {
   container_port              = 3001
   image                       = "${module.ecr.repository_urls["storefront-api"]}:${var.bootstrap_image_tag}"
   target_group_arn            = module.alb_storefront_api.target_group_arn
+  log_shipping                = local.log_shipping_enabled ? local.log_shipping : null
 
   environment = [
     { name = "NODE_ENV", value = "production" },
@@ -361,6 +362,7 @@ module "ecs_service_worker" {
   container_port              = 3003
   image                       = "${module.ecr.repository_urls["worker"]}:${var.bootstrap_image_tag}"
   target_group_arn            = null # no ALB — pure BullMQ consumer
+  log_shipping                = local.log_shipping_enabled ? local.log_shipping : null
   task_role_policy_json       = data.aws_iam_policy_document.worker_task.json
 
   environment = [
@@ -404,6 +406,7 @@ module "ecs_service_pos_api" {
   # (ECS's CreateService/UpdateService rejects a target group not yet attached
   # to a load balancer).
   target_group_arn = module.alb_pos_api.target_group_arn
+  log_shipping     = local.log_shipping_enabled ? local.log_shipping : null
 
   environment = [
     { name = "NODE_ENV", value = "production" },
