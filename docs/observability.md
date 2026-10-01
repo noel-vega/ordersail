@@ -13,8 +13,8 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 
 | Tool | Answers | Status |
 |---|---|---|
-| **pino → CloudWatch Logs** | *What happened, step by step?* — searched on demand | this doc |
-| **pino → Grafana Cloud Loki** | the same, for services that ship there — merchant-api only so far | [Log shipping](#log-shipping-to-grafana-cloud-loki) |
+| **pino → Grafana Cloud Loki** | *What happened, step by step?* — searched on demand | this doc, [Log shipping](#log-shipping-to-grafana-cloud-loki) |
+| **CloudWatch Logs** | the migrator's output, Fluent Bit's own output, and service logs from before the move to Loki | [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md` |
 | **OpenTelemetry traces** | *Where did the time go across services?* | deferred (OS-94) |
@@ -24,8 +24,8 @@ The **correlation ID** ties them together: it's the `x-request-id` response head
 
 ## The log line
 
-In production every line is one JSON object on stdout; ECS ships it to CloudWatch, or to
-Grafana Cloud Loki for a service with [log shipping](#log-shipping-to-grafana-cloud-loki) on.
+In production every line is one JSON object on stdout; ECS hands it to a Fluent Bit sidecar
+that ships it to Grafana Cloud Loki ([log shipping](#log-shipping-to-grafana-cloud-loki)).
 In local dev the same data is pretty-printed.
 
 ```json
@@ -246,15 +246,14 @@ If an address is genuinely needed to debug (rare), use `maskEmail()` from `loggi
 
 ## Log shipping to Grafana Cloud Loki
 
-A service's stdout goes to exactly one place. By default that is its CloudWatch log group.
-With log shipping on, ECS FireLens hands stdout to a Fluent Bit sidecar (`log-router`) in
-the same task, which pushes each line to Grafana Cloud Loki over HTTPS. The app is unchanged
-— it still just writes JSON to stdout.
+A service's stdout goes to exactly one place. ECS FireLens hands it to a Fluent Bit sidecar
+(`log-router`) in the same task, which pushes each line to Grafana Cloud Loki over HTTPS. The
+app is unchanged — it still just writes JSON to stdout.
 
 | Service | Production logs are in |
 |---|---|
-| merchant-api | Grafana Cloud Loki, once `loki_host` / `loki_user` are set in `terraform.tfvars`; CloudWatch until then |
-| storefront-api, pos-api, worker, migrator | CloudWatch |
+| merchant-api, storefront-api, pos-api, worker | Grafana Cloud Loki |
+| migrator | CloudWatch `/ecs/ordersail-migrator` (the CD run prints it) |
 
 - **Wiring:** `infra/terraform/envs/production/logging.tf` and the `log_shipping` variable of
   `modules/ecs-service`. The token lives in the `ordersail/production/grafana-cloud` secret.
@@ -265,8 +264,10 @@ the same task, which pushes each line to Grafana Cloud Loki over HTTPS. The app 
   query: `| json | level=~"error|fatal"`.
 - **When lines are missing**, read Fluent Bit's own output in the CloudWatch log group
   `/ecs/ordersail-log-router` — a rejected token or an unreachable Loki only shows up there.
-- A service that moves to Loki stops writing to its CloudWatch log group, so its `alert-lines`
-  / `error-lines` alarms (OS-99) and the saved queries below no longer see it.
+- The services no longer write to their CloudWatch log groups, so the `alert-lines` /
+  `error-lines` alarms (OS-99) and the Logs Insights saved queries see no new lines. Nothing
+  pages on a log line yet, apart from the worker's dead-letter alert, which publishes to SNS
+  directly. Grafana alert rules are the replacement, not yet built.
 
 ### Logs in local Grafana
 
@@ -325,10 +326,20 @@ follows the Docker infra containers). To search, use the local Grafana at
 
 Or grep the same lines on disk: `grep 0b7e6c1e .logs/*.log`.
 
-**Production (merchant-api, once shipping to Loki)** — Grafana Cloud → Explore →
-`{service_name="merchant-api", deployment_environment="production"} | json | correlationId="…"`.
+**Production** — Grafana Cloud → Explore, Loki data source:
 
-**Production (everything else)** — CloudWatch Logs Insights → **Saved queries** → the `ordersail/` folder
+```logql
+{deployment_environment="production"} | json | correlationId="PASTE-CORRELATION-ID"   # one request, API → worker
+{deployment_environment="production"} | json | orderId=1234                            # every line naming an order
+{deployment_environment="production"} | json | accountId=42                            # one tenant
+{deployment_environment="production"} | json | level=~"error|fatal"                    # errors, all services
+{deployment_environment="production"} | json | alert="true"                            # lines a human must act on
+```
+
+Add `service_name="worker"` (or another service) inside the braces to narrow it.
+
+**Production, before the move to Loki (2026-10-01)** — older lines are still in CloudWatch
+until they age out (30 days). Logs Insights → **Saved queries** → the `ordersail/` folder
 (`infra/terraform/envs/production/log-queries.tf`, OS-98). Each one is pre-set to all four
 service log groups — `/ecs/ordersail-merchant-api`, `-storefront-api`, `-pos-api`, `-worker` —
 so API → worker hops show up in one timeline. Pick the time range, edit the placeholder on the
