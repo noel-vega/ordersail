@@ -21,6 +21,8 @@
     "lint": "nx run-many -t lint:ci",
     "test": "nx run-many -t test",
     "logs": "docker compose logs -f",
+    "log-shipping:up": "docker compose --profile log-shipping up -d --build",
+    "log-shipping:down": "docker compose --profile log-shipping down",
     "verify:contracts": "node scripts/verify-taskdef-contracts.mjs"
   },
   "devDependencies": {

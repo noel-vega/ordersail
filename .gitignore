@@ -26,3 +26,9 @@ crash.log
 
 # agent worktrees — full checkouts with their own node_modules
 .claude/worktrees
+
+# `npm run dev` JSON logs, tailed by the local Fluent Bit (docs/observability.md).
+# The folder itself is committed: the logger only writes when it exists, and
+# Docker would otherwise create the bind-mount source owned by root.
+.logs/*
+!.logs/.gitkeep

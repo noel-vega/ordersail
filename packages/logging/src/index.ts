@@ -1,9 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { HttpException, type ArgumentsHost, type LoggerService } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
-import { destination, pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
+import { destination, multistream, pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
+import pretty from 'pino-pretty';
 
 // ---------------------------------------------------------------------------
 // correlation context
@@ -204,9 +207,15 @@ function mixin(): Record<string, unknown> {
 // jest so unmocked service logs don't flood test output. Synchronous stdout for
 // the same reason as production (configureLogging): the main pre-configure
 // caller is parseEnv failing at boot, which logs fatal and exits on the spot.
+// `level` is written as its name ("info", "error"), not pino's default number:
+// Grafana/Loki, and OpenTelemetry later, recognise severity by name, so levels
+// are detected without any mapping at query time.
+const formatters = { level: (label: string) => ({ level: label }) };
+
 let root: PinoLogger = pino(
   {
     level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
+    formatters,
     mixin,
     redact,
     serializers,
@@ -214,15 +223,34 @@ let root: PinoLogger = pino(
   destination({ dest: 1, sync: true }),
 );
 
+// Where a service running under `npm run dev` also writes its lines as JSON:
+// `<repo>/.logs/<service>.log`. The local Fluent Bit container tails that folder
+// and pushes to the local Loki, so dev logs are searchable in Grafana
+// (docs/observability.md → "Logs in local Grafana"). Found by walking up from
+// the working directory, which under npm workspaces is apps/<service>; no
+// `.logs` folder above it (a container, a script run from elsewhere) means no file.
+function devLogFile(service: string): string | undefined {
+  let dir = process.cwd();
+  for (;;) {
+    const logsDir = join(dir, '.logs');
+    if (existsSync(logsDir)) return join(logsDir, `${service}.log`);
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
 // Called once at the top of each service's main.ts, before NestFactory.create.
-// Production writes one JSON object per line to stdout (ECS → CloudWatch);
-// everywhere else pretty-prints through pino-pretty. Field contract:
+// Production writes one JSON object per line to stdout (the log driver ships
+// it); everywhere else pretty-prints through pino-pretty, and development also
+// writes the JSON to a file for the local Grafana. Field contract:
 // docs/observability.md.
 export function configureLogging(options: ConfigureLoggingOptions): PinoLogger {
   const isProduction = options.nodeEnv === 'production';
   const loggerOptions = {
     level: options.level ?? (isProduction ? 'info' : 'debug'),
     base: { service: options.service, env: options.nodeEnv },
+    formatters,
     mixin,
     redact,
     serializers,
@@ -239,17 +267,27 @@ export function configureLogging(options: ConfigureLoggingOptions): PinoLogger {
     root = pino(loggerOptions, destination({ dest: 1, sync: true }));
     return root;
   }
-  root = pino({
-    ...loggerOptions,
-    transport: {
-      target: 'pino-pretty',
-      options: {
+  // In-process streams rather than pino transports: a transport with several
+  // targets can't be combined with the level formatter above. Both write
+  // synchronously, so nothing is lost when a dev process exits.
+  const level = loggerOptions.level;
+  const streams: { level: LogLevel; stream: DestinationStream }[] = [
+    {
+      level,
+      stream: pretty({
+        sync: true,
         translateTime: 'SYS:HH:MM:ss.l',
         ignore: 'pid,hostname,service,env,context',
         messageFormat: '[{context}] {msg}',
-      },
+      }),
     },
-  });
+  ];
+  const logFile = options.nodeEnv === 'development' ? devLogFile(options.service) : undefined;
+  if (logFile) {
+    // truncated on every start, so the file never outgrows one dev session
+    streams.push({ level, stream: destination({ dest: logFile, sync: true, append: false }) });
+  }
+  root = pino(loggerOptions, multistream(streams));
   return root;
 }
 
@@ -454,9 +492,9 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
 // errors — one exception filter for HTTP, one crash path for the process
 // ---------------------------------------------------------------------------
 
-// Resolves once everything pino has accepted is written. Production stdout is
-// already synchronous (configureLogging), so this matters for the pino-pretty
-// transport in dev, which ships lines to a worker thread.
+// Resolves once everything pino has accepted is written. Every destination
+// configureLogging sets up is synchronous, so this only matters for a
+// caller-supplied `destination` that buffers.
 export function flushLogs(): Promise<void> {
   return new Promise((resolve) => {
     try {

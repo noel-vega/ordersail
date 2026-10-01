@@ -1,6 +1,9 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BadRequestException,
@@ -346,7 +349,7 @@ describe('requestLoggingMiddleware', () => {
         await settle();
         const [line] = lines;
         assert.equal(lines.length, 1);
-        assert.equal(line.level, 30);
+        assert.equal(line.level, 'info');
         assert.equal(line.event, 'http.request');
         assert.equal(line.context, 'HTTP');
         assert.deepEqual(line.req, { method: 'GET' });
@@ -388,10 +391,10 @@ describe('requestLoggingMiddleware', () => {
         await (await fetch(`${url}/nope`)).text();
         await (await fetch(`${url}/boom`)).text();
         await settle();
-        assert.equal(lines[0].level, 40);
+        assert.equal(lines[0].level, 'warn');
         assert.equal(lines[0].route, null);
         assert.equal(lines[0].msg, 'GET (unmatched) 404');
-        assert.equal(lines[1].level, 50);
+        assert.equal(lines[1].level, 'error');
       },
     );
   });
@@ -426,7 +429,7 @@ describe('requestLoggingMiddleware', () => {
         const [line] = lines;
         assert.equal(line.aborted, true);
         assert.equal(line.res, undefined);
-        assert.equal(line.level, 40);
+        assert.equal(line.level, 'warn');
         assert.equal(line.msg, 'GET (unmatched) aborted');
       },
     );
@@ -550,7 +553,7 @@ describe('LoggingExceptionFilter', () => {
     });
     assert.equal(lines.length, 1, 'exactly one line — Nest\'s own ExceptionsHandler line is suppressed');
     const [line] = lines;
-    assert.equal(line.level, 50);
+    assert.equal(line.level, 'error');
     assert.equal(line.event, 'http.unhandled_error');
     assert.equal(line.status, 500);
     assert.equal(line.route, '/orders/:id');
@@ -583,8 +586,8 @@ describe('LoggingExceptionFilter', () => {
     assert.deepEqual(
       lines.map((line) => [line.level, line.event, line.status, line.reason, line.err]),
       [
-        [40, 'http.request_rejected', 401, 'Unauthorized', undefined],
-        [40, 'http.request_rejected', 403, 'Missing permission', undefined],
+        ['warn', 'http.request_rejected', 401, 'Unauthorized', undefined],
+        ['warn', 'http.request_rejected', 403, 'Missing permission', undefined],
       ],
     );
   });
@@ -594,7 +597,7 @@ describe('LoggingExceptionFilter', () => {
     const filter = new LoggingExceptionFilter(fakeAdapter().adapter);
     filter.catch(new NotFoundException(), httpHost(expressRequest));
     filter.catch(Object.assign(new Error('too large'), { statusCode: 413 }), httpHost(expressRequest));
-    assert.deepEqual(lines.map((line) => [line.level, line.status]), [[20, 404], [20, 413]]);
+    assert.deepEqual(lines.map((line) => [line.level, line.status]), [['debug', 404], ['debug', 413]]);
   });
 
   it('a thrown 5xx HttpException logs at error', () => {
@@ -603,7 +606,7 @@ describe('LoggingExceptionFilter', () => {
       new InternalServerErrorException(),
       httpHost(expressRequest),
     );
-    assert.equal(lines[0].level, 50);
+    assert.equal(lines[0].level, 'error');
     assert.equal(lines[0].event, 'http.unhandled_error');
   });
 
@@ -656,7 +659,7 @@ describe('process handlers', () => {
     `);
     assert.equal(code, 1);
     assert.equal(lines.length, 1);
-    assert.equal(lines[0].level, 60);
+    assert.equal(lines[0].level, 'fatal');
     assert.equal(lines[0].event, 'process.unhandled_rejection');
     assert.equal(lines[0].err.message, 'nobody caught me');
   });
@@ -669,7 +672,7 @@ describe('process handlers', () => {
       Promise.reject(new Error('nobody caught me'));
     `);
     assert.equal(code, 1);
-    assert.deepEqual(lines.map((line) => [line.level, line.event]), [[60, 'process.unhandled_rejection']]);
+    assert.deepEqual(lines.map((line) => [line.level, line.event]), [['fatal', 'process.unhandled_rejection']]);
   });
 
   it('an unhandled rejection is still fatal under --unhandled-rejections=warn', async () => {
@@ -682,7 +685,7 @@ describe('process handlers', () => {
       ['--unhandled-rejections=warn'],
     );
     assert.equal(code, 1);
-    assert.deepEqual(lines.map((line) => [line.level, line.event]), [[60, 'process.unhandled_rejection']]);
+    assert.deepEqual(lines.map((line) => [line.level, line.event]), [['fatal', 'process.unhandled_rejection']]);
   });
 
   it('an uncaught exception logs one fatal line and exits 1', async () => {
@@ -691,7 +694,7 @@ describe('process handlers', () => {
       setTimeout(() => { throw new Error('thrown in a timer'); }, 0);
     `);
     assert.equal(code, 1);
-    assert.deepEqual(lines.map((line) => [line.level, line.event]), [[60, 'process.uncaught_exception']]);
+    assert.deepEqual(lines.map((line) => [line.level, line.event]), [['fatal', 'process.uncaught_exception']]);
   });
 
   it('a failed bootstrap logs app.boot_failed and exits 1', async () => {
@@ -765,7 +768,56 @@ describe('process handlers', () => {
     assert.equal(code, 1);
     assert.deepEqual(
       lines.map((line) => [line.level, line.event]),
-      [[30, 'app.ready'], [30, 'process.shutdown_started'], [60, 'process.shutdown_timed_out']],
+      [['info', 'app.ready'], ['info', 'process.shutdown_started'], ['fatal', 'process.shutdown_timed_out']],
     );
+  });
+});
+
+// The dev transport runs in worker threads and depends on the working
+// directory, so this needs a real process too.
+describe('development log file', () => {
+  const indexPath = fileURLToPath(new URL('./index.ts', import.meta.url));
+
+  function runInDev(cwd: string): Promise<number | null> {
+    const script = `
+      import * as logging from ${JSON.stringify(indexPath)};
+      logging.configureLogging({ service: 'merchant-api', nodeEnv: 'development' });
+      const logger = new logging.Logger('App');
+      logger.debug({ event: 'app.debugging' }, 'debug');
+      logger.info({ event: 'app.ready', orderId: 7, email: 'jane@example.com' }, 'ready');
+    `;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], { cwd });
+    return new Promise((resolve) => child.on('close', resolve));
+  }
+
+  it('writes JSON lines to the nearest .logs folder above the working directory', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'logging-dev-'));
+    const appDir = join(repo, 'apps', 'merchant-api');
+    mkdirSync(join(repo, '.logs'));
+    mkdirSync(appDir, { recursive: true });
+
+    assert.equal(await runInDev(appDir), 0);
+
+    const lines = readFileSync(join(repo, '.logs', 'merchant-api.log'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    // same level threshold as the terminal (debug), same redaction as production
+    assert.deepEqual(
+      lines.map((line) => [line.level, line.service, line.env, line.event]),
+      [
+        ['debug', 'merchant-api', 'development', 'app.debugging'],
+        ['info', 'merchant-api', 'development', 'app.ready'],
+      ],
+    );
+    assert.equal(lines[1].orderId, 7);
+    assert.equal(lines[1].email, '[REDACTED]');
+  });
+
+  it('writes no file when there is no .logs folder to find', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'logging-dev-'));
+    assert.equal(await runInDev(dir), 0);
+    assert.equal(existsSync(join(dir, 'merchant-api.log')), false);
+    assert.equal(existsSync(join(dir, '.logs')), false);
   });
 });

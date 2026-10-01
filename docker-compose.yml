@@ -1,9 +1,18 @@
 # Local development infrastructure — one command for the whole stack:
 #
-#   npm run up      # start all four, wait until healthy
+#   npm run up      # start everything, wait until healthy
 #   npm run down    # stop (keeps data)
 #   npm run reset   # stop and delete volumes (Postgres data + MinIO objects)
-#   npm run logs    # tail all four
+#   npm run logs    # tail the infra containers
+#
+# Loki + Grafana + Fluent Bit make the logs of `npm run dev` searchable at
+# http://localhost:3300 (docs/observability.md → "Logs in local Grafana").
+# Nothing here talks to Grafana Cloud.
+#
+# Opt-in `log-shipping` profile (not started by `npm run up`):
+#
+#   npm run log-shipping:up     # adds merchant-api's production image, logging the way ECS does
+#   npm run log-shipping:down
 #
 # The `ordersail-product-images` bucket is created automatically the first time
 # merchant-api (or `npm run seed -w seed`) starts — see
@@ -75,8 +84,94 @@ services:
       timeout: 5s
       retries: 15
 
+  # --- local logs: Fluent Bit → Loki → Grafana ---------------------------------
+
+  # no volume: logs last until `npm run down`
+  loki:
+    image: grafana/loki:3.5.5
+    container_name: ordersail-loki
+    restart: unless-stopped
+    ports:
+      - '${LOKI_PORT:-3100}:3100'
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    container_name: ordersail-grafana
+    restart: unless-stopped
+    environment:
+      # local only: no login, straight into Explore
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+    ports:
+      - '${GRAFANA_PORT:-3300}:3000'
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+
+  # same image + tag as the production `log-router` sidecar
+  # (infra/terraform/modules/ecs-service) — bump them together
+  fluent-bit:
+    image: public.ecr.aws/aws-observability/aws-for-fluent-bit:2.34.3.20260923
+    container_name: ordersail-fluent-bit
+    restart: unless-stopped
+    ports:
+      # the Docker daemon (not a container) connects here for the fluentd log
+      # driver below, so it has to be published on the host
+      - '127.0.0.1:${FLUENT_BIT_PORT:-24224}:24224'
+    volumes:
+      - ./docker/fluent-bit/dev.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      # where `npm run dev` services write their JSON lines (packages/logging)
+      - ./.logs:/var/log/ordersail:ro
+      # tail offsets, so a Fluent Bit restart doesn't re-send whole files
+      - ordersail-fluent-bit-state:/fluent-bit/state
+    depends_on:
+      - loki
+
+  # merchant-api as it runs in production: the real image, NODE_ENV=production
+  # (so pino writes JSON), stdout handed to Fluent Bit by the same log driver
+  # FireLens uses. Separate from `npm run dev`'s merchant-api on :3000.
+  merchant-api-log-shipping:
+    build:
+      context: .
+      dockerfile: docker/merchant-api.Dockerfile
+    container_name: ordersail-merchant-api-log-shipping
+    profiles: [log-shipping]
+    env_file:
+      - path: apps/merchant-api/.env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      # the app's .env points at localhost; inside the compose network the
+      # infra is reached by service name
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ordersail}
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      MINIO_ENDPOINT: http://minio:9000
+    ports:
+      - '${MERCHANT_API_LOG_SHIPPING_PORT:-3020}:3000'
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:${FLUENT_BIT_PORT:-24224}
+        fluentd-async: 'true'
+        tag: merchant-api-firelens
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      fluent-bit:
+        condition: service_started
+
 volumes:
   ordersail-db-data:
     name: ordersail-db-data
   ordersail-minio-data:
     name: ordersail-minio-data
+  ordersail-fluent-bit-state:
+    name: ordersail-fluent-bit-state
