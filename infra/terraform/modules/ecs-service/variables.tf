@@ -98,7 +98,33 @@ variable "alarm_warning_topic_arns" {
 }
 
 variable "alarm_error_lines_threshold" {
-  description = "Error-level (level >= 50) log lines in 5 min above which the error-lines alarm fires (OS-99)."
+  description = "Error-level (`error` + `fatal`) log lines in 5 min above which the error-lines alarm fires (OS-99)."
   type        = number
   default     = 10
+}
+
+variable "log_shipping" {
+  description = <<-EOT
+    Ship the app container's stdout to Grafana Cloud Loki through a Fluent Bit
+    sidecar (ECS FireLens) instead of CloudWatch. null (the default) keeps the
+    `awslogs` driver and a single-container task definition.
+
+    loki_host             — the stack's Loki host, no scheme or path (e.g. "logs-prod-006.grafana.net")
+    loki_user             — the stack's numeric Loki user ID
+    token_secret_arn      — Secrets Manager secret whose JSON key LOKI_TOKEN holds a `logs:write` access-policy token
+    router_log_group_name — CloudWatch log group for Fluent Bit's own output
+  EOT
+  type = object({
+    loki_host             = string
+    loki_user             = string
+    token_secret_arn      = string
+    router_log_group_name = string
+  })
+  default = null
+}
+
+variable "log_router_image" {
+  description = "Fluent Bit image for the FireLens sidecar. Same tag as the `fluent-bit` service in the root docker-compose.yml — bump them together."
+  type        = string
+  default     = "public.ecr.aws/aws-observability/aws-for-fluent-bit:2.34.3.20260923"
 }

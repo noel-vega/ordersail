@@ -34,7 +34,9 @@ resource "aws_iam_role_policy_attachment" "execution_managed" {
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
-  count = length(var.secrets_manager_secret_arns) > 0 ? 1 : 0
+  # log_shipping is tested for null rather than counting the merged list: its
+  # secret ARN is unknown until that secret is created, and count must be known
+  count = length(var.secrets_manager_secret_arns) > 0 || var.log_shipping != null ? 1 : 0
   name  = "read-secrets"
   role  = aws_iam_role.execution.id
 
@@ -43,7 +45,7 @@ resource "aws_iam_role_policy" "execution_secrets" {
     Statement = [{
       Effect   = "Allow"
       Action   = "secretsmanager:GetSecretValue"
-      Resource = var.secrets_manager_secret_arns
+      Resource = local.execution_secret_arns
     }]
   })
 }
@@ -75,24 +77,102 @@ resource "aws_iam_role_policy" "task_extra" {
 }
 
 locals {
-  container_definitions = [
-    {
+  # Where the app container's stdout goes. `awslogs` → this service's CloudWatch
+  # log group. `firelens` → var.log_shipping: ECS hands stdout to the
+  # `log-router` sidecar below, which pushes it to Grafana Cloud Loki.
+  #
+  # Selected by key rather than a `? :` because the two shapes differ, and a
+  # conditional needs both arms to be the same type.
+  log_driver = var.log_shipping == null ? "awslogs" : "firelens"
+
+  # the execution role resolves the log driver's secretOptions too
+  execution_secret_arns = concat(
+    var.secrets_manager_secret_arns,
+    var.log_shipping == null ? [] : [var.log_shipping.token_secret_arn],
+  )
+
+  app_log_configuration = {
+    awslogs = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.this.name
+        "awslogs-region"        = data.aws_region.current.name
+        "awslogs-stream-prefix" = var.name
+      }
+    }
+    firelens = {
+      logDriver = "awsfirelens"
+      # ECS turns these into Fluent Bit's [OUTPUT] section. The line-shaping
+      # keys (Remove_Keys, Line_Format, Drop_Single_Key) make Loki store the raw
+      # pino JSON line rather than a wrapper around it; they are rehearsed
+      # locally in docker/fluent-bit/dev.conf — change both together.
+      #
+      # Labels stay low-cardinality on purpose. correlationId, accountId and the
+      # rest are read at query time with `| json` (docs/observability.md).
+      options = {
+        Name            = "loki"
+        Host            = try(var.log_shipping.loki_host, "")
+        Port            = "443"
+        Tls             = "on"
+        Http_User       = try(var.log_shipping.loki_user, "")
+        Labels          = "service_name=${var.name},deployment_environment=production"
+        Remove_Keys     = "container_id,container_name,source"
+        Line_Format     = "key_value"
+        Drop_Single_Key = "on"
+      }
+      secretOptions = [
+        { name = "Http_Passwd", valueFrom = "${try(var.log_shipping.token_secret_arn, "")}:LOKI_TOKEN::" }
+      ]
+    }
+  }
+
+  # the app must not write a line before the router is there to take it
+  app_log_router_dependency = {
+    awslogs  = {}
+    firelens = { dependsOn = [{ containerName = "log-router", condition = "START" }] }
+  }
+
+  # Fluent Bit. Essential: if it dies the app's logs go nowhere, so the task
+  # should be replaced (and running-below-desired should notice). Its own output
+  # stays in CloudWatch — that is where a rejected token or an unreachable Loki
+  # shows up.
+  log_router_container_definitions = [
+    for router in [{
+      name              = "log-router"
+      image             = var.log_router_image
+      essential         = true
+      memoryReservation = 50
+      firelensConfiguration = {
+        type = "fluentbit"
+        # without the ECS metadata the record is { log, container_id,
+        # container_name, source } — the same shape Docker's fluentd driver
+        # produces locally, so Remove_Keys above matches in both places
+        options = { "enable-ecs-log-metadata" = "false" }
+      }
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = try(var.log_shipping.router_log_group_name, "")
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" = var.name
+        }
+      }
+    }] : router if var.log_shipping != null
+  ]
+
+  # The app container stays first: cd.yml, rollback.yml, environment.yml and
+  # scripts/verify-taskdef-contracts.mjs all address it as containerDefinitions[0].
+  container_definitions = concat([
+    merge({
       name      = var.name
       image     = var.image
       essential = true
       portMappings = [
         { containerPort = var.container_port, protocol = "tcp" }
       ]
-      environment = var.environment
-      secrets     = var.secrets
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.this.name
-          "awslogs-region"        = data.aws_region.current.name
-          "awslogs-stream-prefix" = var.name
-        }
-      }
+      environment      = var.environment
+      secrets          = var.secrets
+      logConfiguration = local.app_log_configuration[local.log_driver]
       healthCheck = {
         command     = ["CMD-SHELL", "node -e \"fetch('http://localhost:${var.container_port}/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
         interval    = 15
@@ -100,8 +180,8 @@ locals {
         retries     = 3
         startPeriod = 20
       }
-    }
-  ]
+    }, local.app_log_router_dependency[local.log_driver])
+  ], local.log_router_container_definitions)
 
   # The exact `aws ecs register-task-definition --cli-input-json` payload for
   # this service. Published to SSM by envs/production (see `register_task_definition_input`

@@ -256,6 +256,7 @@ module "ecs_service_merchant_api" {
   image                       = "${module.ecr.repository_urls["merchant-api"]}:${var.bootstrap_image_tag}"
   target_group_arn            = module.alb_merchant_api.target_group_arn
   task_role_policy_json       = data.aws_iam_policy_document.merchant_api_task.json
+  log_shipping                = local.log_shipping_enabled ? local.log_shipping : null
 
   environment = [
     { name = "NODE_ENV", value = "production" },

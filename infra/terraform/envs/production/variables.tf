@@ -85,3 +85,20 @@ variable "google_dkim_txt" {
     error_message = "Must be the full DKIM TXT value, starting with \"v=DKIM1;\"."
   }
 }
+
+variable "loki_host" {
+  description = "Grafana Cloud Loki host for log shipping, no scheme or path — e.g. \"logs-prod-006.grafana.net\" (grafana.com → your stack → Loki → Details → URL). Null leaves log shipping off: every service keeps logging to CloudWatch. See logging.tf."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.loki_host == null || can(regex("^[a-z0-9.-]+$", var.loki_host))
+    error_message = "Host name only — drop the https:// and any path."
+  }
+}
+
+variable "loki_user" {
+  description = "Grafana Cloud Loki user ID — the numeric \"User\" on the same Loki Details page. Not secret; the token is (Secrets Manager, see logging.tf)."
+  type        = string
+  default     = null
+}

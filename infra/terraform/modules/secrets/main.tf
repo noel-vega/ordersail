@@ -22,6 +22,37 @@ resource "aws_secretsmanager_secret" "app" {
   name     = "${var.name_prefix}/production/${each.value}"
 }
 
+# --- grafana-cloud: credentials for shipping telemetry to Grafana Cloud. Keys:
+#   LOKI_TOKEN — access-policy token with `logs:write`; the FireLens log router
+#                sends it as the Loki basic-auth password (modules/ecs-service).
+#
+# Unlike the app shells above, Terraform seeds this one — every key, each with
+# an empty value — so the key names are in the secret from the start rather
+# than something to get right by hand. It never holds a real value: set those
+# with put-secret-value, and ignore_changes keeps later applies from putting
+# the empty ones back.
+#
+#   aws secretsmanager put-secret-value --region us-east-1 \
+#     --secret-id ordersail/production/grafana-cloud \
+#     --secret-string '{"LOKI_TOKEN":"glc_..."}'
+#
+# `npm run verify:contracts` refuses a deploy while a key a task definition
+# uses is still empty. Adding a key later: add it here for the record, and to
+# the live secret by hand — ignore_changes means Terraform won't.
+
+resource "aws_secretsmanager_secret" "grafana_cloud" {
+  name = "${var.name_prefix}/production/grafana-cloud"
+}
+
+resource "aws_secretsmanager_secret_version" "grafana_cloud" {
+  secret_id     = aws_secretsmanager_secret.grafana_cloud.id
+  secret_string = jsonencode({ LOKI_TOKEN = "" })
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
 # --- database-url: composed from the RDS endpoint + the Terraform-managed
 # master password (modules/rds). A stable value — no RDS-side rotation to
 # chase (OS-366). ------------------------------------------------------------
