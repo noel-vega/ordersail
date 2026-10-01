@@ -21,7 +21,7 @@ google_site_verification = "google-site-verification=o8MTNIKX8nvDf_6g1duGU_RHvmC
 google_dkim_txt = "v=DKIM1;k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkxlbr/t10yvqpbP//IBA72xit/KKEeKIFMV/dwYslC0HMkDURFzFnw3cbRn5hOMA/inizpfOa/ksvm5IsOHp7/W0INFVbvr34QnyJ8H7j17vjjcal4aPPuxY7GtePL6ikCyBGi6efVej0DeGLicneGs95JFSVyB7HG+S1Wg4da29g5B9iWWCqTgwf8ItigOBZCJ2dv2j9OJ80IOz1yfE7qmKUD2/tmiHtq7anr9R8dYEU4f+A7iHQVVHFPUSogEldc9vAbGI7pWAFE766J1TMZ0WKKPSSNrpuc152gNojI0YTpuyHvPLTj5wGRUyAbybB1bFISd/FxSfdtTzrG0EkQIDAQAB"
 
 # Log shipping to Grafana Cloud Loki (logging.tf) — merchant-api only for now.
-# Leave commented to keep every service on CloudWatch. From grafana.com → your
-# stack → Loki → Details. Put the token in Secrets Manager first (logging.tf).
-# loki_host = "logs-prod-000.grafana.net"
-# loki_user = "000000"
+# Comment both out to put every service back on CloudWatch. From grafana.com →
+# your stack → Loki → Details. The token is in Secrets Manager (logging.tf).
+loki_host = "logs-prod-036.grafana.net"
+loki_user = "1808609"
