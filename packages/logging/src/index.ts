@@ -38,8 +38,6 @@ const als = new AsyncLocalStorage<LogContext>();
 // registered: @opentelemetry/api then has no active span to hand out.
 // ---------------------------------------------------------------------------
 
-export { SPAN_ATTRIBUTES };
-
 // The span a scope's context is recorded on, keyed by the scope's store.
 const scopeSpans = new WeakMap<LogContext, Span>();
 // Spans a scope has already claimed: the first scope to reach a span owns it.
@@ -513,10 +511,10 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
 
     const path = (req.url ?? '').split('?')[0];
     const store: LogContext = { correlationId };
-    // read now: finish/close can fire outside the request's trace context
-    const requestTrace = traceFieldsOf(scopeSpanOf()?.spanContext());
 
     if (!ignorePaths.has(path)) {
+      // read now: finish/close can fire outside the request's trace context
+      const requestTrace = traceFieldsOf(scopeSpanOf()?.spanContext());
       const startedAt = process.hrtime.bigint();
       let logged = false;
       const writeAccessLine = (aborted: boolean) => {

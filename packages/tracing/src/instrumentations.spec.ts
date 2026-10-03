@@ -82,7 +82,8 @@ describe('pinned instrumentations', () => {
   // installed: anything it imported would load unpatched
   it('loads nothing through logging/span-attributes', () => {
     const built = readFileSync(fileURLToPath(import.meta.resolve('logging/span-attributes')), 'utf8');
-    assert.doesNotMatch(built, /^\s*import\b|\brequire\(/m);
+    // a static import, a re-export, a dynamic import() or a require()
+    assert.doesNotMatch(built, /^\s*import\b|^\s*export\b.*\bfrom\b|\bimport\(|\brequire\(/m);
   });
 
   it('keeps only type, message and stack on span events — what `err` keeps in logs', () => {
