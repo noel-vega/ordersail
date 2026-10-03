@@ -11,7 +11,10 @@ import { eq, inventoryTable } from 'db/stock';
 import { productVariantsTable, productsTable } from 'db/catalog';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { StorageService } from 'src/shared/storage/storage.service';
+import { LocationsService } from 'src/stock';
 import { ProductsService } from './products.service';
+import { LOCATIONS_PORT } from './ports/locations.port';
+import { LocationsAdapter } from './ports/locations.adapter';
 
 const db = useTestDb();
 
@@ -21,6 +24,8 @@ async function build() {
       ProductsService,
       { provide: DRIZZLE, useValue: db },
       { provide: StorageService, useValue: {} },
+      LocationsService,
+      { provide: LOCATIONS_PORT, useClass: LocationsAdapter },
     ],
   }).compile();
   return ref.get(ProductsService);

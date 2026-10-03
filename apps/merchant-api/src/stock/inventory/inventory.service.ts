@@ -25,6 +25,7 @@ import {
   PaginatedInventoryMovements,
 } from './entities/paginated-inventory.entity';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
+import { LocationsService } from '../locations/locations.service';
 
 type InventoryMovementReason =
   (typeof inventoryMovementReasonEnum.enumValues)[number];
@@ -46,7 +47,10 @@ export interface MovementFilter {
 
 @Injectable()
 export class InventoryService {
-  constructor(@Inject(DRIZZLE) private readonly db: typeof Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: typeof Db,
+    private readonly locations: LocationsService,
+  ) {}
 
   async findAll(
     limit: number,
@@ -135,18 +139,7 @@ export class InventoryService {
       throw new BadRequestException('Variant not found');
     }
 
-    const [location] = await this.db
-      .select({ id: locationsTable.id })
-      .from(locationsTable)
-      .where(
-        and(
-          eq(locationsTable.id, dto.locationId),
-          eq(locationsTable.accountId, accountId),
-        ),
-      );
-    if (!location) {
-      throw new BadRequestException('Location not found');
-    }
+    await this.locations.assertAccountLocation(accountId, dto.locationId);
 
     const movementId = await this.db.transaction(async (tx) => {
       const [movement] = await tx

@@ -8,12 +8,17 @@ import {
 } from 'test-support';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { InventoryService } from './inventory.service';
+import { LocationsService } from '../locations/locations.service';
 
 const db = useTestDb();
 
 async function build() {
   const ref = await Test.createTestingModule({
-    providers: [InventoryService, { provide: DRIZZLE, useValue: db }],
+    providers: [
+      InventoryService,
+      LocationsService,
+      { provide: DRIZZLE, useValue: db },
+    ],
   }).compile();
   return ref.get(InventoryService);
 }

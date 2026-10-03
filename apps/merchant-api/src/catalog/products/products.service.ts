@@ -43,6 +43,7 @@ import { ProductDetail } from './entities/product-detail.entity';
 import { ProductImage } from './entities/product-image.entity';
 import { StorageService } from 'src/shared/storage/storage.service';
 import { generateToken } from '../../shared/common/generate-token.util';
+import { LOCATIONS_PORT, type LocationsPort } from './ports/locations.port';
 
 function toProductImage(
   row: typeof productImagesTable.$inferSelect,
@@ -84,6 +85,7 @@ export class ProductsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private readonly storageService: StorageService,
+    @Inject(LOCATIONS_PORT) private readonly locations: LocationsPort,
   ) {}
   async create(createProductDto: CreateProductDto, accountId: number) {
     const [brand] = await this.db
@@ -351,17 +353,8 @@ export class ProductsService {
     locationId: number | undefined,
   ): Promise<number | null> {
     if (locationId !== undefined) {
-      const [location] = await this.db
-        .select({ id: locationsTable.id })
-        .from(locationsTable)
-        .where(
-          and(
-            eq(locationsTable.id, locationId),
-            eq(locationsTable.accountId, accountId),
-          ),
-        );
-      if (!location) throw new BadRequestException('Location not found');
-      return location.id;
+      await this.locations.assertAccountLocation(accountId, locationId);
+      return locationId;
     }
 
     // two rows are enough to tell "exactly one" from "more than one"

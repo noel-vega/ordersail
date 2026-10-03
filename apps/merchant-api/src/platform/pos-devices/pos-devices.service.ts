@@ -18,19 +18,23 @@ import { UpdatePosDeviceDto } from './dto/update-pos-device.dto';
 import { PosDevice, PosDeviceStatus } from './entities/pos-device.entity';
 import { PosDevicePairing } from './entities/pos-device-pairing.entity';
 import { PAIRING_TTL_MS, generatePairingCode } from './pos-devices.util';
+import { LOCATIONS_PORT, type LocationsPort } from './ports/locations.port';
 
 type PosDeviceRow = typeof posDevicesTable.$inferSelect;
 
 @Injectable()
 export class PosDevicesService {
-  constructor(@Inject(DRIZZLE) private readonly db: typeof Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: typeof Db,
+    @Inject(LOCATIONS_PORT) private readonly locations: LocationsPort,
+  ) {}
 
   async create(
     dto: CreatePosDeviceDto,
     accountId: number,
     userId: number,
   ): Promise<PosDevicePairing> {
-    await this.assertLocationOwned(dto.locationId, accountId);
+    await this.locations.assertAccountLocation(accountId, dto.locationId);
 
     const [device] = await this.db
       .insert(posDevicesTable)
@@ -74,7 +78,7 @@ export class PosDevicesService {
     await this.getOwnedOrThrow(id, accountId);
 
     if (dto.locationId !== undefined) {
-      await this.assertLocationOwned(dto.locationId, accountId);
+      await this.locations.assertAccountLocation(accountId, dto.locationId);
     }
 
     if (dto.name !== undefined || dto.locationId !== undefined) {
@@ -142,21 +146,6 @@ export class PosDevicesService {
       .returning();
 
     return this.toPairing(updated);
-  }
-
-  private async assertLocationOwned(locationId: number, accountId: number) {
-    const [location] = await this.db
-      .select({ id: locationsTable.id })
-      .from(locationsTable)
-      .where(
-        and(
-          eq(locationsTable.id, locationId),
-          eq(locationsTable.accountId, accountId),
-        ),
-      );
-    if (!location) {
-      throw new BadRequestException('Location not found');
-    }
   }
 
   private async getOwnedOrThrow(

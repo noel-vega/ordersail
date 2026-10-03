@@ -1,4 +1,9 @@
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { DRIZZLE } from 'src/shared/database/database.constants';
@@ -59,6 +64,26 @@ export class LocationsService {
     ]);
 
     return { items, total, limit: take, offset: skip };
+  }
+
+  // a locationId taken from a request body must be the caller's own account's
+  // — the one check behind every write that places something at a location
+  // (stock movements, opening stock, POS devices). 400, not 404: the
+  // resource being written exists, one of its fields is bad.
+  async assertAccountLocation(
+    accountId: number,
+    locationId: number,
+  ): Promise<void> {
+    const [location] = await this.db
+      .select({ id: locationsTable.id })
+      .from(locationsTable)
+      .where(
+        and(
+          eq(locationsTable.id, locationId),
+          eq(locationsTable.accountId, accountId),
+        ),
+      );
+    if (!location) throw new BadRequestException('Location not found');
   }
 
   private listFilter(accountId: number, q?: string): SQL | undefined {

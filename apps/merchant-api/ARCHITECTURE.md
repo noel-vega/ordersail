@@ -44,11 +44,11 @@ globally via `APP_GUARD`), `env.ts`.
    | From | May depend on |
    |---|---|
    | `identity` | — (shared only) |
-   | `catalog` | `identity` |
+   | `catalog` | `identity`, `stock` (location check — via `catalog/products/ports/`) |
    | `stock` | `identity` |
    | `payments` | `identity` |
    | `sales` | `identity`, `catalog`, `stock`, `payments` (refunds — via `sales/orders/ports/`) |
-   | `platform` | `identity`, `sales` — **`platform/dashboard` is the one cross-context read-model**, allowed to query other contexts' data for summary views |
+   | `platform` | `identity`, `sales`, `stock` (location check — via `platform/pos-devices/ports/`) — **`platform/dashboard` is the one cross-context read-model**, allowed to query other contexts' data for summary views |
 
 4. The shared kernel is a **leaf** — it may not import a context.
 
@@ -63,7 +63,7 @@ Adding a new cross-context edge = update the table above **and** the
   barrel-exported services. The consumer's domain code depends only on the port.
   Extraction = swap the adapter for an HTTP client, nothing else changes.
 
-  Two live edges:
+  Live edges:
   - **`platform/dashboard → sales`**. `dashboard.service` depends on `SalesPort`
     (`platform/dashboard/ports/sales.port.ts`); `SalesAdapter`
     (`…/ports/sales.adapter.ts`) is the *only* file in `platform/` that imports
@@ -82,6 +82,17 @@ Adding a new cross-context edge = update the table above **and** the
     Status transitions + the negative-payment / restock writes stay entirely in
     `sales` (`transitionOrderStatus` / `recordRefund`); `payments` only talks to
     Stripe.
+  - **`catalog → stock`** and **`platform → stock`** (OS-696). `stock` owns
+    locations, so "this location is the caller's account's" is one method,
+    `LocationsService.assertAccountLocation` (400 `Location not found`), which
+    `InventoryService` also uses. `ProductsService` (opening stock) and
+    `PosDevicesService` (a device's location) each depend on a local
+    `LocationsPort` (`<module>/ports/locations.port.ts`); `LocationsAdapter`
+    beside it is the only file in that context that imports `src/stock`.
+    `catalog`'s other `db/stock` reads and writes (stock levels, opening
+    inventory rows) stay on its read-graph.
+  The "only the adapter" rule is `no-restricted-imports` in
+  `eslint.config.mjs` (the `portOnly` map there must agree with this list).
 - **Domain events** — for a genuine reactive side-effect in another context,
   not a synchronous read (use a port for that). In-process, via
   `@nestjs/event-emitter`, wired by the `shared/events` kernel module.
