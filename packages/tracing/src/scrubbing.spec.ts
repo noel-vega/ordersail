@@ -4,16 +4,40 @@ import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { context, trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, type ReadableSpan } from '@opentelemetry/sdk-trace-base';
-import { flushTracing, ScrubbingSpanExporter, shutdownTracing, startTracing } from './index.ts';
+import { ALLOWED_ATTRIBUTES, flushTracing, ScrubbingSpanExporter, shutdownTracing, startTracing } from './index.ts';
 
 const exporter = new InMemorySpanExporter();
 assert.equal(startTracing({ service: 'spec', exporter }), true);
-// required after startTracing, the way a service loads it after ./instrument
-const http: typeof import('node:http') = createRequire(import.meta.url)('node:http');
+// required after startTracing, the way a service loads them after ./instrument
+const require = createRequire(import.meta.url);
+const http: typeof import('node:http') = require('node:http');
+const Fastify: typeof import('fastify').default = require('fastify');
 
-const attributeText = (spans: ReadableSpan[]) => JSON.stringify(spans.map((span) => [span.name, span.attributes]));
+const SECRETS = ['PATHSECRET', 'QUERYSECRET', 'secret-agent/1.0'];
 
-describe('what a traced HTTP request records', () => {
+function assertClean(spans: ReadableSpan[]) {
+  const text = JSON.stringify(spans.map((span) => [span.name, span.attributes]));
+  for (const secret of SECRETS) assert.ok(!text.includes(secret), `${secret} leaked: ${text}`);
+  for (const span of spans) {
+    for (const key of Object.keys(span.attributes)) {
+      assert.ok(ALLOWED_ATTRIBUTES.has(key), `${span.name} exported ${key}`);
+    }
+  }
+}
+
+const get = (url: string) =>
+  new Promise<number>((resolve, reject) => {
+    http
+      .get(url, { headers: { 'user-agent': 'secret-agent/1.0' } }, (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode ?? 0));
+      })
+      .on('error', reject);
+  });
+
+after(() => shutdownTracing());
+
+describe('what a traced plain HTTP request records', () => {
   let server: import('node:http').Server;
   let base: string;
 
@@ -23,65 +47,85 @@ describe('what a traced HTTP request records', () => {
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
 
-  after(async () => {
-    await new Promise((resolve) => server.close(resolve));
-    await shutdownTracing();
-  });
+  after(() => new Promise((resolve) => server.close(resolve)));
 
-  const get = (path: string) =>
-    new Promise<void>((resolve, reject) => {
-      http
-        .get(`${base}${path}`, (res) => {
-          res.resume();
-          res.on('end', () => resolve());
-        })
-        .on('error', reject);
-    });
-
-  it('keeps the method and status, drops the raw path and query string', async () => {
+  it('keeps the method and status; drops the raw path, query, client IP and user agent', async () => {
     exporter.reset();
     // inside a parent span, so the outbound (client) span is recorded too
     const parent = trace.getTracer('spec').startSpan('parent');
-    await context.with(trace.setSpan(context.active(), parent), () => get('/invites/tok_PATHSECRET?token=QUERYSECRET'));
+    await context.with(trace.setSpan(context.active(), parent), () =>
+      get(`${base}/invites/tok_PATHSECRET?token=QUERYSECRET`),
+    );
     parent.end();
     await flushTracing();
 
-    const spans = exporter.getFinishedSpans();
-    const kinds = spans.map((span) => span.attributes['http.request.method'] && span.kind).filter((kind) => kind !== undefined);
-    assert.equal(kinds.length, 2, 'expected the server span and the client span');
-    for (const span of spans.filter((candidate) => candidate.attributes['http.request.method'])) {
-      assert.equal(span.attributes['http.request.method'], 'GET');
-      assert.equal(span.attributes['http.response.status_code'], 200);
-    }
-    const text = attributeText(spans);
-    assert.ok(!text.includes('QUERYSECRET'), text);
-    assert.ok(!text.includes('PATHSECRET'), text);
+    const httpSpans = exporter.getFinishedSpans().filter((span) => span.attributes['http.request.method']);
+    assert.equal(httpSpans.length, 2, 'expected the server span and the client span');
+    for (const span of httpSpans) assert.equal(span.attributes['http.response.status_code'], 200);
+    assertClean(exporter.getFinishedSpans());
   });
 
   it('records nothing for /health, or for an outbound call with no parent', async () => {
     exporter.reset();
-    await get('/health');
-    await get('/health?verbose=1');
+    await get(`${base}/health`);
+    await get(`${base}/health?verbose=1`);
     await flushTracing();
-    assert.deepEqual(
-      exporter.getFinishedSpans().map((span) => span.name),
-      [],
-    );
+    assert.deepEqual(exporter.getFinishedSpans().map((span) => span.name), []);
+  });
+});
+
+describe('what a traced Fastify request records', () => {
+  const app = Fastify();
+  let base: string;
+
+  before(async () => {
+    // a hook like merchant-api's cookie / CORS / helmet ones — it must not get a span
+    app.addHook('onRequest', async () => undefined);
+    app.get('/invites/:token', async () => 'ok');
+    app.get('/health', async () => 'ok');
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+  });
+
+  after(() => app.close());
+
+  it('names the spans by route template and exports no raw path, query, client IP or user agent', async () => {
+    exporter.reset();
+    assert.equal(await get(`${base}/invites/tok_PATHSECRET?token=QUERYSECRET`), 200);
+    await flushTracing();
+
+    const spans = exporter.getFinishedSpans();
+    const server = spans.find((span) => span.instrumentationScope.name === '@opentelemetry/instrumentation-http');
+    const request = spans.find((span) => span.instrumentationScope.name === '@fastify/otel');
+    assert.equal(server?.name, 'GET /invites/:token');
+    assert.equal(request?.attributes['http.route'], '/invites/:token');
+    assert.equal(request?.parentSpanContext?.spanId, server?.spanContext().spanId);
+    // only the request span: no per-hook or handler spans
+    assert.equal(spans.filter((span) => span.instrumentationScope.name === '@fastify/otel').length, 1);
+    assertClean(spans);
+  });
+
+  it('records nothing for /health', async () => {
+    exporter.reset();
+    assert.equal(await get(`${base}/health`), 200);
+    await flushTracing();
+    assert.deepEqual(exporter.getFinishedSpans().map((span) => span.name), []);
   });
 });
 
 describe('ScrubbingSpanExporter', () => {
-  it('removes the raw-URL attributes and leaves the rest of the span readable', () => {
+  it('keeps allow-listed attributes, drops the rest, leaves the span otherwise readable', () => {
     const inner = new InMemorySpanExporter();
     const span = {
       name: 'GET /orders/:id',
       attributes: {
         'http.route': '/orders/:id',
+        'http.response.status_code': 200,
         'url.full': 'https://api.example.com/orders/1?token=abc',
         'url.path': '/orders/1',
-        'url.query': 'token=abc',
-        'http.url': 'https://api.example.com/orders/1?token=abc',
-        'http.target': '/orders/1?token=abc',
+        'client.address': '203.0.113.7',
+        'user_agent.original': 'Mozilla/5.0',
+        'some.future.attribute': 'x',
       },
       spanContext: () => ({ traceId: 't', spanId: 's', traceFlags: 1 }),
     } as unknown as ReadableSpan;
@@ -89,7 +133,7 @@ describe('ScrubbingSpanExporter', () => {
     new ScrubbingSpanExporter(inner).export([span], () => undefined);
 
     const [exported] = inner.getFinishedSpans();
-    assert.deepEqual(exported.attributes, { 'http.route': '/orders/:id' });
+    assert.deepEqual(exported.attributes, { 'http.route': '/orders/:id', 'http.response.status_code': 200 });
     assert.equal(exported.name, 'GET /orders/:id');
     assert.equal(exported.spanContext().spanId, 's');
     // the original span is not mutated

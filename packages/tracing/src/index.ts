@@ -2,6 +2,7 @@
 // `fastify` and `pg` before anything requires them), so in local dev the .env
 // file hasn't been read yet — same on-import load as packages/config.
 import 'dotenv/config';
+import { context, propagation, trace } from '@opentelemetry/api';
 import FastifyOtel from '@fastify/otel';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { registerInstrumentations, type Instrumentation } from '@opentelemetry/instrumentation';
@@ -54,19 +55,48 @@ export function createInstrumentations(): Instrumentation[] {
   ];
 }
 
-// The HTTP instrumentation records the concrete path and query string, which
-// can carry IDs and tokens (docs/observability.md → Personal data & secrets).
+// Span attributes are allow-listed, the same approach as the `err` serializer
+// in packages/logging: a key not listed here is dropped before export. The
+// instrumentations record more than the logs may hold (docs/observability.md →
+// Personal data & secrets) — the client IP (`client.address`,
+// `network.peer.address`), the user agent, and the concrete path and query
+// string (`url.path` on both the HTTP and the Fastify span, `url.query`,
+// `url.full`), which can carry IDs and tokens. An allow-list also means an
+// instrumentation upgrade that starts recording something new can't leak it.
 // The route template stays, on `http.route` and in the span name.
-export const SCRUBBED_ATTRIBUTES = ['url.full', 'url.path', 'url.query', 'http.url', 'http.target'] as const;
+// Adding a key is a deliberate change (instrumentations.spec.ts pins the list).
+export const ALLOWED_ATTRIBUTES: ReadonlySet<string> = new Set([
+  // HTTP, server and outbound client spans
+  'http.request.method',
+  'http.response.status_code',
+  'http.route',
+  'url.scheme',
+  'server.address', // the host this service was called on, or called out to
+  'server.port',
+  'network.protocol.version',
+  'error.type',
+  // Fastify request span
+  'fastify.root',
+  // pg — query text keeps its $1 placeholders; parameter values are never listed
+  'db.system.name',
+  'db.namespace',
+  'db.query.text',
+  'db.operation.name',
+  'db.collection.name',
+  'db.response.status_code',
+  'db.postgresql.idle.timeout.millis',
+]);
 
 function scrub(span: ReadableSpan): ReadableSpan {
-  if (!SCRUBBED_ATTRIBUTES.some((key) => key in span.attributes)) return span;
-  const attributes = { ...span.attributes };
-  for (const key of SCRUBBED_ATTRIBUTES) delete attributes[key];
+  const keys = Object.keys(span.attributes);
+  if (keys.every((key) => ALLOWED_ATTRIBUTES.has(key))) return span;
+  const attributes = Object.fromEntries(keys.filter((key) => ALLOWED_ATTRIBUTES.has(key)).map((key) => [key, span.attributes[key]]));
   // a view over the finished span: everything else reads through to it
   return Object.create(span, { attributes: { value: attributes, enumerable: true } }) as ReadableSpan;
 }
 
+// Applies ALLOWED_ATTRIBUTES to every span on its way to the real exporter.
+// Span events (a recorded exception's type, message and stack) pass through.
 export class ScrubbingSpanExporter implements SpanExporter {
   // a plain field, not a parameter property: the specs run this file through
   // Node's type stripping, which only removes erasable syntax
@@ -92,11 +122,14 @@ export class ScrubbingSpanExporter implements SpanExporter {
 export type TracingOptions = {
   // `service.name` on every span — the same value as the Loki `service_name` label
   service: string;
-  // specs only: capture spans in memory instead of exporting over OTLP
+  // Specs only: capture spans in memory instead of exporting over OTLP. Kept
+  // on the public options rather than a test-only entry point so the specs
+  // exercise the real setup path; services never pass it.
   exporter?: SpanExporter;
 };
 
 let provider: NodeTracerProvider | undefined;
+let unregisterInstrumentations: (() => void) | undefined;
 
 // Call from a file imported first in main.ts. Off unless
 // OTEL_EXPORTER_OTLP_ENDPOINT is set: nothing is registered or patched, and
@@ -119,27 +152,39 @@ export function startTracing(options: TracingOptions): boolean {
     spanProcessors: [new BatchSpanProcessor(new ScrubbingSpanExporter(exporter))],
   });
   provider.register();
-  registerInstrumentations({ instrumentations: createInstrumentations() });
+  unregisterInstrumentations = registerInstrumentations({ instrumentations: createInstrumentations() });
   return true;
 }
 
-// Sends whatever the batch processor is still holding. Resolves either way:
-// an unreachable backend must not fail a request path or a shutdown.
+// Sends whatever the batch processor is still holding, without stopping
+// tracing. Nothing in the services needs it today (shutdown flushes through
+// shutdownTracing); the specs use it to read spans back. Never rejects.
 export async function flushTracing(): Promise<void> {
   await provider?.forceFlush().catch(() => undefined);
 }
 
 // For the shutdown path (installShutdownHandler's afterClose): flush, then
-// stop. Bounded, so a backend that is down can't hold the process past the
-// shutdown timeout. No-op when tracing is off.
+// stop and unregister everything startTracing installed, so tracing could be
+// started again in the same process. Bounded, so a backend that is down can't
+// hold the process past the shutdown timeout. No-op when tracing is off.
+// The timeout is written out rather than reusing packages/queue's withTimeout:
+// this package loads before anything it would patch, so it imports no other
+// workspace package.
 export async function shutdownTracing(timeoutMs = 2000): Promise<void> {
   const current = provider;
   if (!current) return;
   provider = undefined;
+  unregisterInstrumentations?.();
+  unregisterInstrumentations = undefined;
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<void>((resolve) => {
     timer = setTimeout(resolve, timeoutMs);
   });
   await Promise.race([current.shutdown().catch(() => undefined), timeout]);
   clearTimeout(timer);
+  // provider.register() set these globals; without clearing them a later
+  // startTracing would be refused by the API's one-registration guard
+  trace.disable();
+  context.disable();
+  propagation.disable();
 }

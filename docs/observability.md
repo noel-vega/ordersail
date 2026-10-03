@@ -342,18 +342,26 @@ traced request records is always a deliberate edit. Not traced on purpose:
 - Anything outside a request: boot-time queries, the S3 bucket check, background calls.
 - Fastify's per-hook spans (cookie, CORS, helmet…).
 
-**The same privacy rules as logs** ([Personal data & secrets](#personal-data--secrets)):
+**The same privacy rules as logs** ([Personal data & secrets](#personal-data--secrets)).
+Span attributes are an **allow-list** (`ALLOWED_ATTRIBUTES` in `packages/tracing`): any key
+not on it is dropped before export, so an instrumentation upgrade that starts recording
+something new can't leak it. Adding a key is a deliberate edit, pinned by
+`instrumentations.spec.ts`. What that keeps out:
 
-- Query text keeps its `$1` placeholders; parameter values are never recorded. A value
-  written into the SQL itself (`sql.raw`, an inlined literal) would be, so don't.
-- The raw path and query string are removed before export (`url.full`, `url.path`,
-  `url.query`, `http.url`, `http.target`); the route template stays on `http.route`.
-- No headers, no request or response bodies.
+- the raw path and query string — the HTTP and Fastify spans both record them; only the
+  route template (`http.route`) is kept
+- the caller's IP address and user agent, which the access log doesn't record either
+- query parameter values — the query text keeps its `$1` placeholders. A value written into
+  the SQL itself (`sql.raw`, an inlined literal) would still show, so don't.
+- headers and request or response bodies, which nothing records anyway
+
+A recorded exception (type, message, stack) is a span event, not an attribute, so it is
+kept — the same rule as `err` in logs applies to what goes into an error message.
 
 **On shutdown** the spans still waiting in the batch are sent before the process exits
 (`installShutdownHandler`'s `afterClose`), bounded to 2s so a backend that is down can't
-hold up a deploy. A crash loses the last few seconds of spans; the `fatal` log line still
-lands.
+hold up a deploy. A crash, or an `app.close()` that throws, loses the last few seconds of
+spans; the `fatal` log line still lands.
 
 **Loading order matters.** The libraries are patched as they are loaded, so
 `import './instrument'` must stay the first line of `main.ts`. If traces show the HTTP span

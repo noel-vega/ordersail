@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { createInstrumentations, SCRUBBED_ATTRIBUTES } from './index.ts';
+import { ALLOWED_ATTRIBUTES, createInstrumentations } from './index.ts';
 
 // Pins what a traced request records. If this fails, an instrumentation was
 // added, removed or loosened — update it only as a deliberate decision
@@ -44,7 +44,41 @@ describe('pinned instrumentations', () => {
     assert.equal(config.enhancedDatabaseReporting, false);
   });
 
-  it('scrubs every raw-URL attribute, old and new semantic conventions', () => {
-    assert.deepEqual([...SCRUBBED_ATTRIBUTES].sort(), ['http.target', 'http.url', 'url.full', 'url.path', 'url.query']);
+  it('exports only allow-listed span attributes', () => {
+    assert.deepEqual([...ALLOWED_ATTRIBUTES].sort(), [
+      'db.collection.name',
+      'db.namespace',
+      'db.operation.name',
+      'db.postgresql.idle.timeout.millis',
+      'db.query.text',
+      'db.response.status_code',
+      'db.system.name',
+      'error.type',
+      'fastify.root',
+      'http.request.method',
+      'http.response.status_code',
+      'http.route',
+      'network.protocol.version',
+      'server.address',
+      'server.port',
+      'url.scheme',
+    ]);
+  });
+
+  it('never allows the client, the raw URL or query parameter values', () => {
+    for (const key of [
+      'client.address',
+      'network.peer.address',
+      'user_agent.original',
+      'url.full',
+      'url.path',
+      'url.query',
+      'http.url',
+      'http.target',
+      'db.postgresql.values', // pg's parameter values, with enhancedDatabaseReporting
+      'db.query.parameter.0',
+    ]) {
+      assert.equal(ALLOWED_ATTRIBUTES.has(key), false, key);
+    }
   });
 });
