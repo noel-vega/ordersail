@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { ALLOWED_ATTRIBUTES, createInstrumentations } from './index.ts';
+import { ALLOWED_ATTRIBUTES, ALLOWED_EVENT_ATTRIBUTES, createInstrumentations } from './index.ts';
 
 // Pins what a traced request records. If this fails, an instrumentation was
 // added, removed or loosened — update it only as a deliberate decision
@@ -62,6 +62,14 @@ describe('pinned instrumentations', () => {
       'server.address',
       'server.port',
       'url.scheme',
+    ]);
+  });
+
+  it('keeps only type, message and stack on span events — what `err` keeps in logs', () => {
+    assert.deepEqual([...ALLOWED_EVENT_ATTRIBUTES].sort(), [
+      'exception.message',
+      'exception.stacktrace',
+      'exception.type',
     ]);
   });
 

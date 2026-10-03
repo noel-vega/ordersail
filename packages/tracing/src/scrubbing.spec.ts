@@ -113,6 +113,38 @@ describe('what a traced Fastify request records', () => {
   });
 });
 
+describe('what a span event or link records', () => {
+  it('keeps a recorded exception as logs keep `err`; drops any other event or link attribute', async () => {
+    exporter.reset();
+    const tracer = trace.getTracer('spec');
+    const linked = tracer.startSpan('linked');
+    linked.end();
+    const span = tracer.startSpan('op', {
+      links: [{ context: linked.spanContext(), attributes: { 'url.full': 'https://x/?token=QUERYSECRET' } }],
+    });
+    span.recordException(new Error('signin failed'));
+    span.addEvent('retry', { 'user_agent.original': 'secret-agent/1.0', 'url.path': '/invites/tok_PATHSECRET' });
+    span.end();
+    await flushTracing();
+
+    const exported = exporter.getFinishedSpans().find((s) => s.name === 'op');
+    assert.ok(exported);
+    const [exception, retry] = exported.events;
+    assert.equal(exception.name, 'exception');
+    assert.equal(exception.attributes?.['exception.type'], 'Error');
+    assert.equal(exception.attributes?.['exception.message'], 'signin failed');
+    assert.ok(exception.attributes?.['exception.stacktrace']);
+    assert.equal(retry.name, 'retry');
+    assert.deepEqual(retry.attributes, {});
+    assert.equal(retry.droppedAttributesCount, 2);
+    assert.deepEqual(exported.links[0].attributes, {});
+    assert.equal(exported.links[0].context.spanId, linked.spanContext().spanId);
+
+    const text = JSON.stringify([exported.events, exported.links]);
+    for (const secret of SECRETS) assert.ok(!text.includes(secret), `${secret} leaked: ${text}`);
+  });
+});
+
 describe('ScrubbingSpanExporter', () => {
   it('keeps allow-listed attributes, drops the rest, leaves the span otherwise readable', () => {
     const inner = new InMemorySpanExporter();
@@ -127,6 +159,9 @@ describe('ScrubbingSpanExporter', () => {
         'user_agent.original': 'Mozilla/5.0',
         'some.future.attribute': 'x',
       },
+      droppedAttributesCount: 0,
+      events: [],
+      links: [],
       spanContext: () => ({ traceId: 't', spanId: 's', traceFlags: 1 }),
     } as unknown as ReadableSpan;
 
@@ -136,6 +171,7 @@ describe('ScrubbingSpanExporter', () => {
     assert.deepEqual(exported.attributes, { 'http.route': '/orders/:id', 'http.response.status_code': 200 });
     assert.equal(exported.name, 'GET /orders/:id');
     assert.equal(exported.spanContext().spanId, 's');
+    assert.equal(exported.droppedAttributesCount, 5);
     // the original span is not mutated
     assert.equal(span.attributes['url.path'], '/orders/1');
   });

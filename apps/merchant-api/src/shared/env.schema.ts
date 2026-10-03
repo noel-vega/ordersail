@@ -4,6 +4,10 @@ import { LOG_LEVELS } from 'logging';
 // The env contract, split out of env.ts so it can be read without parsing
 // process.env (env.ts parses on import). env.mappings.spec.ts checks that
 // every key here is mapped in the production task def (OS-655).
+
+// `KEY=` in a .env file is the usual way to blank a value; read it as unset
+const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
+
 export const envSchema = z.object({
   DATABASE_URL: z.url(),
   STAFF_JWT_SECRET: z.string().min(1),
@@ -60,10 +64,17 @@ export const envSchema = z.object({
 
   // OpenTelemetry trace export. Read by packages/tracing (src/instrument.ts)
   // before this schema is parsed, and by the OTLP exporter itself; listed here
-  // so they are part of the env contract. Unset → tracing is off.
+  // so they are part of the env contract. Unset or empty → tracing is off,
+  // matching packages/tracing, which treats an empty endpoint as unset.
   // Base URL only — the exporter appends /v1/traces.
-  OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.preprocess(
+    emptyToUndefined,
+    z.url().optional(),
+  ),
   // comma-separated key=value pairs, e.g. the Authorization header for a
   // hosted backend — a secret
-  OTEL_EXPORTER_OTLP_HEADERS: z.string().min(1).optional(),
+  OTEL_EXPORTER_OTLP_HEADERS: z.preprocess(
+    emptyToUndefined,
+    z.string().optional(),
+  ),
 });

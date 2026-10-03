@@ -355,8 +355,11 @@ something new can't leak it. Adding a key is a deliberate edit, pinned by
   the SQL itself (`sql.raw`, an inlined literal) would still show, so don't.
 - headers and request or response bodies, which nothing records anyway
 
-A recorded exception (type, message, stack) is a span event, not an attribute, so it is
-kept — the same rule as `err` in logs applies to what goes into an error message.
+Span events have their own allow-list (`ALLOWED_EVENT_ATTRIBUTES`): a recorded exception
+keeps its type, message and stack, exactly what `err` keeps in logs, and any other event
+attribute is dropped. Link attributes go through `ALLOWED_ATTRIBUTES`. The same rule as
+`err` in logs applies to what goes into an error message: it is exported as written, and so
+is the span's error status, which carries the same message.
 
 **On shutdown** the spans still waiting in the batch are sent before the process exits
 (`installShutdownHandler`'s `afterClose`), bounded to 2s so a backend that is down can't
@@ -385,8 +388,8 @@ overwrites. Under `npm run dev`, open <http://localhost:3300> → Explore → **
 Traces show up a few seconds after the request (the exporter batches every 5s) and last
 until `npm run down`. If Tempo isn't running, merchant-api still starts and serves as usual;
 the spans are dropped, and stopping the service can take up to 2s longer while the exporter
-gives up. To turn tracing off locally, comment the line out (an empty value fails env
-validation).
+gives up. To turn tracing off locally, comment the line out or leave it empty
+(`OTEL_EXPORTER_OTLP_ENDPOINT=`).
 
 Jumping between a trace and its log lines comes with OS-702.
 

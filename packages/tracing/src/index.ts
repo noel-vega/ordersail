@@ -2,14 +2,14 @@
 // `fastify` and `pg` before anything requires them), so in local dev the .env
 // file hasn't been read yet — same on-import load as packages/config.
 import 'dotenv/config';
-import { context, propagation, trace } from '@opentelemetry/api';
+import { context, propagation, trace, type Attributes, type Link } from '@opentelemetry/api';
 import FastifyOtel from '@fastify/otel';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { registerInstrumentations, type Instrumentation } from '@opentelemetry/instrumentation';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import { resourceFromAttributes } from '@opentelemetry/resources';
-import { BatchSpanProcessor, type ReadableSpan, type SpanExporter } from '@opentelemetry/sdk-trace-base';
+import { BatchSpanProcessor, type ReadableSpan, type SpanExporter, type TimedEvent } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 
 // This package must not import `logging` or `config`: whatever it loads is
@@ -87,16 +87,57 @@ export const ALLOWED_ATTRIBUTES: ReadonlySet<string> = new Set([
   'db.postgresql.idle.timeout.millis',
 ]);
 
-function scrub(span: ReadableSpan): ReadableSpan {
-  const keys = Object.keys(span.attributes);
-  if (keys.every((key) => ALLOWED_ATTRIBUTES.has(key))) return span;
-  const attributes = Object.fromEntries(keys.filter((key) => ALLOWED_ATTRIBUTES.has(key)).map((key) => [key, span.attributes[key]]));
-  // a view over the finished span: everything else reads through to it
-  return Object.create(span, { attributes: { value: attributes, enumerable: true } }) as ReadableSpan;
+// Span event attributes get their own, shorter allow-list: a recorded
+// exception keeps exactly what `err` keeps in logs (type, message, stack —
+// packages/logging's serializeError). Anything else an instrumentation puts on
+// an event is dropped, the same as for span attributes. Pinned by
+// instrumentations.spec.ts.
+export const ALLOWED_EVENT_ATTRIBUTES: ReadonlySet<string> = new Set([
+  'exception.type',
+  'exception.message',
+  'exception.stacktrace',
+]);
+
+// Returns `attributes` itself when nothing is dropped, so an already-clean
+// span is passed on untouched.
+function allowOnly(attributes: Attributes, allowed: ReadonlySet<string>): { attributes: Attributes; dropped: number } {
+  const keys = Object.keys(attributes);
+  const kept = keys.filter((key) => allowed.has(key));
+  if (kept.length === keys.length) return { attributes, dropped: 0 };
+  return {
+    attributes: Object.fromEntries(kept.map((key) => [key, attributes[key]])),
+    dropped: keys.length - kept.length,
+  };
 }
 
-// Applies ALLOWED_ATTRIBUTES to every span on its way to the real exporter.
-// Span events (a recorded exception's type, message and stack) pass through.
+function scrub(span: ReadableSpan): ReadableSpan {
+  const own = allowOnly(span.attributes, ALLOWED_ATTRIBUTES);
+  let changed = own.dropped > 0;
+  const events = span.events.map((event): TimedEvent => {
+    const { attributes, dropped } = allowOnly(event.attributes ?? {}, ALLOWED_EVENT_ATTRIBUTES);
+    if (!dropped) return event;
+    changed = true;
+    return { ...event, attributes, droppedAttributesCount: (event.droppedAttributesCount ?? 0) + dropped };
+  });
+  // nothing here creates links today; filtered so a future one can't bypass the list
+  const links = span.links.map((link): Link => {
+    const { attributes, dropped } = allowOnly(link.attributes ?? {}, ALLOWED_ATTRIBUTES);
+    if (!dropped) return link;
+    changed = true;
+    return { ...link, attributes, droppedAttributesCount: (link.droppedAttributesCount ?? 0) + dropped };
+  });
+  if (!changed) return span;
+  // a view over the finished span: everything else reads through to it
+  return Object.create(span, {
+    attributes: { value: own.attributes, enumerable: true },
+    droppedAttributesCount: { value: span.droppedAttributesCount + own.dropped, enumerable: true },
+    events: { value: events, enumerable: true },
+    links: { value: links, enumerable: true },
+  }) as ReadableSpan;
+}
+
+// Applies ALLOWED_ATTRIBUTES (and ALLOWED_EVENT_ATTRIBUTES on span events) to
+// every span on its way to the real exporter.
 export class ScrubbingSpanExporter implements SpanExporter {
   // a plain field, not a parameter property: the specs run this file through
   // Node's type stripping, which only removes erasable syntax
