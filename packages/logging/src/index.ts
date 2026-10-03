@@ -39,7 +39,8 @@ const als = new AsyncLocalStorage<LogContext>();
 
 // Where each context field goes on a span. Keyed by every LogContext field, so
 // a new field can't be added without naming its attribute — and the name must
-// also be added to packages/tracing's ALLOWED_ATTRIBUTES, or the exporter drops it.
+// also be added to packages/tracing's ALLOWED_ATTRIBUTES, or the exporter drops it
+// (its instrumentations.spec.ts fails until it is).
 export const SPAN_ATTRIBUTES: Readonly<Record<keyof LogContext, string>> = {
   correlationId: 'ordersail.correlation_id',
   accountId: 'ordersail.account_id',

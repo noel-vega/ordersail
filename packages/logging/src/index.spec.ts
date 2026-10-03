@@ -29,6 +29,7 @@ import {
   setLogContext,
   setRequestRoute,
 } from './index.ts';
+import { captureLogs } from './test-helpers.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -182,17 +183,6 @@ describe('log context', () => {
     assert.equal('span_id' in lines[0], false);
   });
 });
-
-// routes the shared root into memory and returns the parsed lines
-function captureLogs(): Record<string, any>[] {
-  const lines: Record<string, any>[] = [];
-  configureLogging({
-    service: 'test',
-    nodeEnv: 'production',
-    destination: { write: (chunk: string) => void lines.push(JSON.parse(chunk)) },
-  });
-  return lines;
-}
 
 describe('redaction', () => {
   it('censors sensitive keys at the top level and one level deep', () => {

@@ -6,13 +6,8 @@ import { context, SpanKind, trace, TraceFlags } from '@opentelemetry/api';
 import { RPCType, setRPCMetadata } from '@opentelemetry/core';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import {
-  configureLogging,
-  Logger,
-  requestLoggingMiddleware,
-  runWithLogContext,
-  setLogContext,
-} from './index.ts';
+import { Logger, requestLoggingMiddleware, runWithLogContext, setLogContext } from './index.ts';
+import { captureLogs } from './test-helpers.ts';
 
 // Its own file: node --test runs each file in its own process, so the SDK
 // registered here never reaches index.spec.ts, which covers the no-SDK case.
@@ -22,16 +17,6 @@ provider.register();
 after(() => provider.shutdown());
 
 const tracer = trace.getTracer('spec');
-
-function captureLogs(): Record<string, any>[] {
-  const lines: Record<string, any>[] = [];
-  configureLogging({
-    service: 'test',
-    nodeEnv: 'production',
-    destination: { write: (chunk: string) => void lines.push(JSON.parse(chunk)) },
-  });
-  return lines;
-}
 
 describe('trace_id / span_id on log lines', () => {
   it('a line written inside a span carries its IDs', () => {

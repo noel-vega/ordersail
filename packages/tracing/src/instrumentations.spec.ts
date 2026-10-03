@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
+import { SPAN_ATTRIBUTES } from 'logging';
 import { ALLOWED_ATTRIBUTES, ALLOWED_EVENT_ATTRIBUTES, createInstrumentations } from './index.ts';
 
 // Pins what a traced request records. If this fails, an instrumentation was
@@ -71,6 +72,12 @@ describe('pinned instrumentations', () => {
       'server.port',
       'url.scheme',
     ]);
+  });
+
+  it('allows every attribute packages/logging puts on a span — or the exporter drops it', () => {
+    for (const key of Object.values(SPAN_ATTRIBUTES)) {
+      assert.equal(ALLOWED_ATTRIBUTES.has(key), true, key);
+    }
   });
 
   it('keeps only type, message and stack on span events — what `err` keeps in logs', () => {
