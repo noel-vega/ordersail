@@ -25,6 +25,7 @@ import { PaginatedLocations } from './entities/paginated-locations.entity';
 import {
   CurrentUser,
   RequirePermissions,
+  AuthenticatedOnly,
   type AuthenticatedUser,
   NoMfaFactorRequired,
 } from 'src/shared/auth/decorators';
@@ -45,8 +46,12 @@ export class LocationsController {
     return this.locationsService.create(createLocationDto, user.accountId);
   }
 
+  // not gated by @RequirePermissions — a location's name and address are the
+  // merchant's own business details, and every staff member working stock,
+  // orders or POS needs them to know where things are. Same precedent as
+  // GET /roles: reading isn't sensitive, only creating/editing/deleting is.
+  @AuthenticatedOnly()
   @Get()
-  @RequirePermissions('locations:read')
   @ApiBearerAuth('JWT-auth')
   @ApiOkResponse({ type: PaginatedLocations })
   @ApiQuery({ name: 'q', required: false, description: 'name match' })
