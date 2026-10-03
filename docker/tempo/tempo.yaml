@@ -1,0 +1,24 @@
+# Local Tempo for `npm run dev` traces (docs/observability.md → "Traces in
+# local Grafana"). Single binary, local disk inside the container: traces last
+# until `npm run down`. Never receives anything from production.
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        # what packages/tracing's exporter speaks (OTLP over HTTP, protobuf)
+        http:
+          endpoint: 0.0.0.0:4318
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks

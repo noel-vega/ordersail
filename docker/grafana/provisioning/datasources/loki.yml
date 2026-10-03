@@ -1,5 +1,5 @@
-# Local Grafana's only data source: the local Loki from the `log-shipping`
-# compose profile. Never points at Grafana Cloud.
+# Local Grafana's log data source: the local Loki that Fluent Bit ships
+# `npm run dev` logs to (traces are tempo.yml). Never points at Grafana Cloud.
 apiVersion: 1
 
 datasources:

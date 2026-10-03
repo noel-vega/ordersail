@@ -314,8 +314,9 @@ tag the same in `docker-compose.yml` and the module.
 `packages/tracing` sets up OpenTelemetry for a service. Today only merchant-api loads it
 (`apps/merchant-api/src/instrument.ts`, the first import in `main.ts`).
 
-**Off by default.** Nothing is registered or patched unless `OTEL_EXPORTER_OTLP_ENDPOINT` is
-set, so tests, CI and production (until OS-97) run exactly as before. Set it to the base URL
+**Off unless configured.** Nothing is registered or patched unless `OTEL_EXPORTER_OTLP_ENDPOINT`
+is set, so tests, CI and production (until OS-97) run exactly as before. Local dev sets it
+to the local Tempo ([Traces in local Grafana](#traces-in-local-grafana)). Set it to the base URL
 of any OTLP/HTTP receiver — the exporter appends `/v1/traces` — and, for a hosted backend,
 put its credentials in `OTEL_EXPORTER_OTLP_HEADERS`. The app only ever reads those two
 standard variables, so a local Tempo (OS-701), Grafana Cloud (OS-97) or a collector are all
@@ -357,6 +358,29 @@ lands.
 **Loading order matters.** The libraries are patched as they are loaded, so
 `import './instrument'` must stay the first line of `main.ts`. If traces show the HTTP span
 but no `pg` spans (or nothing at all), check that first.
+
+### Traces in local Grafana
+
+`npm run up` also starts a local Tempo. merchant-api's `.env.example` points
+`OTEL_EXPORTER_OTLP_ENDPOINT` at it (`http://localhost:4318`); an `apps/merchant-api/.env`
+created before that line existed needs it added by hand, since `npm run setup` never
+overwrites. Under `npm run dev`, open <http://localhost:3300> → Explore → **Tempo**, then
+**Search**, or switch to **TraceQL**:
+
+```traceql
+{ resource.service.name = "merchant-api" }                          # every trace
+{ resource.service.name = "merchant-api" && span.http.route = "/orders/:id" }
+{ resource.service.name = "merchant-api" && duration > 200ms }       # slow requests
+{ span.db.system.name = "postgresql" && duration > 50ms }            # slow queries
+```
+
+Traces show up a few seconds after the request (the exporter batches every 5s) and last
+until `npm run down`. If Tempo isn't running, merchant-api still starts and serves as usual;
+the spans are dropped, and stopping the service can take up to 2s longer while the exporter
+gives up. To turn tracing off locally, comment the line out (an empty value fails env
+validation).
+
+Jumping between a trace and its log lines comes with OS-702.
 
 ## Tracing a bug
 

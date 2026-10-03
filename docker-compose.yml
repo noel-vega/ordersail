@@ -6,7 +6,8 @@
 #   npm run logs    # tail the infra containers
 #
 # Loki + Grafana + Fluent Bit make the logs of `npm run dev` searchable at
-# http://localhost:3300 (docs/observability.md → "Logs in local Grafana").
+# http://localhost:3300 (docs/observability.md → "Logs in local Grafana"), and
+# Tempo does the same for its traces ("Traces in local Grafana").
 # Nothing here talks to Grafana Cloud.
 #
 # Opt-in `log-shipping` profile (not started by `npm run up`):
@@ -94,6 +95,28 @@ services:
     ports:
       - '${LOKI_PORT:-3100}:3100'
 
+  # --- local traces: services → Tempo (OTLP/HTTP) → Grafana ------------------
+
+  # no volume: traces last until `npm run down`
+  tempo:
+    image: grafana/tempo:2.8.2
+    container_name: ordersail-tempo
+    restart: unless-stopped
+    command: ['-config.file=/etc/tempo.yaml']
+    volumes:
+      - ./docker/tempo/tempo.yaml:/etc/tempo.yaml:ro
+    ports:
+      # the OTLP/HTTP receiver `npm run dev` services export to
+      # (OTEL_EXPORTER_OTLP_ENDPOINT in apps/*/.env)
+      - '${TEMPO_OTLP_PORT:-4318}:4318'
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:3200/ready']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      # Tempo reports not-ready for its first ~15s while the ring settles
+      start_period: 30s
+
   grafana:
     image: grafana/grafana:12.1.1
     container_name: ordersail-grafana
@@ -109,6 +132,7 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - loki
+      - tempo
 
   # same image + tag as the production `log-router` sidecar
   # (infra/terraform/modules/ecs-service) — bump them together
