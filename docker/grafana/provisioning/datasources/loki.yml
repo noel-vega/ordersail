@@ -9,3 +9,15 @@ datasources:
     access: proxy
     url: http://loki:3100
     isDefault: true
+    jsonData:
+      # log → trace: a line's trace_id (packages/logging) becomes a link that
+      # opens the trace in Tempo. Loki stores the raw pino JSON, so the ID is
+      # matched in the line itself. `$$` is a literal `$` — provisioning files
+      # expand environment variables.
+      derivedFields:
+        - name: trace_id
+          matcherType: regex
+          matcherRegex: '"trace_id":"(\w+)"'
+          datasourceUid: tempo
+          url: '$${__value.raw}'
+          urlDisplayLabel: View trace

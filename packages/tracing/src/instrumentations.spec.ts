@@ -1,5 +1,8 @@
 import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { SPAN_ATTRIBUTES } from 'logging/span-attributes';
 import { ALLOWED_ATTRIBUTES, ALLOWED_EVENT_ATTRIBUTES, createInstrumentations } from './index.ts';
 
 // Pins what a traced request records. If this fails, an instrumentation was
@@ -44,8 +47,10 @@ describe('pinned instrumentations', () => {
     assert.equal(config.enhancedDatabaseReporting, false);
   });
 
+  // the instrumentations' attributes; the log context's come from packages/logging
   it('exports only allow-listed span attributes', () => {
-    assert.deepEqual([...ALLOWED_ATTRIBUTES].sort(), [
+    const logContext = new Set(Object.values(SPAN_ATTRIBUTES));
+    assert.deepEqual([...ALLOWED_ATTRIBUTES].filter((key) => !logContext.has(key)).sort(), [
       'db.collection.name',
       'db.namespace',
       'db.operation.name',
@@ -63,6 +68,22 @@ describe('pinned instrumentations', () => {
       'server.port',
       'url.scheme',
     ]);
+  });
+
+  // the log context widens the allow-list under its own namespace only — never
+  // to an attribute an instrumentation records
+  it('takes the log context packages/logging puts on a span, under ordersail.* only', () => {
+    for (const key of Object.values(SPAN_ATTRIBUTES)) {
+      assert.match(key, /^ordersail\.[a-z_]+$/);
+    }
+  });
+
+  // this package loads logging/span-attributes before the instrumentations are
+  // installed: anything it imported would load unpatched
+  it('loads nothing through logging/span-attributes', () => {
+    const built = readFileSync(fileURLToPath(import.meta.resolve('logging/span-attributes')), 'utf8');
+    // a static import, a re-export, a dynamic import() or a require()
+    assert.doesNotMatch(built, /^\s*import\b|^\s*export\b.*\bfrom\b|\bimport\(|\brequire\(/m);
   });
 
   it('keeps only type, message and stack on span events — what `err` keeps in logs', () => {

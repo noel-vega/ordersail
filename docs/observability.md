@@ -66,7 +66,7 @@ In local dev the same data is pretty-printed.
 | domain IDs | caller | `orderId`, `jobId`, `queue`, `disputeId`, `chargeId`, `stripeEventId`… — top-level, camelCase |
 | `err` | caller | the Error object; serialized to `type`, `message`, `stack` (+ safe provider fields) |
 | `alert` | caller | `true` when a human must act — drives a critical alarm (OS-99) |
-| `trace_id`, `span_id` | *reserved* | added to the line from the active span in OS-702 |
+| `trace_id`, `span_id` | `mixin()` in `packages/logging`, from the active span | only while a sampled span is active — inside a traced request; absent at boot, in untraced services and in the worker (OS-95). The access line carries the HTTP server span's IDs |
 
 Request-context fields (`correlationId`, `accountId`, `userId`, …) are attached automatically
 from AsyncLocalStorage — **don't pass them by hand**. The middleware opens the scope with the
@@ -325,7 +325,7 @@ just configuration.
 **What a request records.** One trace per request:
 
 ```text
-POST /auth/signin            HTTP server span — method, route template, status
+POST /auth/signin            HTTP server span — method, route template, status, ordersail.* IDs
 └─ request                   Fastify
    ├─ pg-pool.connect        waiting for a pooled connection
    └─ pg.query:SELECT …      one per query, with the SQL text
@@ -333,6 +333,23 @@ POST /auth/signin            HTTP server span — method, route template, status
 
 Every span carries `service.name` and `deployment.environment`, the same two values as the
 Loki labels. All traces are kept (no sampling) while volume is low.
+
+**The request's context is on the HTTP server span.** `packages/logging` records the log
+context on it as well as on the line: `ordersail.correlation_id` when the request opens, then
+whatever the auth guard resolves through `setLogContext()` — `ordersail.account_id`,
+`ordersail.user_id`, and so on, one `ordersail.<snake_case>` attribute per log-context field
+(`SPAN_ATTRIBUTES`). A public route has only the correlation ID. They go on the server span,
+not the Fastify `request` span the guard actually runs under, so a TraceQL search on them
+matches the request's root. The same rule as logs: IDs only.
+
+Only the request's own scope writes to its span. A scope opened inside it — the Stripe
+webhook's checkout-order handler, `runWithLogContext()` with the event's tenant — stamps its own
+log lines but leaves the server span alone, so the public webhook route still carries only its
+correlation ID.
+
+`correlationId` is not the trace ID. It stays the user-facing ID (`x-request-id`, reused from
+an inbound header or minted); the trace ID is OpenTelemetry's. Log lines carry both, the span
+carries the correlation ID, so either one finds the other.
 
 **The instrumentation list is pinned**: HTTP, Fastify, `pg`, in `createInstrumentations()`.
 `instrumentations.spec.ts` fails when one is added, removed or loosened, so changing what a
@@ -346,7 +363,9 @@ traced request records is always a deliberate edit. Not traced on purpose:
 Span attributes are an **allow-list** (`ALLOWED_ATTRIBUTES` in `packages/tracing`): any key
 not on it is dropped before export, so an instrumentation upgrade that starts recording
 something new can't leak it. Adding a key is a deliberate edit, pinned by
-`instrumentations.spec.ts`. What that keeps out:
+`instrumentations.spec.ts`. The `ordersail.*` keys aren't listed there: the allow-list takes
+them from `SPAN_ATTRIBUTES` (`logging/span-attributes`), so a new log-context field is exported
+without a second edit. What that keeps out:
 
 - the raw path and query string — the HTTP and Fastify spans both record them; only the
   route template (`http.route`) is kept
@@ -391,7 +410,15 @@ the spans are dropped, and stopping the service can take up to 2s longer while t
 gives up. To turn tracing off locally, comment the line out or leave it empty
 (`OTEL_EXPORTER_OTLP_ENDPOINT=`).
 
-Jumping between a trace and its log lines comes with OS-702.
+Traces and logs link both ways in the local Grafana (`docker/grafana/provisioning/datasources/`):
+
+- **log → trace**: expand a Loki line with a `trace_id`; the **View trace** link next to the
+  field opens that trace in Tempo.
+- **trace → logs**: in a trace, the logs icon on a span (or **Logs for this span**) runs a Loki
+  query for that service's lines carrying the trace ID — the access line plus every service
+  line of the request.
+
+Grafana Cloud gets the same links with OS-97.
 
 ## Tracing a bug
 
@@ -410,6 +437,17 @@ follows the Docker infra containers). To search, use the local Grafana at
 ```
 
 Or grep the same lines on disk: `grep 0b7e6c1e .logs/*.log`.
+
+**From a log line to its trace (local dev, merchant-api)** — any line of a traced request
+carries `trace_id`. Expand it in Explore and follow **View trace**: the request's spans, with
+every query and its timing. From a trace back to its lines, use the logs link on any span
+([Traces in local Grafana](#traces-in-local-grafana)). With only a correlation ID, TraceQL
+finds the trace directly:
+
+```traceql
+{ span.ordersail.correlation_id = "0b7e6c1e-2f7a-4c1a-9a55-3f0f1b1d2c3e" }
+{ span.ordersail.account_id = 42 && duration > 500ms }               # one tenant's slow requests
+```
 
 **Production** — Grafana Cloud → Explore, Loki data source:
 
