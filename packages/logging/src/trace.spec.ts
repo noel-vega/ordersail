@@ -156,6 +156,18 @@ describe('request context on the HTTP server span', () => {
     assert.equal(line.orderId, 3);
   });
 
+  it('a scope nested two deep leaves it alone too', async () => {
+    const { correlationId } = await tracedRequest(async (_req, res) => {
+      await runWithLogContext({ correlationId: 'evt-1', accountId: 9 }, async () => {
+        await runWithLogContext({ correlationId: 'evt-2', accountId: 11 }, async () => {
+          setLogContext({ orderId: 4 });
+        });
+      });
+      res.end('ok');
+    });
+    assert.deepEqual(finished('GET /orders').attributes, { 'ordersail.correlation_id': correlationId });
+  });
+
   it('with no HTTP server span in the context, the active span is the scope span', async () => {
     exporter.reset();
     await tracer.startActiveSpan('job', async (span) => {

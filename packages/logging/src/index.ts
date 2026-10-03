@@ -54,6 +54,8 @@ export const SPAN_ATTRIBUTES: Readonly<Record<keyof LogContext, string>> = {
 
 // The span a scope's context is recorded on, keyed by the scope's store.
 const scopeSpans = new WeakMap<LogContext, Span>();
+// Spans a scope has already claimed: the first scope to reach a span owns it.
+const claimedSpans = new WeakSet<Span>();
 
 // The span that stands for the whole scope. Inside an HTTP request that's the
 // HTTP server span, not whatever is active: guards and handlers run under
@@ -73,13 +75,14 @@ function recordOnSpan(span: Span | undefined, fields: Partial<LogContext>): void
 // Opens a scope: the store goes into AsyncLocalStorage and its fields onto the
 // scope's span, which setLogContext keeps adding to. A scope nested inside
 // another (the Stripe webhook's domain-event handler, inside the request)
-// resolves to the same server span — but that span is the enclosing scope's,
-// so the nested one records nothing on it: a public route must not pick up the
-// event's tenant, and a different correlationId must not overwrite the request's.
+// resolves to the same server span — but the outermost scope already claimed
+// it, so the nested one, at any depth, records nothing on it: a public route
+// must not pick up the event's tenant, and a different correlationId must not
+// overwrite the request's.
 function openScope<T>(store: LogContext, fn: () => T): T {
   const span = scopeSpanOf();
-  const enclosing = als.getStore();
-  if (span && !(enclosing && scopeSpans.get(enclosing) === span)) {
+  if (span && !claimedSpans.has(span)) {
+    claimedSpans.add(span);
     scopeSpans.set(store, span);
     recordOnSpan(span, store);
   }
