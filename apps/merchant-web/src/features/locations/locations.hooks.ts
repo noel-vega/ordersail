@@ -4,7 +4,6 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"
-import type { Location } from "merchant-sdk"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { PAGE_SIZE, pageOffset, type ListSearch } from "../../lib/list-search"
@@ -38,24 +37,24 @@ export function useListLocationsQuery(search?: ListSearch) {
   return useQuery(getListLocationsQueryOptions(search))
 }
 
-// The location a variant's stock lives at until there's a picker: the lowest
-// id, the same one the API puts opening stock in (products.service
-// openingStockLocationId). Not the list's first item — the list sorts by name,
-// so a rename would silently move it. `location` is undefined both while
-// loading and when the account has none (OS-689); `isLoaded` tells them apart.
-// Used on product pages, which need only products:read — so without
-// locations:read it doesn't fetch (no 403, OS-672) and stays not-loaded.
-export function useStockLocation() {
-  const canReadLocations = usePermissions().has("locations:read")
-  const locations = useQuery({
+// The locations a variant's stock can be placed at, for the product pages'
+// stock pickers. `locations` is the capped (100) picker list, for the merchant
+// to choose from, never to pick one from (OS-696); `total` is the real count,
+// so "exactly one" and "more than one" hold past the cap. Product pages need
+// only products:read — so without locations:read it doesn't fetch (no 403,
+// OS-672) and `canRead` is false; `isLoaded` tells loading from loaded.
+export function useStockLocations() {
+  const canRead = usePermissions().has("locations:read")
+  const query = useQuery({
     ...getListLocationsQueryOptions(),
-    enabled: canReadLocations,
+    enabled: canRead,
   })
-  const location = locations.data?.items.reduce<Location | undefined>(
-    (lowest, l) => (!lowest || l.id < lowest.id ? l : lowest),
-    undefined,
-  )
-  return { location, isLoaded: locations.isSuccess }
+  return {
+    canRead,
+    isLoaded: query.isSuccess,
+    locations: query.data?.items ?? [],
+    total: query.data?.total ?? 0,
+  }
 }
 
 export function useCreateLocationMutation() {

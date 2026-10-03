@@ -14,11 +14,14 @@ import { StockLevel } from "../../inventory/components/stock-level";
 
 export function getVariantColumns(options: {
   onAdjustStock: (variant: ProductVariant) => void;
+  // what the action says — it may lead to creating a location (OS-689) or to
+  // the Inventory tab instead of opening the sheet
+  adjustStockLabel: string;
   onEdit: (variant: ProductVariant) => void;
   lowStockThreshold: number;
-  // false while the account has no location to hold stock (OS-689) — the
-  // action then leads to creating one instead
-  canAdjustStock: boolean;
+  // set with more than one location: the stock shown is the total, and this
+  // opens the per-location breakdown (OS-696)
+  onViewStockByLocation?: () => void;
   // inventory:write — without it the action isn't offered at all (OS-672)
   showAdjustStock: boolean;
   // products:write — the edit is refused server-side without it (OS-672)
@@ -55,10 +58,23 @@ export function getVariantColumns(options: {
       accessorKey: "stock",
       header: "Stock",
       cell: ({ row }) => (
-        <StockLevel
-          stock={row.original.stock}
-          threshold={options.lowStockThreshold}
-        />
+        <div className="flex items-center gap-2">
+          <StockLevel
+            stock={row.original.stock}
+            threshold={options.lowStockThreshold}
+          />
+          {options.onViewStockByLocation && (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto px-0"
+              onClick={options.onViewStockByLocation}
+            >
+              By location
+            </Button>
+          )}
+        </div>
       ),
     },
     {
@@ -87,10 +103,7 @@ export function getVariantColumns(options: {
               )}
               {options.showAdjustStock && (
                 <DropdownMenuItem onClick={() => options.onAdjustStock(row.original)}>
-                  <PackageIcon />{" "}
-                  {options.canAdjustStock
-                    ? "Adjust stock"
-                    : "Add a location to adjust stock"}
+                  <PackageIcon /> {options.adjustStockLabel}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>

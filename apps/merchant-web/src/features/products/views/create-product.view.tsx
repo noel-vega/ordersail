@@ -20,7 +20,7 @@ import { useCreateProductMutation } from "../products.hooks";
 import { BrandCombobox } from "../../brands/components/brand-combobox";
 import { CategoryCombobox } from "../../categories/components/category-combobox";
 import { centsToDollars, dollarsToCents } from "../../../lib/currency";
-import { useStockLocation } from "../../locations/locations.hooks";
+import { useStockLocations } from "../../locations/locations.hooks";
 
 export const CreateProductFormSchema = z.object({
   name: z.string(),
@@ -36,6 +36,9 @@ export const CreateProductFormSchema = z.object({
   barcodes: z.object({ value: z.string() }).array(),
   priceCents: z.number(),
   stock: z.number(),
+  // where the opening stock goes; only asked for with more than one location
+  // (OS-696) — with one, the API uses it
+  locationId: z.number().nullable(),
   brandId: z.number().nullable(),
   categoryIds: z.number().array(),
 });
@@ -45,10 +48,11 @@ export type CreateProductForm = z.infer<typeof CreateProductFormSchema>;
 export function CreateProductView() {
   const navigate = useNavigate();
   const createProduct = useCreateProductMutation();
-  // opening stock goes to the first location; with none yet there's nowhere
-  // to put it, and the API refuses stock above 0 (OS-689)
-  const stockLocation = useStockLocation();
-  const noLocation = stockLocation.isLoaded && !stockLocation.location;
+  // with no location yet there's nowhere to put opening stock, and the API
+  // refuses stock above 0 (OS-689); with several, the merchant picks one
+  const stockLocations = useStockLocations();
+  const noLocation = stockLocations.isLoaded && stockLocations.total === 0;
+  const multiLocation = stockLocations.total > 1;
   const form = useForm({
     resolver: zodResolver(CreateProductFormSchema),
     defaultValues: {
@@ -58,6 +62,7 @@ export function CreateProductView() {
       sku: null,
       priceCents: 0,
       stock: 0,
+      locationId: null,
       barcodes: [],
       brandId: null,
       categoryIds: [],
@@ -83,14 +88,24 @@ export function CreateProductView() {
   };
 
   const handleSubmit = (data: CreateProductForm) => {
-    const { brandId, ...rest } = data;
+    const { brandId, locationId, ...rest } = data;
     if (!brandId) {
+      return;
+    }
+    if (multiLocation && data.stock > 0 && locationId === null) {
+      form.setError("locationId", { message: "Choose a location" });
       return;
     }
     const barcodes = data.barcodes.map((b) => b.value);
     const sku = data.sku?.trim() || null;
     createProduct.mutate(
-      { ...rest, brandId, barcodes, sku },
+      {
+        ...rest,
+        brandId,
+        barcodes,
+        sku,
+        locationId: multiLocation ? (locationId ?? undefined) : undefined,
+      },
       {
         onSuccess: () => {
           navigate({ to: "/app/products" });
@@ -202,6 +217,44 @@ export function CreateProductView() {
               </Field>
             )}
           />
+
+          {multiLocation && (
+            <Controller
+              control={form.control}
+              name="locationId"
+              render={({ field, fieldState }) => (
+                <Field data-invalid={!!fieldState.error}>
+                  <FieldLabel>Stock location</FieldLabel>
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    items={stockLocations.locations.map((l) => ({
+                      value: l.id,
+                      label: l.name,
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {stockLocations.locations.map((l) => (
+                          <SelectItem key={l.id} value={l.id}>
+                            {l.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {fieldState.error && (
+                    <p className="text-sm text-destructive">
+                      {fieldState.error.message}
+                    </p>
+                  )}
+                </Field>
+              )}
+            />
+          )}
         </FieldGroup>
 
         <FieldGroup className="flex flex-row">
