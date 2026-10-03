@@ -11,7 +11,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "node --test src/*.spec.ts"
   },
@@ -22,7 +22,6 @@
   "devDependencies": {
     "@types/node": "^26.6.4",
     "fastify": "^5.11.3",
-    "logging": "*",
     "typescript": "^5.9.3"
   },
   "dependencies": {
@@ -35,6 +34,7 @@
     "@opentelemetry/resources": "^2.11.0",
     "@opentelemetry/sdk-trace-base": "^2.11.0",
     "@opentelemetry/sdk-trace-node": "^2.11.0",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "logging": "*"
   }
 }

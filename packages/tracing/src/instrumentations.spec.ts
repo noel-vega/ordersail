@@ -1,6 +1,8 @@
 import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { SPAN_ATTRIBUTES } from 'logging';
+import { fileURLToPath } from 'node:url';
+import { SPAN_ATTRIBUTES } from 'logging/span-attributes';
 import { ALLOWED_ATTRIBUTES, ALLOWED_EVENT_ATTRIBUTES, createInstrumentations } from './index.ts';
 
 // Pins what a traced request records. If this fails, an instrumentation was
@@ -45,8 +47,10 @@ describe('pinned instrumentations', () => {
     assert.equal(config.enhancedDatabaseReporting, false);
   });
 
+  // the instrumentations' attributes; the log context's come from packages/logging
   it('exports only allow-listed span attributes', () => {
-    assert.deepEqual([...ALLOWED_ATTRIBUTES].sort(), [
+    const logContext = new Set(Object.values(SPAN_ATTRIBUTES));
+    assert.deepEqual([...ALLOWED_ATTRIBUTES].filter((key) => !logContext.has(key)).sort(), [
       'db.collection.name',
       'db.namespace',
       'db.operation.name',
@@ -60,24 +64,25 @@ describe('pinned instrumentations', () => {
       'http.response.status_code',
       'http.route',
       'network.protocol.version',
-      'ordersail.account_id',
-      'ordersail.app_key_id',
-      'ordersail.correlation_id',
-      'ordersail.customer_id',
-      'ordersail.device_id',
-      'ordersail.location_id',
-      'ordersail.order_id',
-      'ordersail.user_id',
       'server.address',
       'server.port',
       'url.scheme',
     ]);
   });
 
-  it('allows every attribute packages/logging puts on a span — or the exporter drops it', () => {
+  // the log context widens the allow-list under its own namespace only — never
+  // to an attribute an instrumentation records
+  it('takes the log context packages/logging puts on a span, under ordersail.* only', () => {
     for (const key of Object.values(SPAN_ATTRIBUTES)) {
-      assert.equal(ALLOWED_ATTRIBUTES.has(key), true, key);
+      assert.match(key, /^ordersail\.[a-z_]+$/);
     }
+  });
+
+  // this package loads logging/span-attributes before the instrumentations are
+  // installed: anything it imported would load unpatched
+  it('loads nothing through logging/span-attributes', () => {
+    const built = readFileSync(fileURLToPath(import.meta.resolve('logging/span-attributes')), 'utf8');
+    assert.doesNotMatch(built, /^\s*import\b|\brequire\(/m);
   });
 
   it('keeps only type, message and stack on span events — what `err` keeps in logs', () => {

@@ -9,6 +9,7 @@ import { getRPCMetadata } from '@opentelemetry/core';
 import { BaseExceptionFilter } from '@nestjs/core';
 import { destination, multistream, pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
 import pretty from 'pino-pretty';
+import { SPAN_ATTRIBUTES } from './span-attributes.ts';
 
 // ---------------------------------------------------------------------------
 // correlation context
@@ -37,20 +38,7 @@ const als = new AsyncLocalStorage<LogContext>();
 // registered: @opentelemetry/api then has no active span to hand out.
 // ---------------------------------------------------------------------------
 
-// Where each context field goes on a span. Keyed by every LogContext field, so
-// a new field can't be added without naming its attribute — and the name must
-// also be added to packages/tracing's ALLOWED_ATTRIBUTES, or the exporter drops it
-// (its instrumentations.spec.ts fails until it is).
-export const SPAN_ATTRIBUTES: Readonly<Record<keyof LogContext, string>> = {
-  correlationId: 'ordersail.correlation_id',
-  accountId: 'ordersail.account_id',
-  userId: 'ordersail.user_id',
-  customerId: 'ordersail.customer_id',
-  deviceId: 'ordersail.device_id',
-  locationId: 'ordersail.location_id',
-  appKeyId: 'ordersail.app_key_id',
-  orderId: 'ordersail.order_id',
-};
+export { SPAN_ATTRIBUTES };
 
 // The span a scope's context is recorded on, keyed by the scope's store.
 const scopeSpans = new WeakMap<LogContext, Span>();

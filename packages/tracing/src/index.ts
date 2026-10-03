@@ -11,10 +11,11 @@ import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { BatchSpanProcessor, type ReadableSpan, type SpanExporter, type TimedEvent } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { SPAN_ATTRIBUTES } from 'logging/span-attributes';
 
-// This package must not import `logging` or `config`: whatever it loads is
-// loaded before the instrumentations are installed. (Its specs may — they only
-// read SPAN_ATTRIBUTES, which is why `logging` is a devDependency.)
+// This package must not import `logging`'s main entry or `config`: whatever it
+// loads is loaded before the instrumentations are installed. The one exception
+// is `logging/span-attributes`, a constant map that imports nothing.
 
 const { FastifyOtelInstrumentation } = FastifyOtel;
 
@@ -86,16 +87,9 @@ export const ALLOWED_ATTRIBUTES: ReadonlySet<string> = new Set([
   'db.collection.name',
   'db.response.status_code',
   'db.postgresql.idle.timeout.millis',
-  // the request's log context, set by packages/logging (its SPAN_ATTRIBUTES) —
-  // IDs only, the same rule as the log line
-  'ordersail.correlation_id',
-  'ordersail.account_id',
-  'ordersail.user_id',
-  'ordersail.customer_id',
-  'ordersail.device_id',
-  'ordersail.location_id',
-  'ordersail.app_key_id',
-  'ordersail.order_id',
+  // the request's log context, set on the span by packages/logging — IDs only,
+  // the same rule as the log line. Taken from its map, so the two can't drift.
+  ...Object.values(SPAN_ATTRIBUTES),
 ]);
 
 // Span event attributes get their own, shorter allow-list: a recorded

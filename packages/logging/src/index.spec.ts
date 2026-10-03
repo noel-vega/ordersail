@@ -163,7 +163,6 @@ describe('log context', () => {
       setLogContext({ orderId: 11 });
       new Logger('Svc').info({ event: 'order.created' }, 'Order created');
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
     assert.equal(lines[0].correlationId, 'job-1');
     assert.equal(lines[0].accountId, 5);
     assert.equal(lines[0].orderId, 11);
@@ -177,7 +176,6 @@ describe('log context', () => {
       setLogContext({ accountId: 1, userId: 2 });
       new Logger('Svc').info('untraced');
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
     assert.equal(lines[0].correlationId, 'r-1');
     assert.equal('trace_id' in lines[0], false);
     assert.equal('span_id' in lines[0], false);

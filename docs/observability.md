@@ -363,7 +363,9 @@ traced request records is always a deliberate edit. Not traced on purpose:
 Span attributes are an **allow-list** (`ALLOWED_ATTRIBUTES` in `packages/tracing`): any key
 not on it is dropped before export, so an instrumentation upgrade that starts recording
 something new can't leak it. Adding a key is a deliberate edit, pinned by
-`instrumentations.spec.ts`. What that keeps out:
+`instrumentations.spec.ts`. The `ordersail.*` keys aren't listed there: the allow-list takes
+them from `SPAN_ATTRIBUTES` (`logging/span-attributes`), so a new log-context field is exported
+without a second edit. What that keeps out:
 
 - the raw path and query string — the HTTP and Fastify spans both record them; only the
   route template (`http.route`) is kept
