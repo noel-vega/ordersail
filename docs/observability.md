@@ -342,6 +342,11 @@ whatever the auth guard resolves through `setLogContext()` — `ordersail.accoun
 not the Fastify `request` span the guard actually runs under, so a TraceQL search on them
 matches the request's root. The same rule as logs: IDs only.
 
+Only the request's own scope writes to its span. A scope opened inside it — the Stripe
+webhook's checkout-order handler, `runWithLogContext()` with the event's tenant — stamps its own
+log lines but leaves the server span alone, so the public webhook route still carries only its
+correlation ID.
+
 `correlationId` is not the trace ID. It stays the user-facing ID (`x-request-id`, reused from
 an inbound header or minted); the trace ID is OpenTelemetry's. Log lines carry both, the span
 carries the correlation ID, so either one finds the other.

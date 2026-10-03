@@ -71,10 +71,15 @@ function recordOnSpan(span: Span | undefined, fields: Partial<LogContext>): void
 }
 
 // Opens a scope: the store goes into AsyncLocalStorage and its fields onto the
-// scope's span, which setLogContext keeps adding to.
+// scope's span, which setLogContext keeps adding to. A scope nested inside
+// another (the Stripe webhook's domain-event handler, inside the request)
+// resolves to the same server span — but that span is the enclosing scope's,
+// so the nested one records nothing on it: a public route must not pick up the
+// event's tenant, and a different correlationId must not overwrite the request's.
 function openScope<T>(store: LogContext, fn: () => T): T {
   const span = scopeSpanOf();
-  if (span) {
+  const enclosing = als.getStore();
+  if (span && !(enclosing && scopeSpans.get(enclosing) === span)) {
     scopeSpans.set(store, span);
     recordOnSpan(span, store);
   }

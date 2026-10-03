@@ -13,7 +13,8 @@ import { BatchSpanProcessor, type ReadableSpan, type SpanExporter, type TimedEve
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 
 // This package must not import `logging` or `config`: whatever it loads is
-// loaded before the instrumentations are installed.
+// loaded before the instrumentations are installed. (Its specs may — they only
+// read SPAN_ATTRIBUTES, which is why `logging` is a devDependency.)
 
 const { FastifyOtelInstrumentation } = FastifyOtel;
 

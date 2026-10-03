@@ -135,6 +135,27 @@ describe('request context on the HTTP server span', () => {
     assert.deepEqual(finished('GET /orders').attributes, { 'ordersail.correlation_id': correlationId });
   });
 
+  // The Stripe webhook's shape: a public route whose domain-event handler opens
+  // its own scope (CheckoutOrderHandler) with the tenant the event names.
+  it('a scope opened inside a request leaves the request’s span alone', async () => {
+    const { lines, correlationId } = await tracedRequest(async (_req, res) => {
+      await runWithLogContext({ correlationId: 'evt-1', accountId: 9 }, async () => {
+        setLogContext({ orderId: 3 });
+        new Logger('CheckoutOrderHandler').info('resolving');
+      });
+      res.end('ok');
+    });
+    assert.deepEqual(finished('GET /orders').attributes, { 'ordersail.correlation_id': correlationId });
+    assert.deepEqual(finished('request').attributes, {});
+
+    // its lines still carry its own context
+    const line = lines.find((l) => l.context === 'CheckoutOrderHandler');
+    assert.ok(line);
+    assert.equal(line.correlationId, 'evt-1');
+    assert.equal(line.accountId, 9);
+    assert.equal(line.orderId, 3);
+  });
+
   it('with no HTTP server span in the context, the active span is the scope span', async () => {
     exporter.reset();
     await tracer.startActiveSpan('job', async (span) => {
