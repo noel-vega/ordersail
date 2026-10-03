@@ -35,7 +35,7 @@ RUN npm ci
 # (dependency order), then the app itself.
 FROM deps AS build
 COPY . .
-RUN npm run build --workspace=tracing --workspace=logging --workspace=config --workspace=db --workspace=queue --workspace=storage --workspace=payments --workspace=password-policy
+RUN npm run build --workspace=logging --workspace=tracing --workspace=config --workspace=db --workspace=queue --workspace=storage --workspace=payments --workspace=password-policy
 RUN npm run build --workspace=merchant-api
 
 # --- prod-deps: same package.json-only copy, but omit devDependencies —
