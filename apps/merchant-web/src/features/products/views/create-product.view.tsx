@@ -21,6 +21,7 @@ import { BrandCombobox } from "../../brands/components/brand-combobox";
 import { CategoryCombobox } from "../../categories/components/category-combobox";
 import { centsToDollars, dollarsToCents } from "../../../lib/currency";
 import { useStockLocations } from "../../locations/locations.hooks";
+import { StockLocationSelect } from "../../locations/components/stock-location-select";
 
 export const CreateProductFormSchema = z.object({
   name: z.string(),
@@ -45,16 +46,33 @@ export const CreateProductFormSchema = z.object({
 
 export type CreateProductForm = z.infer<typeof CreateProductFormSchema>;
 
+// with more than one location, opening stock needs one picked
+function createProductFormSchema(locationRequired: boolean) {
+  return CreateProductFormSchema.superRefine((data, ctx) => {
+    if (locationRequired && data.stock > 0 && data.locationId === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["locationId"],
+        message: "Choose a location",
+      });
+    }
+  });
+}
+
 export function CreateProductView() {
   const navigate = useNavigate();
   const createProduct = useCreateProductMutation();
-  // with no location yet there's nowhere to put opening stock, and the API
-  // refuses stock above 0 (OS-689); with several, the merchant picks one
+  // opening stock needs a known location: with none yet the API refuses
+  // stock above 0 (OS-689), and with several the merchant picks one (OS-696).
+  // Until the list loads — or without locations:read, when it never does —
+  // which case applies is unknown, so stock stays at 0 rather than risk a 400
+  // the form couldn't resolve
   const stockLocations = useStockLocations();
   const noLocation = stockLocations.isLoaded && stockLocations.total === 0;
   const multiLocation = stockLocations.total > 1;
+  const canSetStock = stockLocations.isLoaded && !noLocation;
   const form = useForm({
-    resolver: zodResolver(CreateProductFormSchema),
+    resolver: zodResolver(createProductFormSchema(multiLocation)),
     defaultValues: {
       name: "",
       description: "",
@@ -92,10 +110,6 @@ export function CreateProductView() {
     if (!brandId) {
       return;
     }
-    if (multiLocation && data.stock > 0 && locationId === null) {
-      form.setError("locationId", { message: "Choose a location" });
-      return;
-    }
     const barcodes = data.barcodes.map((b) => b.value);
     const sku = data.sku?.trim() || null;
     createProduct.mutate(
@@ -104,7 +118,7 @@ export function CreateProductView() {
         brandId,
         barcodes,
         sku,
-        locationId: multiLocation ? (locationId ?? undefined) : undefined,
+        locationId: locationId ?? undefined,
       },
       {
         onSuccess: () => {
@@ -201,7 +215,7 @@ export function CreateProductView() {
                 <Input
                   type="number"
                   value={field.value}
-                  disabled={noLocation}
+                  disabled={!canSetStock}
                   onChange={(e) =>
                     field.onChange(e.currentTarget.valueAsNumber)
                   }
@@ -214,6 +228,12 @@ export function CreateProductView() {
                     first — stock needs somewhere to live.
                   </FieldDescription>
                 )}
+                {!stockLocations.canRead && (
+                  <FieldDescription>
+                    Set stock from Inventory once the product exists — opening
+                    stock needs access to locations.
+                  </FieldDescription>
+                )}
               </Field>
             )}
           />
@@ -223,35 +243,13 @@ export function CreateProductView() {
               control={form.control}
               name="locationId"
               render={({ field, fieldState }) => (
-                <Field data-invalid={!!fieldState.error}>
-                  <FieldLabel>Stock location</FieldLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={field.onChange}
-                    items={stockLocations.locations.map((l) => ({
-                      value: l.id,
-                      label: l.name,
-                    }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a location" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {stockLocations.locations.map((l) => (
-                          <SelectItem key={l.id} value={l.id}>
-                            {l.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {fieldState.error && (
-                    <p className="text-sm text-destructive">
-                      {fieldState.error.message}
-                    </p>
-                  )}
-                </Field>
+                <StockLocationSelect
+                  label="Stock location"
+                  locations={stockLocations.locations}
+                  value={field.value}
+                  onChange={field.onChange}
+                  error={fieldState.error?.message}
+                />
               )}
             />
           )}

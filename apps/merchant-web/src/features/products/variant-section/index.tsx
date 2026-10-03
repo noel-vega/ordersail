@@ -12,7 +12,7 @@ import type { ProductOption, ProductVariant } from "merchant-sdk";
 import { DataTable } from "../../../components/data-table";
 import { useVariantOptions } from "./shared";
 import { VariantOptionForm } from "./variant-option-form";
-import { getVariantColumns } from "./variant-columns";
+import { getVariantColumns, type VariantStockAction } from "./variant-columns";
 import { EditVariantSheet } from "./edit-variant-sheet";
 import { useStockLocations } from "../../locations/locations.hooks";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
@@ -82,37 +82,22 @@ export function VariantSection({
     })),
   };
 
-  // without locations:read there's nothing to pick from here, so the
-  // per-location rows on the Inventory tab are where stock gets adjusted —
-  // and without inventory:read either, there's nowhere to send them
-  const adjustStock = !stockLocations.canRead
-    ? canReadInventory
-      ? { label: "Adjust stock by location", run: onViewStockByLocation }
-      : null
-    : // unknown while loading: assume there's one rather than flash the prompt
-      !stockLocations.isLoaded || stockLocations.total > 0
-      ? {
-          label: "Adjust stock",
-          run: (variant: ProductVariant) =>
-            stockLocations.isLoaded && setAdjustingVariant(variant),
-        }
-      : // an account has no location until the merchant creates one (OS-689);
-        // stock needs somewhere to live, so send them there first
-        {
-          label: "Add a location to adjust stock",
-          run: () => navigate({ to: "/app/locations/create" }),
-        };
-
   const columns = getVariantColumns({
-    onAdjustStock: adjustStock?.run ?? (() => {}),
-    adjustStockLabel: adjustStock?.label ?? "",
+    adjustStock: canWriteInventory
+      ? variantStockAction({
+          stockLocations,
+          canReadInventory,
+          openSheet: setAdjustingVariant,
+          viewStockByLocation: onViewStockByLocation,
+          createLocation: () => navigate({ to: "/app/locations/create" }),
+        })
+      : undefined,
     onEdit: (variant) => setEditingVariant(variant),
     lowStockThreshold,
     // the row's number is the total across locations; the breakdown lives on
     // the Inventory tab
     onViewStockByLocation:
       multiLocation && canReadInventory ? onViewStockByLocation : undefined,
-    showAdjustStock: canWriteInventory && adjustStock !== null,
     showEdit: canWriteProducts,
   });
 
@@ -185,6 +170,34 @@ export function VariantSection({
       </Sheet>
     </section>
   );
+}
+
+// where a variant row's stock action leads. It never guesses a location: with
+// several, the sheet asks (OS-696)
+function variantStockAction(deps: {
+  stockLocations: ReturnType<typeof useStockLocations>;
+  canReadInventory: boolean;
+  openSheet: (variant: ProductVariant) => void;
+  viewStockByLocation: () => void;
+  createLocation: () => void;
+}): VariantStockAction | undefined {
+  const { stockLocations } = deps;
+  if (!stockLocations.canRead) {
+    // nothing to pick from here, so the Inventory tab's per-location rows are
+    // where stock gets adjusted — without inventory:read there's nowhere to go
+    return deps.canReadInventory
+      ? { label: "Adjust stock by location", run: deps.viewStockByLocation }
+      : undefined;
+  }
+  if (!stockLocations.isLoaded) {
+    return { label: "Adjust stock", run: () => {}, disabled: true };
+  }
+  if (stockLocations.total === 0) {
+    // an account has no location until the merchant creates one (OS-689);
+    // stock needs somewhere to live, so send them there first
+    return { label: "Add a location to adjust stock", run: deps.createLocation };
+  }
+  return { label: "Adjust stock", run: deps.openSheet };
 }
 
 function SheetOptionForm({

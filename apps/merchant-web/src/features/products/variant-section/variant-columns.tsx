@@ -12,18 +12,24 @@ import { MoreVerticalIcon, PackageIcon, PencilIcon } from "lucide-react";
 import { formatCents } from "../../../lib/currency";
 import { StockLevel } from "../../inventory/components/stock-level";
 
+// the variant row's stock action. Its label says where it leads: the Adjust
+// stock sheet, creating a location first (OS-689), or the Inventory tab's
+// per-location rows (OS-696)
+export type VariantStockAction = {
+  label: string;
+  run: (variant: ProductVariant) => void;
+  // while the locations needed to decide are still loading
+  disabled?: boolean;
+};
+
 export function getVariantColumns(options: {
-  onAdjustStock: (variant: ProductVariant) => void;
-  // what the action says — it may lead to creating a location (OS-689) or to
-  // the Inventory tab instead of opening the sheet
-  adjustStockLabel: string;
+  // omitted, the action isn't offered at all (e.g. no inventory:write, OS-672)
+  adjustStock?: VariantStockAction;
   onEdit: (variant: ProductVariant) => void;
   lowStockThreshold: number;
   // set with more than one location: the stock shown is the total, and this
   // opens the per-location breakdown (OS-696)
   onViewStockByLocation?: () => void;
-  // inventory:write — without it the action isn't offered at all (OS-672)
-  showAdjustStock: boolean;
   // products:write — the edit is refused server-side without it (OS-672)
   showEdit: boolean;
 }): ColumnDef<ProductVariant>[] {
@@ -81,7 +87,7 @@ export function getVariantColumns(options: {
       id: "actions",
       // a role with neither action gets no menu at all, not an empty one
       cell: ({ row }) =>
-        (options.showEdit || options.showAdjustStock) && (
+        (options.showEdit || options.adjustStock) && (
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -101,9 +107,12 @@ export function getVariantColumns(options: {
                   <PencilIcon /> Edit variant
                 </DropdownMenuItem>
               )}
-              {options.showAdjustStock && (
-                <DropdownMenuItem onClick={() => options.onAdjustStock(row.original)}>
-                  <PackageIcon /> {options.adjustStockLabel}
+              {options.adjustStock && (
+                <DropdownMenuItem
+                  disabled={options.adjustStock.disabled}
+                  onClick={() => options.adjustStock?.run(row.original)}
+                >
+                  <PackageIcon /> {options.adjustStock.label}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>

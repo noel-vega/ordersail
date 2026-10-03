@@ -12,6 +12,7 @@ import {
   SheetFooter,
 } from "ui/sheet";
 import { Field, FieldLabel } from "ui/field";
+import { StockLocationSelect } from "../../locations/components/stock-location-select";
 import { Input } from "ui/input";
 import { Textarea } from "ui/textarea";
 import {
@@ -125,37 +126,13 @@ function AdjustStockForm(props: { target: AdjustStockTarget; onDone: () => void 
             control={form.control}
             name="locationId"
             render={({ field, fieldState }) => (
-              <Field data-invalid={!!fieldState.error}>
-                <FieldLabel>Location</FieldLabel>
-                <Select
-                  value={field.value}
-                  onValueChange={field.onChange}
-                  items={locations.map((l) => ({ value: l.id, label: l.name }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a location" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {locations.map((l) => (
-                        <SelectItem key={l.id} value={l.id}>
-                          <span className="flex-1">{l.name}</span>
-                          {l.stock !== null && (
-                            <span className="text-muted-foreground">
-                              {l.stock} in stock
-                            </span>
-                          )}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                {fieldState.error && (
-                  <p className="text-sm text-destructive">
-                    {fieldState.error.message}
-                  </p>
-                )}
-              </Field>
+              <StockLocationSelect
+                label="Location"
+                locations={locations}
+                value={field.value}
+                onChange={field.onChange}
+                error={fieldState.error?.message}
+              />
             )}
           />
         )}
