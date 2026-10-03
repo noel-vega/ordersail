@@ -4,6 +4,8 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { HttpException, type ArgumentsHost, type LoggerService } from '@nestjs/common';
+import { context, isSpanContextValid, trace, TraceFlags, type Span, type SpanContext } from '@opentelemetry/api';
+import { getRPCMetadata } from '@opentelemetry/core';
 import { BaseExceptionFilter } from '@nestjs/core';
 import { destination, multistream, pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
 import pretty from 'pino-pretty';
@@ -29,22 +31,83 @@ export type LogContext = {
 
 const als = new AsyncLocalStorage<LogContext>();
 
+// ---------------------------------------------------------------------------
+// trace correlation — the same context on the scope's span (docs/observability.md
+// → Tracing). Everything here is a no-op when no OpenTelemetry SDK is
+// registered: @opentelemetry/api then has no active span to hand out.
+// ---------------------------------------------------------------------------
+
+// Where each context field goes on a span. Keyed by every LogContext field, so
+// a new field can't be added without naming its attribute — and the name must
+// also be added to packages/tracing's ALLOWED_ATTRIBUTES, or the exporter drops it.
+export const SPAN_ATTRIBUTES: Readonly<Record<keyof LogContext, string>> = {
+  correlationId: 'ordersail.correlation_id',
+  accountId: 'ordersail.account_id',
+  userId: 'ordersail.user_id',
+  customerId: 'ordersail.customer_id',
+  deviceId: 'ordersail.device_id',
+  locationId: 'ordersail.location_id',
+  appKeyId: 'ordersail.app_key_id',
+  orderId: 'ordersail.order_id',
+};
+
+// The span a scope's context is recorded on, keyed by the scope's store.
+const scopeSpans = new WeakMap<LogContext, Span>();
+
+// The span that stands for the whole scope. Inside an HTTP request that's the
+// HTTP server span, not whatever is active: guards and handlers run under
+// Fastify's own `request` span, a child of it. The HTTP instrumentation leaves
+// the server span in the context's RPC metadata (it's how it sets http.route).
+function scopeSpanOf(ctx = context.active()): Span | undefined {
+  return getRPCMetadata(ctx)?.span ?? trace.getSpan(ctx);
+}
+
+function recordOnSpan(span: Span | undefined, fields: Partial<LogContext>): void {
+  if (!span?.isRecording()) return;
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) span.setAttribute(SPAN_ATTRIBUTES[key as keyof LogContext], value);
+  }
+}
+
+// Opens a scope: the store goes into AsyncLocalStorage and its fields onto the
+// scope's span, which setLogContext keeps adding to.
+function openScope<T>(store: LogContext, fn: () => T): T {
+  const span = scopeSpanOf();
+  if (span) {
+    scopeSpans.set(store, span);
+    recordOnSpan(span, store);
+  }
+  return als.run(store, fn);
+}
+
+// trace_id / span_id for a log line. Only a sampled span: an unsampled one is
+// never exported, so its IDs would link to a trace that doesn't exist.
+function traceFieldsOf(spanContext: SpanContext | undefined): { trace_id?: string; span_id?: string } {
+  if (!spanContext || !isSpanContextValid(spanContext)) return {};
+  if (!(spanContext.traceFlags & TraceFlags.SAMPLED)) return {};
+  return { trace_id: spanContext.traceId, span_id: spanContext.spanId };
+}
+
 // wraps the rest of an HTTP request (APIs) or a single job's processing
 // (worker) so every log line emitted anywhere in that call stack — including
 // inside services several layers deep — picks up the same context without it
 // having to be threaded through every function signature
 export function runWithLogContext<T>(context: LogContext, fn: () => T): T {
-  return als.run(withoutUndefined(context), fn);
+  return openScope(withoutUndefined(context), fn);
 }
 
 // Adds fields to the current scope's context. Mutates the store in place rather
 // than opening a nested scope: a guard runs in the middle of the request's
 // async chain, and only a mutation is visible to everything after it — the
 // rest of the handler *and* the access line, which holds the same object. A
-// no-op outside a scope (a module-level call, a test without one).
+// no-op outside a scope (a module-level call, a test without one). The same
+// fields land on the scope's span, so the caller is known in one place: here.
 export function setLogContext(fields: Partial<Omit<LogContext, 'correlationId'>>): void {
   const store = als.getStore();
-  if (store) Object.assign(store, withoutUndefined(fields));
+  if (!store) return;
+  const defined = withoutUndefined(fields);
+  Object.assign(store, defined);
+  recordOnSpan(scopeSpans.get(store), defined);
 }
 
 export function getLogContext(): Readonly<LogContext> | undefined {
@@ -196,10 +259,10 @@ const redact = { paths: REDACT_PATHS, censor: '[REDACTED]' };
 const serializers = { err: serializeError };
 
 // stamps the ambient log context (correlation ID + whatever identity the
-// guards resolved) onto every line
+// guards resolved) and the active span's trace_id / span_id onto every line
 function mixin(): Record<string, unknown> {
   const store = als.getStore();
-  return store ? { ...store } : {};
+  return { ...store, ...traceFieldsOf(trace.getActiveSpan()?.spanContext()) };
 }
 
 // Before configureLogging() runs (specs, scripts, module-level code that logs
@@ -453,6 +516,8 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
 
     const path = (req.url ?? '').split('?')[0];
     const store: LogContext = { correlationId };
+    // read now: finish/close can fire outside the request's trace context
+    const requestTrace = traceFieldsOf(scopeSpanOf()?.spanContext());
 
     if (!ignorePaths.has(path)) {
       const startedAt = process.hrtime.bigint();
@@ -464,8 +529,10 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
         const responseTime = Number(process.hrtime.bigint() - startedAt) / 1e6;
         const fields = {
           // finish/close fire outside the ALS scope, so the store is read
-          // from the closure rather than the mixin
+          // from the closure rather than the mixin; the trace IDs are the
+          // HTTP server span's, the span this line describes
           ...store,
+          ...requestTrace,
           event: 'http.request',
           req: { method: req.method },
           route,
@@ -484,7 +551,7 @@ export function requestLoggingMiddleware(options: RequestLoggingOptions = {}) {
       res.once('close', () => writeAccessLine(!res.writableFinished));
     }
 
-    als.run(store, next);
+    openScope(store, next);
   };
 }
 

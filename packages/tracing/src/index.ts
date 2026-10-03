@@ -85,6 +85,16 @@ export const ALLOWED_ATTRIBUTES: ReadonlySet<string> = new Set([
   'db.collection.name',
   'db.response.status_code',
   'db.postgresql.idle.timeout.millis',
+  // the request's log context, set by packages/logging (its SPAN_ATTRIBUTES) —
+  // IDs only, the same rule as the log line
+  'ordersail.correlation_id',
+  'ordersail.account_id',
+  'ordersail.user_id',
+  'ordersail.customer_id',
+  'ordersail.device_id',
+  'ordersail.location_id',
+  'ordersail.app_key_id',
+  'ordersail.order_id',
 ]);
 
 // Span event attributes get their own, shorter allow-list: a recorded

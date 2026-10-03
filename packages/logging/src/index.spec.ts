@@ -167,6 +167,20 @@ describe('log context', () => {
     assert.equal(lines[0].accountId, 5);
     assert.equal(lines[0].orderId, 11);
   });
+
+  // no OpenTelemetry SDK is registered in this file (trace.spec.ts registers
+  // one, in its own process) — the state of every service that doesn't trace
+  it('with no tracing SDK: no trace_id / span_id, and nothing throws', async () => {
+    const lines = captureLogs();
+    await runWithLogContext({ correlationId: 'r-1' }, async () => {
+      setLogContext({ accountId: 1, userId: 2 });
+      new Logger('Svc').info('untraced');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(lines[0].correlationId, 'r-1');
+    assert.equal('trace_id' in lines[0], false);
+    assert.equal('span_id' in lines[0], false);
+  });
 });
 
 // routes the shared root into memory and returns the parsed lines
