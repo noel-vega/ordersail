@@ -7,7 +7,8 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 > **Status:** in place — the **M1b — Structured logging** milestone (Observability & alerting
 > project) landed as pino (OS-478) → redaction (OS-81) → request logs (OS-82) → request
 > context (OS-479) → error handling (OS-480) → call-site migration (OS-481) → log alarms
-> (OS-99) → saved queries (OS-98). Traces (`trace_id`/`span_id`) are M3 (OS-94).
+> (OS-99) → saved queries (OS-98). Traces: merchant-api can emit them (OS-94, see
+> [Traces](#traces)); they are not exported anywhere by default yet.
 
 ## Roles of each tool
 
@@ -17,7 +18,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | **CloudWatch Logs** | the migrator's output, Fluent Bit's own output, and service logs from before the move to Loki | [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md` |
-| **OpenTelemetry traces** | *Where did the time go across services?* | deferred (OS-94) |
+| **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api only, off unless an OTLP endpoint is set — [Traces](#traces) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
 `correlationId` field on every log line, rides on every BullMQ job, and (later) is a Sentry tag.
@@ -65,7 +66,7 @@ In local dev the same data is pretty-printed.
 | domain IDs | caller | `orderId`, `jobId`, `queue`, `disputeId`, `chargeId`, `stripeEventId`… — top-level, camelCase |
 | `err` | caller | the Error object; serialized to `type`, `message`, `stack` (+ safe provider fields) |
 | `alert` | caller | `true` when a human must act — drives a critical alarm (OS-99) |
-| `trace_id`, `span_id` | *reserved* | added automatically once OpenTelemetry lands (OS-94) |
+| `trace_id`, `span_id` | *reserved* | added to the line from the active span in OS-702 |
 
 Request-context fields (`correlationId`, `accountId`, `userId`, …) are attached automatically
 from AsyncLocalStorage — **don't pass them by hand**. The middleware opens the scope with the
@@ -307,6 +308,90 @@ Fluent Bit's local config is `docker/fluent-bit/dev.conf`. The rehearsal's outpu
 mirror the ones in `modules/ecs-service`, apart from the destination (no TLS or credentials
 locally): change the line-shaping keys in both places together, and keep the Fluent Bit image
 tag the same in `docker-compose.yml` and the module.
+
+## Traces
+
+`packages/tracing` sets up OpenTelemetry for a service. Today only merchant-api loads it
+(`apps/merchant-api/src/instrument.ts`, the first import in `main.ts`).
+
+**Off unless configured.** Nothing is registered or patched unless `OTEL_EXPORTER_OTLP_ENDPOINT`
+is set, so tests, CI and production (until OS-97) run exactly as before. Local dev sets it
+to the local Tempo ([Traces in local Grafana](#traces-in-local-grafana)). Set it to the base URL
+of any OTLP/HTTP receiver — the exporter appends `/v1/traces` — and, for a hosted backend,
+put its credentials in `OTEL_EXPORTER_OTLP_HEADERS`. The app only ever reads those two
+standard variables, so a local Tempo (OS-701), Grafana Cloud (OS-97) or a collector are all
+just configuration.
+
+**What a request records.** One trace per request:
+
+```text
+POST /auth/signin            HTTP server span — method, route template, status
+└─ request                   Fastify
+   ├─ pg-pool.connect        waiting for a pooled connection
+   └─ pg.query:SELECT …      one per query, with the SQL text
+```
+
+Every span carries `service.name` and `deployment.environment`, the same two values as the
+Loki labels. All traces are kept (no sampling) while volume is low.
+
+**The instrumentation list is pinned**: HTTP, Fastify, `pg`, in `createInstrumentations()`.
+`instrumentations.spec.ts` fails when one is added, removed or loosened, so changing what a
+traced request records is always a deliberate edit. Not traced on purpose:
+
+- `/health` — hit every 15s per service by the ALB and ECS.
+- Anything outside a request: boot-time queries, the S3 bucket check, background calls.
+- Fastify's per-hook spans (cookie, CORS, helmet…).
+
+**The same privacy rules as logs** ([Personal data & secrets](#personal-data--secrets)).
+Span attributes are an **allow-list** (`ALLOWED_ATTRIBUTES` in `packages/tracing`): any key
+not on it is dropped before export, so an instrumentation upgrade that starts recording
+something new can't leak it. Adding a key is a deliberate edit, pinned by
+`instrumentations.spec.ts`. What that keeps out:
+
+- the raw path and query string — the HTTP and Fastify spans both record them; only the
+  route template (`http.route`) is kept
+- the caller's IP address and user agent, which the access log doesn't record either
+- query parameter values — the query text keeps its `$1` placeholders. A value written into
+  the SQL itself (`sql.raw`, an inlined literal) would still show, so don't.
+- headers and request or response bodies, which nothing records anyway
+
+Span events have their own allow-list (`ALLOWED_EVENT_ATTRIBUTES`): a recorded exception
+keeps its type, message and stack, exactly what `err` keeps in logs, and any other event
+attribute is dropped. Link attributes go through `ALLOWED_ATTRIBUTES`. The same rule as
+`err` in logs applies to what goes into an error message: it is exported as written, and so
+is the span's error status, which carries the same message.
+
+**On shutdown** the spans still waiting in the batch are sent before the process exits
+(`installShutdownHandler`'s `afterClose`), bounded to 2s so a backend that is down can't
+hold up a deploy. A crash, or an `app.close()` that throws, loses the last few seconds of
+spans; the `fatal` log line still lands.
+
+**Loading order matters.** The libraries are patched as they are loaded, so
+`import './instrument'` must stay the first line of `main.ts`. If traces show the HTTP span
+but no `pg` spans (or nothing at all), check that first.
+
+### Traces in local Grafana
+
+`npm run up` also starts a local Tempo. merchant-api's `.env.example` points
+`OTEL_EXPORTER_OTLP_ENDPOINT` at it (`http://localhost:4318`); an `apps/merchant-api/.env`
+created before that line existed needs it added by hand, since `npm run setup` never
+overwrites. Under `npm run dev`, open <http://localhost:3300> → Explore → **Tempo**, then
+**Search**, or switch to **TraceQL**:
+
+```traceql
+{ resource.service.name = "merchant-api" }                          # every trace
+{ resource.service.name = "merchant-api" && span.http.route = "/orders/:id" }
+{ resource.service.name = "merchant-api" && duration > 200ms }       # slow requests
+{ span.db.system.name = "postgresql" && duration > 50ms }            # slow queries
+```
+
+Traces show up a few seconds after the request (the exporter batches every 5s) and last
+until `npm run down`. If Tempo isn't running, merchant-api still starts and serves as usual;
+the spans are dropped, and stopping the service can take up to 2s longer while the exporter
+gives up. To turn tracing off locally, comment the line out or leave it empty
+(`OTEL_EXPORTER_OTLP_ENDPOINT=`).
+
+Jumping between a trace and its log lines comes with OS-702.
 
 ## Tracing a bug
 

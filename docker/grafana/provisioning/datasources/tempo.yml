@@ -1,0 +1,10 @@
+# Local Grafana's trace data source: the local Tempo that `npm run dev`
+# services export to (OTEL_EXPORTER_OTLP_ENDPOINT). Never points at Grafana Cloud.
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200

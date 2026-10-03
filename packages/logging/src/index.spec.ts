@@ -728,6 +728,28 @@ describe('process handlers', () => {
     );
   });
 
+  it('afterClose runs once the app has closed, before the exit', async () => {
+    const { code, lines } = await runScript(
+      `
+      const logger = new logging.Logger('App');
+      logging.installShutdownHandler(
+        { close: async () => { logger.info({ event: 'app.closed' }, 'closed'); } },
+        { afterClose: async () => { logger.info({ event: 'telemetry.flushed' }, 'flushed'); } },
+      );
+      setInterval(() => undefined, 1000);
+      logger.info({ event: 'app.ready' }, 'ready');
+    `,
+      (line, child) => {
+        if (line.event === 'app.ready') child.kill('SIGTERM');
+      },
+    );
+    assert.equal(code, 0);
+    assert.deepEqual(
+      lines.map((line) => line.event),
+      ['app.ready', 'process.shutdown_started', 'app.closed', 'telemetry.flushed'],
+    );
+  });
+
   it('a second signal of the other kind exits 1 without closing twice', async () => {
     const { code, lines } = await runScript(
       `

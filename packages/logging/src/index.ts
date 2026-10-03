@@ -537,6 +537,11 @@ type ShutdownOptions = {
   // ECS sends SIGKILL at the task's stopTimeout (30s by default); give up a
   // little before that so the last line is ours, not a silent kill
   timeoutMs?: number;
+  // runs after app.close() and before the final log flush, inside the same
+  // timeout — for telemetry that buffers (packages/tracing's shutdownTracing).
+  // Skipped when close() throws: that path exits through exitOnFatal, and its
+  // fatal line is what matters then, not the last few spans.
+  afterClose?: () => Promise<void>;
 };
 
 // Replaces app.enableShutdownHooks(): on the first SIGTERM/SIGINT, close the
@@ -564,6 +569,7 @@ export function installShutdownHandler(app: ClosableApp, options: ShutdownOption
     void (async () => {
       try {
         await app.close();
+        await options.afterClose?.();
       } catch (err) {
         await exitOnFatal(err, 'process.shutdown_failed');
       }
