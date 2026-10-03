@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -44,4 +45,11 @@ export class CreateVariantsDto {
   @IsNumber()
   @Min(0)
   stock: number = 0;
+
+  // where the opening stock is held; required for stock above 0 once the
+  // account has more than one location (OS-696)
+  @ApiProperty({ type: Number, required: false })
+  @IsOptional()
+  @IsInt()
+  locationId?: number;
 }

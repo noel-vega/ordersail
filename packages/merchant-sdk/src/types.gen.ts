@@ -1646,6 +1646,7 @@ export interface components {
             brandId: number;
             sku: string | null;
             stock: number;
+            locationId?: number;
             /** @enum {string} */
             status: "draft" | "active" | "archived";
             categoryIds: unknown[];
@@ -1744,6 +1745,7 @@ export interface components {
             priceCents: number;
             /** @default 0 */
             stock: number;
+            locationId?: number;
         };
         UpdateProductDto: {
             name?: string;

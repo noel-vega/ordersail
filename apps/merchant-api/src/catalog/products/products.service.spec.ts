@@ -168,29 +168,6 @@ describe('ProductsService opening stock with no location (OS-689)', () => {
     expect(await inventoryRowsFor(product.id)).toEqual([{ stock: 5 }]);
   });
 
-  // merchant-web's useStockLocation adjusts stock at the lowest id too; the
-  // location list sorts by name, so "first" must not follow it
-  it('picks the lowest-id location, not the first by name', async () => {
-    const { account, service, productBody } = await setup();
-    const older = await insertLocation(db, {
-      accountId: account.id,
-      name: 'Warehouse',
-    });
-    await insertLocation(db, { accountId: account.id, name: 'Annex' });
-
-    const product = await service.create(productBody(5), account.id);
-
-    const rows = await db
-      .select({ locationId: inventoryTable.locationId })
-      .from(inventoryTable)
-      .innerJoin(
-        productVariantsTable,
-        eq(productVariantsTable.id, inventoryTable.variantId),
-      )
-      .where(eq(productVariantsTable.productId, product.id));
-    expect(rows).toEqual([{ locationId: older.id }]);
-  });
-
   it('adds variants at stock 0 with no location, and refuses stock', async () => {
     const { account, service, productBody } = await setup();
     const product = await service.create(productBody(0), account.id);
@@ -211,5 +188,154 @@ describe('ProductsService opening stock with no location (OS-689)', () => {
     );
     expect(created.length).toBeGreaterThanOrEqual(2);
     expect(await inventoryRowsFor(product.id)).toEqual([]);
+  });
+});
+
+// with a second location, where opening stock goes is the merchant's call —
+// the API never guesses one (OS-696)
+describe('ProductsService opening stock location (OS-696)', () => {
+  async function setup() {
+    const account = await insertAccount(db);
+    const brand = await insertBrand(db, { accountId: account.id });
+    const service = await build();
+    const productBody = (stock: number, locationId?: number) => ({
+      name: 'Tee',
+      description: 'A shirt',
+      priceCents: 2000,
+      brandId: brand.id,
+      sku: 'TEE-1',
+      stock,
+      locationId,
+      status: 'active' as const,
+      categoryIds: [],
+      barcodes: [],
+    });
+    const variantsBody = (stock: number, locationId?: number) => ({
+      options: [{ name: 'Size', values: ['S', 'M'] }],
+      priceCents: 2000,
+      stock,
+      locationId,
+    });
+    return { account, service, productBody, variantsBody };
+  }
+
+  async function inventoryRowsFor(productId: number) {
+    return db
+      .select({
+        locationId: inventoryTable.locationId,
+        stock: inventoryTable.stock,
+      })
+      .from(inventoryTable)
+      .innerJoin(
+        productVariantsTable,
+        eq(productVariantsTable.id, inventoryTable.variantId),
+      )
+      .where(eq(productVariantsTable.productId, productId));
+  }
+
+  async function productCount(accountId: number) {
+    const rows = await db
+      .select({ id: productsTable.id })
+      .from(productsTable)
+      .where(eq(productsTable.accountId, accountId));
+    return rows.length;
+  }
+
+  it('puts opening stock at an explicit locationId, not the oldest', async () => {
+    const { account, service, productBody } = await setup();
+    await insertLocation(db, { accountId: account.id, name: 'Warehouse' });
+    const annex = await insertLocation(db, {
+      accountId: account.id,
+      name: 'Annex',
+    });
+
+    const product = await service.create(productBody(5, annex.id), account.id);
+
+    expect(await inventoryRowsFor(product.id)).toEqual([
+      { locationId: annex.id, stock: 5 },
+    ]);
+  });
+
+  it("refuses another account's locationId, and writes nothing", async () => {
+    const { account, service, productBody } = await setup();
+    await insertLocation(db, { accountId: account.id });
+    const other = await insertAccount(db);
+    const foreign = await insertLocation(db, { accountId: other.id });
+
+    await expect(
+      service.create(productBody(5, foreign.id), account.id),
+    ).rejects.toThrow(new BadRequestException('Location not found'));
+    // checked even when there's no stock to place
+    await expect(
+      service.create(productBody(0, foreign.id), account.id),
+    ).rejects.toThrow(new BadRequestException('Location not found'));
+    expect(await productCount(account.id)).toBe(0);
+  });
+
+  it('uses the only location when locationId is omitted', async () => {
+    const { account, service, productBody } = await setup();
+    const only = await insertLocation(db, { accountId: account.id });
+
+    const product = await service.create(productBody(5), account.id);
+
+    expect(await inventoryRowsFor(product.id)).toEqual([
+      { locationId: only.id, stock: 5 },
+    ]);
+  });
+
+  it('refuses opening stock without a locationId once there are two locations', async () => {
+    const { account, service, productBody } = await setup();
+    await insertLocation(db, { accountId: account.id, name: 'Warehouse' });
+    await insertLocation(db, { accountId: account.id, name: 'Annex' });
+
+    await expect(service.create(productBody(5), account.id)).rejects.toThrow(
+      new BadRequestException('Choose a location for the opening stock'),
+    );
+    expect(await productCount(account.id)).toBe(0);
+  });
+
+  it('creates at stock 0 without a locationId across two locations, writing no row', async () => {
+    const { account, service, productBody } = await setup();
+    await insertLocation(db, { accountId: account.id, name: 'Warehouse' });
+    await insertLocation(db, { accountId: account.id, name: 'Annex' });
+
+    const product = await service.create(productBody(0), account.id);
+
+    expect(await inventoryRowsFor(product.id)).toEqual([]);
+  });
+
+  it('applies the same rule to createVariants', async () => {
+    const { account, service, productBody, variantsBody } = await setup();
+    await insertLocation(db, { accountId: account.id, name: 'Warehouse' });
+    const annex = await insertLocation(db, {
+      accountId: account.id,
+      name: 'Annex',
+    });
+    const other = await insertAccount(db);
+    const foreign = await insertLocation(db, { accountId: other.id });
+    const product = await service.create(productBody(0), account.id);
+
+    await expect(
+      service.createVariants(product.id, variantsBody(3), account.id),
+    ).rejects.toThrow('Choose a location for the opening stock');
+    await expect(
+      service.createVariants(
+        product.id,
+        variantsBody(3, foreign.id),
+        account.id,
+      ),
+    ).rejects.toThrow('Location not found');
+
+    await service.createVariants(
+      product.id,
+      variantsBody(3, annex.id),
+      account.id,
+    );
+
+    const rows = await inventoryRowsFor(product.id);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    expect(rows.every((r) => r.locationId === annex.id && r.stock === 3)).toBe(
+      true,
+    );
   });
 });

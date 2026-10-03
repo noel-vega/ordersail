@@ -117,6 +117,7 @@ export class ProductsService {
     const stockLocationId = await this.openingStockLocationId(
       accountId,
       createProductDto.stock,
+      createProductDto.locationId,
     );
 
     const product = await this.db.transaction(async (tx) => {
@@ -337,24 +338,45 @@ export class ProductsService {
     }));
   }
 
-  // where a new variant's opening stock is held: the account's first
-  // location. An account can have none yet — signup no longer seeds one
-  // (OS-689) — and then there's nowhere to put stock: fine at 0, since no
-  // inventory row reads as 0 everywhere stock is summed, but a 400 otherwise
-  // rather than stock silently dropped.
+  // where a new variant's opening stock is held. An explicit locationId must
+  // be the account's own. Omitted, the account's only location is used; with
+  // two or more, which one holds the stock is the merchant's call, not ours to
+  // guess (OS-696). With nowhere to put it — no location yet (OS-689), or an
+  // ambiguous one — stock 0 writes no inventory row (no row reads as 0
+  // everywhere stock is summed), and anything more is a 400 rather than stock
+  // silently dropped.
   private async openingStockLocationId(
     accountId: number,
     stock: number,
+    locationId: number | undefined,
   ): Promise<number | null> {
-    const [location] = await this.db
+    if (locationId !== undefined) {
+      const [location] = await this.db
+        .select({ id: locationsTable.id })
+        .from(locationsTable)
+        .where(
+          and(
+            eq(locationsTable.id, locationId),
+            eq(locationsTable.accountId, accountId),
+          ),
+        );
+      if (!location) throw new BadRequestException('Location not found');
+      return location.id;
+    }
+
+    // two rows are enough to tell "exactly one" from "more than one"
+    const locations = await this.db
       .select({ id: locationsTable.id })
       .from(locationsTable)
       .where(eq(locationsTable.accountId, accountId))
-      .orderBy(locationsTable.id)
-      .limit(1);
-    if (location) return location.id;
+      .limit(2);
+    if (locations.length === 1) return locations[0].id;
     if (stock > 0) {
-      throw new BadRequestException('Add a location before setting stock');
+      throw new BadRequestException(
+        locations.length === 0
+          ? 'Add a location before setting stock'
+          : 'Choose a location for the opening stock',
+      );
     }
     return null;
   }
@@ -719,6 +741,7 @@ export class ProductsService {
     const stockLocationId = await this.openingStockLocationId(
       accountId,
       createVariantsDto.stock,
+      createVariantsDto.locationId,
     );
 
     const variantIds = await this.db.transaction(async (tx) => {

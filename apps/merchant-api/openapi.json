@@ -5178,6 +5178,9 @@
           "stock": {
             "type": "number"
           },
+          "locationId": {
+            "type": "number"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -5576,6 +5579,9 @@
           "stock": {
             "type": "number",
             "default": 0
+          },
+          "locationId": {
+            "type": "number"
           }
         },
         "required": [
