@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import z from "zod";
-import type { AdjustStockTarget } from "./adjust-stock-target";
+import { fixedLocation, type AdjustStockTarget } from "./adjust-stock-target";
 import {
   Sheet,
   SheetContent,
@@ -53,8 +53,7 @@ export function AdjustStockSheet(props: {
   onOpenChange: (open: boolean) => void;
 }) {
   const target = props.target;
-  const fixedLocation =
-    target?.locations.length === 1 ? target.locations[0] : undefined;
+  const pinned = target && fixedLocation(target);
   return (
     <Sheet open={props.open} onOpenChange={props.onOpenChange}>
       <SheetContent>
@@ -62,7 +61,7 @@ export function AdjustStockSheet(props: {
           <SheetTitle>Adjust stock</SheetTitle>
           <SheetDescription>
             {target
-              ? `${target.productName}${target.sku ? ` (${target.sku})` : ""}${fixedLocation ? ` at ${fixedLocation.name}` : ""}`
+              ? `${target.productName}${target.sku ? ` (${target.sku})` : ""}${pinned ? ` at ${pinned.name}` : ""}`
               : ""}
           </SheetDescription>
         </SheetHeader>
@@ -88,7 +87,7 @@ function AdjustStockForm(props: { target: AdjustStockTarget; onDone: () => void 
   >({
     resolver: zodResolver(AdjustStockFormSchema),
     defaultValues: {
-      locationId: locations.length === 1 ? locations[0].id : null,
+      locationId: fixedLocation(props.target)?.id ?? null,
       direction: "in",
       quantity: 1,
       reason: "received",
@@ -121,7 +120,7 @@ function AdjustStockForm(props: { target: AdjustStockTarget; onDone: () => void 
   return (
     <form onSubmit={handleSubmit} className="flex flex-1 flex-col">
       <div className="flex-1 space-y-4 px-4">
-        {locations.length > 1 && (
+        {!fixedLocation(props.target) && (
           <Controller
             control={form.control}
             name="locationId"
@@ -137,7 +136,7 @@ function AdjustStockForm(props: { target: AdjustStockTarget; onDone: () => void 
           />
         )}
 
-        {selected && selected.stock !== null && (
+        {selected && selected.stock != null && (
           <Field>
             <FieldLabel>Current stock</FieldLabel>
             <p className="text-sm text-muted-foreground">{selected.stock}</p>

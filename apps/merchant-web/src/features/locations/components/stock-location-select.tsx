@@ -11,7 +11,8 @@ import {
 export type StockLocationOption = {
   id: number;
   name: string;
-  // a variant's stock there, shown beside the name; null/omitted hides it
+  // a variant's stock there, shown beside the name; null (unknown) or
+  // omitted hides it
   stock?: number | null;
 };
 
