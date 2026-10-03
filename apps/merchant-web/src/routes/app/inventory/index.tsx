@@ -13,8 +13,8 @@ export const Route = createFileRoute('/app/inventory/')({
   beforeLoad: async ({ search, context }) => {
     requirePermission(context, 'inventory:read')
     await queryClient.ensureQueryData(getInventoryPageQueryOptions(search))
-    // the location filter is loaded lazily by the view — it needs
-    // locations:read, which an inventory-only role may not hold
+    // the location filter is loaded by the view, so a slow locations list
+    // never holds up the page
   },
   component: ListInventoryView,
 })

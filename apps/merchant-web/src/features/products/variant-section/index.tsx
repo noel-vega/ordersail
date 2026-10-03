@@ -52,7 +52,7 @@ export function VariantSection({
   const canReadInventory = permissions.has("inventory:read");
   const canWriteInventory = permissions.has("inventory:write");
   const canWriteProducts = permissions.has("products:write");
-  const multiLocation = stockLocations.total > 1;
+  const { multiLocation } = stockLocations;
 
   // a variant's stock at each location it could be adjusted at. With one
   // location that's simply its total; with several it's read off the
@@ -86,9 +86,7 @@ export function VariantSection({
     adjustStock: canWriteInventory
       ? variantStockAction({
           stockLocations,
-          canReadInventory,
           openSheet: setAdjustingVariant,
-          viewStockByLocation: onViewStockByLocation,
           createLocation: () => navigate({ to: "/app/locations/create" }),
         })
       : undefined,
@@ -176,23 +174,14 @@ export function VariantSection({
 // several, the sheet asks (OS-696)
 function variantStockAction(deps: {
   stockLocations: ReturnType<typeof useStockLocations>;
-  canReadInventory: boolean;
   openSheet: (variant: ProductVariant) => void;
-  viewStockByLocation: () => void;
   createLocation: () => void;
-}): VariantStockAction | undefined {
+}): VariantStockAction {
   const { stockLocations } = deps;
-  if (!stockLocations.canRead) {
-    // nothing to pick from here, so the Inventory tab's per-location rows are
-    // where stock gets adjusted — without inventory:read there's nowhere to go
-    return deps.canReadInventory
-      ? { label: "Adjust stock by location", run: deps.viewStockByLocation }
-      : undefined;
-  }
   if (!stockLocations.isLoaded) {
     return { label: "Adjust stock", run: () => {}, disabled: true };
   }
-  if (stockLocations.total === 0) {
+  if (stockLocations.noLocation) {
     // an account has no location until the merchant creates one (OS-689);
     // stock needs somewhere to live, so send them there first
     return { label: "Add a location to adjust stock", run: deps.createLocation };

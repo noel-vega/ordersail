@@ -9,8 +9,7 @@ export const Route = createFileRoute("/app/pos-devices/")({
   beforeLoad: async ({ context }) => {
     requirePermission(context, "pos_devices:read");
     await queryClient.ensureQueryData(getListPosDevicesQueryOptions());
-    // the mint / edit forms load locations lazily — they need locations:read,
-    // which a pos_devices-only role may not hold
+    // the mint / edit forms load locations themselves, when opened
   },
   component: ListPosDevicesView,
 });

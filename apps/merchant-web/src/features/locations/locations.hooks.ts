@@ -7,7 +7,6 @@ import {
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { PAGE_SIZE, pageOffset, type ListSearch } from "../../lib/list-search"
-import { usePermissions } from "../auth/permission-context"
 
 // No `search` → the full list (capped at 100) for the location pickers. With a
 // `search` → one page for the Locations list route.
@@ -25,10 +24,9 @@ export function getListLocationsQueryOptions(search?: ListSearch) {
           : { limit: 100 },
       ),
     placeholderData: keepPreviousData,
-    // used as a filter picker on other pages (e.g. Inventory) where the user
-    // may hold that page's read perm but not locations:read — degrade to an
-    // empty picker instead of throwing the host page to the error boundary.
-    // The Locations route itself is guarded in beforeLoad (requirePermission).
+    // used as a picker on other pages (Inventory, POS devices, products) — a
+    // failed load degrades to an empty picker instead of throwing the host
+    // page to the error boundary
     throwOnError: false,
   })
 }
@@ -39,21 +37,19 @@ export function useListLocationsQuery(search?: ListSearch) {
 
 // The locations a variant's stock can be placed at, for the product pages'
 // stock pickers. `locations` is the capped (100) picker list, for the merchant
-// to choose from, never to pick one from (OS-696); `total` is the real count,
-// so "exactly one" and "more than one" hold past the cap. Product pages need
-// only products:read — so without locations:read it doesn't fetch (no 403,
-// OS-672) and `canRead` is false; `isLoaded` tells loading from loaded.
+// to choose from, never to pick one from (OS-696). `noLocation` and
+// `multiLocation` come from the real `total`, so they hold past the cap, and
+// both stay false until the list has loaded.
 export function useStockLocations() {
-  const canRead = usePermissions().has("locations:read")
-  const query = useQuery({
-    ...getListLocationsQueryOptions(),
-    enabled: canRead,
-  })
+  const query = useQuery(getListLocationsQueryOptions())
+  const total = query.data?.total ?? 0
   return {
-    canRead,
     isLoaded: query.isSuccess,
     locations: query.data?.items ?? [],
-    total: query.data?.total ?? 0,
+    // nowhere for stock to go yet (OS-689)
+    noLocation: query.isSuccess && total === 0,
+    // which location holds stock is the merchant's call (OS-696)
+    multiLocation: total > 1,
   }
 }
 

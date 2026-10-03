@@ -13,8 +13,7 @@ import { formatCents } from "../../../lib/currency";
 import { StockLevel } from "../../inventory/components/stock-level";
 
 // the variant row's stock action. Its label says where it leads: the Adjust
-// stock sheet, creating a location first (OS-689), or the Inventory tab's
-// per-location rows (OS-696)
+// stock sheet, or creating a location first (OS-689)
 export type VariantStockAction = {
   label: string;
   run: (variant: ProductVariant) => void;

@@ -64,12 +64,10 @@ export function CreateProductView() {
   const createProduct = useCreateProductMutation();
   // opening stock needs a known location: with none yet the API refuses
   // stock above 0 (OS-689), and with several the merchant picks one (OS-696).
-  // Until the list loads — or without locations:read, when it never does —
-  // which case applies is unknown, so stock stays at 0 rather than risk a 400
-  // the form couldn't resolve
+  // Until the list loads which case applies is unknown, so stock stays at 0
+  // rather than risk a 400 the form couldn't resolve
   const stockLocations = useStockLocations();
-  const noLocation = stockLocations.isLoaded && stockLocations.total === 0;
-  const multiLocation = stockLocations.total > 1;
+  const { noLocation, multiLocation } = stockLocations;
   const canSetStock = stockLocations.isLoaded && !noLocation;
   const form = useForm({
     resolver: zodResolver(createProductFormSchema(multiLocation)),
@@ -226,12 +224,6 @@ export function CreateProductView() {
                       Add a location
                     </Link>{" "}
                     first — stock needs somewhere to live.
-                  </FieldDescription>
-                )}
-                {!stockLocations.canRead && (
-                  <FieldDescription>
-                    Set stock from Inventory once the product exists — opening
-                    stock needs access to locations.
                   </FieldDescription>
                 )}
               </Field>
