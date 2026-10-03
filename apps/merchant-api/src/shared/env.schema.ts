@@ -57,4 +57,13 @@ export const envSchema = z.object({
     .default('development'),
   // unset → info in production, debug elsewhere (see docs/observability.md)
   LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
+
+  // OpenTelemetry trace export. Read by packages/tracing (src/instrument.ts)
+  // before this schema is parsed, and by the OTLP exporter itself; listed here
+  // so they are part of the env contract. Unset → tracing is off.
+  // Base URL only — the exporter appends /v1/traces.
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+  // comma-separated key=value pairs, e.g. the Authorization header for a
+  // hosted backend — a secret
+  OTEL_EXPORTER_OTLP_HEADERS: z.string().min(1).optional(),
 });
