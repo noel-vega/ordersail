@@ -6,20 +6,20 @@ export function createBrandsResource(client: Client<paths>) {
   return {
     // no legitimate "empty" case for a list — any non-2xx is a real failure
     list: async (
-      query: paths["/brands"]["get"]["parameters"]["query"] = {},
+      query: paths["/v1/brands"]["get"]["parameters"]["query"] = {},
     ) => {
-      const result = await client.GET("/brands", { params: { query } });
+      const result = await client.GET("/v1/brands", { params: { query } });
       return unwrap(result);
     },
 
     getById: async (
       id: number,
-      query: paths["/brands/{id}"]["get"]["parameters"]["query"] = {},
+      query: paths["/v1/brands/{id}"]["get"]["parameters"]["query"] = {},
     ) => {
-      const path: paths["/brands/{id}"]["get"]["parameters"]["path"] = {
+      const path: paths["/v1/brands/{id}"]["get"]["parameters"]["path"] = {
         id: String(id),
       };
-      const result = await client.GET("/brands/{id}", {
+      const result = await client.GET("/v1/brands/{id}", {
         params: { path, query },
       });
       return unwrapOrUndefinedOn(result, 404);

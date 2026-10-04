@@ -25,7 +25,7 @@ Inside this monorepo it's consumed via the npm workspace protocol instead
 import { StorefrontClient, ApiError } from "@ordersail/storefront-sdk";
 
 const storefront = new StorefrontClient(
-  "https://api.your-storefront-api-host.com",
+  "https://storefront.ordersail.com",
   "sfk_...", // your account's app key — see "Auth model" below
 );
 
@@ -39,6 +39,10 @@ try {
   }
 }
 ```
+
+`baseUrl` is the bare host. The API is versioned in its paths (every route
+lives under `/v1`), and the SDK adds that prefix itself, so a given SDK
+release always talks to the API version it was generated from.
 
 ## Resources
 
@@ -113,7 +117,7 @@ reload, not `client.refreshToken` read once:
 
 ```ts
 const storefront = new StorefrontClient(
-  "https://api.your-storefront-api-host.com",
+  "https://storefront.ordersail.com",
   "sfk_...",
   undefined, // cartToken — restore the same way if you have one saved
   localStorage.getItem("refreshToken") ?? undefined,

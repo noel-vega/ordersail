@@ -131,7 +131,7 @@ export class StorefrontClient {
   }
 
   async signUp(signup: CustomerSignUpDto) {
-    const result = await this.client.POST("/auth/signup", { body: signup });
+    const result = await this.client.POST("/v1/auth/signup", { body: signup });
     const tokens = unwrap(result);
     this.supersedeSession();
     this.accessToken = tokens.access_token;
@@ -143,7 +143,7 @@ export class StorefrontClient {
   // sends the current cart token (if any) so the backend can claim the
   // guest cart into the newly-signed-in customer's account
   async signIn(credentials: CustomerSignInDto) {
-    const result = await this.client.POST("/auth/signin", {
+    const result = await this.client.POST("/v1/auth/signin", {
       body: credentials,
       headers: this.cartToken ? { "x-cart-token": this.cartToken } : {},
     });
@@ -187,7 +187,7 @@ export class StorefrontClient {
       return undefined;
     }
     const generation = this.sessionGeneration;
-    const result = await this.client.POST("/auth/token/refresh", {
+    const result = await this.client.POST("/v1/auth/token/refresh", {
       body: { refresh_token: this.refreshToken },
     });
     // logged out or signed in as someone else while this was in flight —
@@ -216,7 +216,7 @@ export class StorefrontClient {
 
     if (refreshToken) {
       try {
-        await this.client.POST("/auth/logout", {
+        await this.client.POST("/v1/auth/logout", {
           body: { refresh_token: refreshToken },
         });
       } catch {

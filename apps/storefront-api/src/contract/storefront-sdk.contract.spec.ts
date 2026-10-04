@@ -7,9 +7,8 @@
 // from this monorepo/CI without losing coverage.
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import cookieParser from 'cookie-parser';
 import { db as sharedDb } from 'db';
 import type { Redis } from 'ioredis';
 import type * as QueueModule from 'queue';
@@ -28,6 +27,7 @@ import {
   StorefrontClient,
   type StorefrontClientOptions,
 } from '@ordersail/storefront-sdk';
+import { configureApp } from '../configure-app';
 import { SHIPPO, STRIPE } from '../modules/checkout/checkout.constants';
 
 // Two independent real ioredis connections get created as a side effect of
@@ -85,13 +85,10 @@ describe('storefront-sdk contract', () => {
       .useValue({ shipments: { create: jest.fn() } })
       .compile();
 
-    // mirrors main.ts's bootstrap exactly (minus CORS, which only a browser
+    // the same configureApp as main.ts (minus CORS, which only a browser
     // enforces, and Swagger, which nothing here reads)
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ transform: true, whitelist: true }),
-    );
-    app.use(cookieParser());
+    configureApp(app);
     await app.init();
     await app.listen(0);
     const { port } = app.getHttpServer().address() as AddressInfo;
@@ -315,7 +312,7 @@ describe('storefront-sdk contract', () => {
         });
       return {
         refreshCount: () =>
-          paths.filter((path) => path === '/auth/token/refresh').length,
+          paths.filter((path) => path === '/v1/auth/token/refresh').length,
       };
     }
 
@@ -368,7 +365,7 @@ describe('storefront-sdk contract', () => {
       const released = new Promise<void>((resolve) => (release = resolve));
       const fetches = spyOnFetch(async (path, send) => {
         const response = await send();
-        if (path === '/auth/token/refresh') {
+        if (path === '/v1/auth/token/refresh') {
           const body = (await response.clone().json()) as {
             refresh_token?: string;
           };
@@ -414,7 +411,7 @@ describe('storefront-sdk contract', () => {
         const response = await send();
         // hold customer.get()'s 401 until the other call's refresh has
         // fully landed on the client
-        if (path === '/customer' && !heldOnce) {
+        if (path === '/v1/customer' && !heldOnce) {
           heldOnce = true;
           await waitFor(() => client.accessToken !== undefined);
         }
@@ -438,7 +435,7 @@ describe('storefront-sdk contract', () => {
       let failNextRefresh = true;
       let unauthorized = 0;
       const fetches = spyOnFetch(async (path, send) => {
-        if (path === '/auth/token/refresh' && failNextRefresh) {
+        if (path === '/v1/auth/token/refresh' && failNextRefresh) {
           failNextRefresh = false;
           // fail only once all three callers' 401s are back, so all three
           // are waiting on this one refresh rather than starting their own
@@ -653,5 +650,21 @@ describe('storefront-sdk contract', () => {
 
     // not currently signed in (no signUp/signIn called) — the 401 case
     await expect(client.customer.get()).resolves.toBeUndefined();
+  });
+
+  // The SDK reaches every route via its generated /v1 paths, so the tests above
+  // already prove the prefixed routes work. These pin the other half: nothing
+  // public is served unversioned, and /health (ALB / ECS / smoke-test probes)
+  // is the one exception (OS-714).
+  it('serves the API only under /v1, with /health left unversioned', async () => {
+    const status = async (path: string) =>
+      (await fetch(`${baseUrl}${path}`)).status;
+
+    expect(await status('/v1/products')).toBe(401); // routed, needs an app key
+    expect(await status('/products')).toBe(404);
+    expect(await status('/v1/health')).toBe(404);
+    // 200 or 503 depending on whether Redis is reachable here — either way
+    // the route exists, which is all this asserts
+    expect(await status('/health')).not.toBe(404);
   });
 });

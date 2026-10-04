@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.0",
   "paths": {
-    "/": {
+    "/v1": {
       "get": {
         "operationId": "AppController_getHello",
         "parameters": [],
@@ -15,7 +15,7 @@
         ]
       }
     },
-    "/products": {
+    "/v1/products": {
       "get": {
         "operationId": "ProductsController_findAll",
         "parameters": [
@@ -140,7 +140,7 @@
         ]
       }
     },
-    "/products/{id}": {
+    "/v1/products/{id}": {
       "get": {
         "operationId": "ProductsController_findOne",
         "parameters": [
@@ -178,7 +178,7 @@
         ]
       }
     },
-    "/categories": {
+    "/v1/categories": {
       "get": {
         "operationId": "CategoriesController_findAll",
         "parameters": [
@@ -223,7 +223,7 @@
         ]
       }
     },
-    "/categories/{id}": {
+    "/v1/categories/{id}": {
       "get": {
         "operationId": "CategoriesController_findOne",
         "parameters": [
@@ -359,7 +359,7 @@
         ]
       }
     },
-    "/brands": {
+    "/v1/brands": {
       "get": {
         "operationId": "BrandsController_findAll",
         "parameters": [
@@ -404,7 +404,7 @@
         ]
       }
     },
-    "/brands/{id}": {
+    "/v1/brands/{id}": {
       "get": {
         "operationId": "BrandsController_findOne",
         "parameters": [
@@ -540,7 +540,7 @@
         ]
       }
     },
-    "/cart/items": {
+    "/v1/cart/items": {
       "post": {
         "operationId": "CartController_addItem",
         "parameters": [],
@@ -576,7 +576,7 @@
         ]
       }
     },
-    "/cart": {
+    "/v1/cart": {
       "get": {
         "operationId": "CartController_getCart",
         "parameters": [],
@@ -632,7 +632,7 @@
         ]
       }
     },
-    "/cart/items/{variantId}": {
+    "/v1/cart/items/{variantId}": {
       "patch": {
         "operationId": "CartController_updateItem",
         "parameters": [
@@ -716,7 +716,7 @@
         ]
       }
     },
-    "/checkout/config": {
+    "/v1/checkout/config": {
       "get": {
         "operationId": "CheckoutController_getConfig",
         "parameters": [],
@@ -742,7 +742,7 @@
         ]
       }
     },
-    "/checkout/session": {
+    "/v1/checkout/session": {
       "post": {
         "operationId": "CheckoutController_createSession",
         "parameters": [],
@@ -778,7 +778,7 @@
         ]
       }
     },
-    "/checkout/shipping-options": {
+    "/v1/checkout/shipping-options": {
       "post": {
         "operationId": "CheckoutController_getShippingOptions",
         "parameters": [],
@@ -814,7 +814,7 @@
         ]
       }
     },
-    "/checkout/session/{sessionId}": {
+    "/v1/checkout/session/{sessionId}": {
       "get": {
         "operationId": "CheckoutController_getSessionStatus",
         "parameters": [
@@ -849,7 +849,7 @@
         ]
       }
     },
-    "/customer": {
+    "/v1/customer": {
       "get": {
         "operationId": "CustomerController_findOne",
         "parameters": [],
@@ -911,7 +911,7 @@
         ]
       }
     },
-    "/customer/orders": {
+    "/v1/customer/orders": {
       "get": {
         "operationId": "CustomerOrdersController_findAll",
         "parameters": [
@@ -957,7 +957,7 @@
         ]
       }
     },
-    "/customer/orders/{id}": {
+    "/v1/customer/orders/{id}": {
       "get": {
         "operationId": "CustomerOrdersController_findOne",
         "parameters": [
@@ -996,7 +996,7 @@
         ]
       }
     },
-    "/auth/signup": {
+    "/v1/auth/signup": {
       "post": {
         "operationId": "AuthController_signup",
         "parameters": [],
@@ -1035,7 +1035,7 @@
         ]
       }
     },
-    "/auth/signin": {
+    "/v1/auth/signin": {
       "post": {
         "operationId": "AuthController_signin",
         "parameters": [],
@@ -1074,7 +1074,7 @@
         ]
       }
     },
-    "/auth/token/refresh": {
+    "/v1/auth/token/refresh": {
       "post": {
         "operationId": "AuthController_refreshToken",
         "parameters": [],
@@ -1113,7 +1113,7 @@
         ]
       }
     },
-    "/auth/logout": {
+    "/v1/auth/logout": {
       "post": {
         "operationId": "AuthController_logout",
         "parameters": [],

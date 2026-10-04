@@ -82,7 +82,7 @@ insert into stripe_accounts ("accountId", stripe_account_id, charges_enabled, de
 values (1, 'acct_XXXX', true, true);
 ```
 
-`curl -s localhost:3001/checkout/config -H "x-app-key: sfk_…"` should now return
+`curl -s localhost:3001/v1/checkout/config -H "x-app-key: sfk_…"` should now return
 `{"ready":true,"stripeAccountId":"acct_…"}`.
 
 ## Run the purchase

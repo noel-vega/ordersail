@@ -1,8 +1,6 @@
 import { env } from './env'; // validates process.env before anything else loads
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
-import cookieParser from 'cookie-parser';
 import {
   Logger,
   LoggingExceptionFilter,
@@ -13,6 +11,7 @@ import {
   requestLoggingMiddleware,
 } from 'logging';
 import { AppModule } from './app.module';
+import { configureApp } from './configure-app';
 import { createSwaggerConfig } from './swagger.config';
 
 async function bootstrap() {
@@ -25,7 +24,6 @@ async function bootstrap() {
     rawBody: true,
     logger: new Logger(),
   });
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   app.useGlobalFilters(new LoggingExceptionFilter(app.getHttpAdapter()));
   installShutdownHandler(app);
 
@@ -33,7 +31,9 @@ async function bootstrap() {
   // + one access log line per request — see docs/observability.md
   app.use(requestLoggingMiddleware());
 
-  app.use(cookieParser());
+  // /v1 prefix, validation, cookies — shared with the OpenAPI generator and
+  // the SDK contract spec
+  configureApp(app);
 
   // Storefronts can be hosted on any merchant-owned domain, so there's no
   // fixed origin (or DB-backed allowlist) to gate here — CORS preflight
