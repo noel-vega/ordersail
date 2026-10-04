@@ -2,7 +2,8 @@ import type { ArgumentsHost } from '@nestjs/common';
 import { configureLogging, type LogLevel } from './index.ts';
 
 // Routes the shared root into memory and returns the parsed lines. Specs only;
-// exported as `logging/test-helpers` for other packages' specs (packages/tracing).
+// exported as `logging/test-helpers` for other packages' specs (packages/tracing,
+// packages/errors).
 // `level` lowers the threshold (e.g. 'debug' to see rejected 4xx lines).
 export function captureLogs(options: { level?: LogLevel } = {}): Record<string, any>[] {
   const lines: Record<string, any>[] = [];

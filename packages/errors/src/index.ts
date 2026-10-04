@@ -1,6 +1,7 @@
 export {
   codes,
   docUrl,
+  ERROR_TYPES,
   genericCodeForStatus,
   genericCodes,
   isErrorCode,

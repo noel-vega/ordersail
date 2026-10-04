@@ -19,7 +19,10 @@ export class ApiErrorFilter implements ExceptionFilter {
     // swallow it
     if (host.getType() !== 'http') throw exception;
 
-    logHttpException(exception, host);
+    const { status, body } = toErrorEnvelope(exception, getCorrelationId());
+    // log with the status the client gets, so an untrusted error with a
+    // statusCode (answered as a 500) logs as an unhandled error
+    logHttpException(exception, host, status);
     const response = host.getArgByIndex(1);
     // a response that already started streaming can't take a new status or
     // body; end it so the client isn't left hanging
@@ -27,7 +30,6 @@ export class ApiErrorFilter implements ExceptionFilter {
       this.#httpAdapter.end(response);
       return;
     }
-    const { status, body } = toErrorEnvelope(exception, getCorrelationId());
     this.#httpAdapter.reply(response, body, status);
   }
 }

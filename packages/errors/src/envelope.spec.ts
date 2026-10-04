@@ -8,6 +8,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
 import { ApiException } from './api-exception.ts';
 import { toErrorEnvelope } from './envelope.ts';
 
@@ -78,8 +79,11 @@ describe('toErrorEnvelope', () => {
   });
 
   it('a malformed-JSON 400 from the body parser or Fastify keeps its status', () => {
+    // body-parser's http-errors shape: status, statusCode, expose, type
     const expressParse = Object.assign(new SyntaxError('Unexpected token } in JSON at position 9'), {
+      status: 400,
       statusCode: 400,
+      expose: true,
       type: 'entity.parse.failed',
     });
     assert.equal(envelope(expressParse).status, 400);
@@ -93,7 +97,12 @@ describe('toErrorEnvelope', () => {
   });
 
   it('a body-parser or Fastify 413 / 415 gets its generic code', () => {
-    const tooLarge = Object.assign(new Error('request entity too large'), { statusCode: 413 });
+    const tooLarge = Object.assign(new Error('request entity too large'), {
+      status: 413,
+      statusCode: 413,
+      expose: true,
+      type: 'entity.too.large',
+    });
     assert.deepEqual(
       [envelope(tooLarge).status, envelope(tooLarge).body.error.code, envelope(tooLarge).body.error.message],
       [413, 'content_too_large', 'request entity too large'],
@@ -105,12 +114,25 @@ describe('toErrorEnvelope', () => {
     assert.equal(envelope(mediaType).body.error.code, 'unsupported_media_type');
   });
 
-  it("a ThrottlerException (an HttpException 429) is rate_limited", () => {
-    // @nestjs/throttler's ThrottlerException is `extends HttpException` with 429
-    const { status, body } = envelope(new HttpException('ThrottlerException: Too Many Requests', 429));
+  it("a ThrottlerException is rate_limited, with the registry's message rather than the class name", () => {
+    const { status, body } = envelope(new ThrottlerException());
     assert.equal(status, 429);
     assert.equal(body.error.code, 'rate_limited');
     assert.equal(body.error.type, 'rate_limit_error');
+    assert.equal(body.error.message, 'Too many requests. Try again later.');
+  });
+
+  it("a library error with a statusCode (Stripe's) is a generic 500, not its status and raw message", () => {
+    // the shape stripe-node's StripeCardError carries: statusCode, code, a raw message
+    const stripeError = Object.assign(new Error('Your card was declined. (req_abc123, acct_1Xyz)'), {
+      type: 'StripeCardError',
+      statusCode: 402,
+      code: 'card_declined',
+    });
+    const { status, body } = envelope(stripeError);
+    assert.equal(status, 500);
+    assert.equal(body.error.code, 'internal_error');
+    assert.ok(!JSON.stringify(body).includes('declined'));
   });
 
   it("a Terminus 503 reports up/down per check and none of the checks' error text", () => {

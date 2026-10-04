@@ -50,6 +50,16 @@ describe('withErrorResponses', () => {
     }
   });
 
+  it('gives every response its own content object, shared with nothing else', () => {
+    const first = withErrorResponses(document()) as any;
+    const notFound = first.paths['/products/{id}'].get.responses['404'];
+    notFound.content['application/json'].schema = { type: 'string' };
+    assert.deepEqual(first.paths['/auth/sign-in'].post.responses['401'].content, errorContent);
+    assert.deepEqual(first.paths['/products/{id}'].get.responses.default.content, errorContent);
+    const second = withErrorResponses(document()) as any;
+    assert.deepEqual(second.paths['/products/{id}'].get.responses['404'].content, errorContent);
+  });
+
   it("doesn't modify its input", () => {
     const input = document();
     const before = JSON.stringify(input);

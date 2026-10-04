@@ -37,7 +37,7 @@ export class ApiException<C extends ErrorCode = ErrorCode> extends HttpException
 
   constructor(code: C, ...[options]: OptionsArgs<C>) {
     const entry = codes[code];
-    const message = options?.message ?? entry.message;
+    const message = options?.message ?? entry.defaultMessage;
     super({ code, message, param: options?.param, details: options?.details }, entry.status);
     this.code = code;
     this.param = options?.param;

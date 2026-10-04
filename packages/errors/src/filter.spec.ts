@@ -61,6 +61,18 @@ describe('ApiErrorFilter', () => {
     assert.equal(replies[0].status, 404);
   });
 
+  it('logs an untrusted error with a statusCode as the 500 the client gets', () => {
+    const lines = captureLogs({ level: 'debug' });
+    const { adapter, replies } = fakeAdapter();
+    const stripeError = Object.assign(new Error('Your card was declined.'), { statusCode: 402, code: 'card_declined' });
+    new ApiErrorFilter(adapter).catch(stripeError, httpHost(expressRequest));
+    assert.equal(replies[0].status, 500);
+    assert.deepEqual(
+      [lines[0].level, lines[0].event, lines[0].status],
+      ['error', 'http.unhandled_error', 500],
+    );
+  });
+
   it('ends a response whose headers were already sent instead of replying', () => {
     captureLogs();
     const { adapter, replies, ended } = fakeAdapter({ headersSent: true });

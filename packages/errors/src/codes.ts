@@ -3,98 +3,110 @@
 // exception, the envelope, the OpenAPI schema and through it the SDKs' ErrorCode
 // union — derives from it.
 //
-// It stays plain data with no framework imports: an API rewritten outside Node
-// reads it rather than keeping its own copy. Adding a code means adding one
-// entry here. A code is a public contract once storefront-sdk ships it, so
+// It must stay plain data with no framework imports, so that an API rewritten
+// outside Node can read it rather than keep its own copy. Adding a code means
+// adding one entry here. A code is a public contract once storefront-sdk ships it, so
 // renaming or removing one is a breaking change; messages can be reworded.
 
-export type ErrorType =
-  | 'invalid_request_error'
-  | 'authentication_error'
-  | 'permission_error'
-  | 'rate_limit_error'
-  | 'api_error';
+export const ERROR_TYPES = [
+  'invalid_request_error',
+  'authentication_error',
+  'permission_error',
+  'rate_limit_error',
+  'api_error',
+] as const;
+
+export type ErrorType = (typeof ERROR_TYPES)[number];
 
 export type ErrorCodeEntry = {
   status: number;
   type: ErrorType;
-  // the default `message`; on a 5xx it's the only message a client ever sees
-  message: string;
+  // the `message` when the thrower gives none; on a 5xx it's the only message
+  // a client ever sees
+  defaultMessage: string;
 };
 
 export const codes = {
   // Generic codes: one per status in the fixed set, named after the RFC 9110
   // reason phrase in snake_case, except 401, 429 and 500 (ADR 0001).
-  bad_request: { status: 400, type: 'invalid_request_error', message: 'The request is invalid.' },
-  unauthenticated: { status: 401, type: 'authentication_error', message: 'Authentication is required.' },
-  forbidden: { status: 403, type: 'permission_error', message: "You don't have permission to do this." },
-  not_found: { status: 404, type: 'invalid_request_error', message: 'Not found.' },
-  method_not_allowed: { status: 405, type: 'invalid_request_error', message: 'This method is not allowed here.' },
+  bad_request: { status: 400, type: 'invalid_request_error', defaultMessage: 'The request is invalid.' },
+  unauthenticated: { status: 401, type: 'authentication_error', defaultMessage: 'Authentication is required.' },
+  forbidden: { status: 403, type: 'permission_error', defaultMessage: "You don't have permission to do this." },
+  not_found: { status: 404, type: 'invalid_request_error', defaultMessage: 'Not found.' },
+  method_not_allowed: {
+    status: 405,
+    type: 'invalid_request_error',
+    defaultMessage: 'This method is not allowed here.',
+  },
   not_acceptable: {
     status: 406,
     type: 'invalid_request_error',
-    message: "The requested response format isn't available.",
+    defaultMessage: "The requested response format isn't available.",
   },
-  request_timeout: { status: 408, type: 'invalid_request_error', message: 'The request timed out.' },
+  request_timeout: { status: 408, type: 'invalid_request_error', defaultMessage: 'The request timed out.' },
   conflict: {
     status: 409,
     type: 'invalid_request_error',
-    message: 'The request conflicts with the current state of the resource.',
+    defaultMessage: 'The request conflicts with the current state of the resource.',
   },
-  gone: { status: 410, type: 'invalid_request_error', message: 'This resource is no longer available.' },
-  precondition_failed: { status: 412, type: 'invalid_request_error', message: 'A precondition failed.' },
-  content_too_large: { status: 413, type: 'invalid_request_error', message: 'The request body is too large.' },
+  gone: { status: 410, type: 'invalid_request_error', defaultMessage: 'This resource is no longer available.' },
+  precondition_failed: { status: 412, type: 'invalid_request_error', defaultMessage: 'A precondition failed.' },
+  content_too_large: { status: 413, type: 'invalid_request_error', defaultMessage: 'The request body is too large.' },
   unsupported_media_type: {
     status: 415,
     type: 'invalid_request_error',
-    message: "The request's content type isn't supported.",
+    defaultMessage: "The request's content type isn't supported.",
   },
   misdirected_request: {
     status: 421,
     type: 'invalid_request_error',
-    message: 'The request was sent to a server that cannot answer it.',
+    defaultMessage: 'The request was sent to a server that cannot answer it.',
   },
   unprocessable_content: {
     status: 422,
     type: 'invalid_request_error',
-    message: "The request couldn't be processed.",
+    defaultMessage: "The request couldn't be processed.",
   },
-  rate_limited: { status: 429, type: 'rate_limit_error', message: 'Too many requests. Try again later.' },
-  internal_error: { status: 500, type: 'api_error', message: 'Something went wrong on our end.' },
-  not_implemented: { status: 501, type: 'api_error', message: 'This is not implemented.' },
-  bad_gateway: { status: 502, type: 'api_error', message: 'An upstream service failed.' },
-  service_unavailable: { status: 503, type: 'api_error', message: 'The service is temporarily unavailable.' },
-  gateway_timeout: { status: 504, type: 'api_error', message: 'An upstream service timed out.' },
+  rate_limited: { status: 429, type: 'rate_limit_error', defaultMessage: 'Too many requests. Try again later.' },
+  internal_error: { status: 500, type: 'api_error', defaultMessage: 'Something went wrong on our end.' },
+  not_implemented: { status: 501, type: 'api_error', defaultMessage: 'This is not implemented.' },
+  bad_gateway: { status: 502, type: 'api_error', defaultMessage: 'An upstream service failed.' },
+  service_unavailable: { status: 503, type: 'api_error', defaultMessage: 'The service is temporarily unavailable.' },
+  gateway_timeout: { status: 504, type: 'api_error', defaultMessage: 'An upstream service timed out.' },
   http_version_not_supported: {
     status: 505,
     type: 'api_error',
-    message: "The request's HTTP version isn't supported.",
+    defaultMessage: "The request's HTTP version isn't supported.",
   },
 
   // Specific codes
-  validation_failed: { status: 400, type: 'invalid_request_error', message: 'The request has invalid fields.' },
+  validation_failed: { status: 400, type: 'invalid_request_error', defaultMessage: 'The request has invalid fields.' },
   invalid_access_token: {
     status: 401,
     type: 'authentication_error',
-    message: 'The access token is missing, invalid or expired.',
+    defaultMessage: 'The access token is missing, invalid or expired.',
   },
-  invalid_app_key: { status: 401, type: 'authentication_error', message: 'The app key is missing or invalid.' },
+  invalid_app_key: { status: 401, type: 'authentication_error', defaultMessage: 'The app key is missing or invalid.' },
   invalid_device_token: {
     status: 401,
     type: 'authentication_error',
-    message: 'The device token is missing, invalid or revoked.',
+    defaultMessage: 'The device token is missing, invalid or revoked.',
   },
   invalid_credentials: {
     status: 401,
     type: 'authentication_error',
-    message: 'The email or password is incorrect.',
+    defaultMessage: 'The email or password is incorrect.',
   },
   mfa_factor_required: {
     status: 403,
     type: 'permission_error',
-    message: 'A passkey or authenticator app is required for this action.',
+    defaultMessage: 'A passkey or authenticator app is required for this action.',
   },
-  email_taken: { status: 409, type: 'invalid_request_error', message: 'An account with this email already exists.' },
+  email_taken: {
+    status: 409,
+    type: 'invalid_request_error',
+    defaultMessage: 'An account with this email already exists.',
+  },
 } as const satisfies Record<string, ErrorCodeEntry>;
 
 export type ErrorCode = keyof typeof codes;

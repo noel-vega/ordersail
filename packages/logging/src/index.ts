@@ -752,11 +752,14 @@ const exceptionLogger = new Logger('ExceptionFilter');
 // levels stay the same whichever filter answers: a 5xx is an error with its
 // stack; a rejected request is a reason, at warn for 401/403/429 and debug
 // otherwise. Call it only for an 'http' host.
-export function logHttpException(exception: unknown, host: ArgumentsHost): void {
+//
+// `status` is the status the response actually carries, when the caller
+// decided it (ApiErrorFilter answers an untrusted error as a 500 even if it
+// carries a statusCode); without it, the status is read off the exception.
+export function logHttpException(exception: unknown, host: ArgumentsHost, status = statusOf(exception)): void {
   const request = host.switchToHttp().getRequest<IncomingMessage & { raw?: IncomingMessage }>();
   // Fastify wraps the Node request; Express hands it over as is
   const route = resolveRoute(request.raw ?? request);
-  const status = statusOf(exception);
 
   if (status >= 500) {
     exceptionLogger.error(

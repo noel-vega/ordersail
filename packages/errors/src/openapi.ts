@@ -1,4 +1,4 @@
-import { codes, type ErrorType } from './codes.ts';
+import { codes, ERROR_TYPES } from './codes.ts';
 
 // The slice of an OpenAPI 3.0 document this touches. Structural, so it takes
 // @nestjs/swagger's OpenAPIObject (or any other generator's) without depending
@@ -12,15 +12,11 @@ type Response = { description?: string; content?: Record<string, unknown> };
 type Operation = { responses?: Record<string, Response> };
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
-const ERROR_TYPES: ErrorType[] = [
-  'invalid_request_error',
-  'authentication_error',
-  'permission_error',
-  'rate_limit_error',
-  'api_error',
-];
-const ERROR_RESPONSE_REF = { $ref: '#/components/schemas/ErrorResponse' };
-const ERROR_CONTENT = { 'application/json': { schema: ERROR_RESPONSE_REF } };
+// a fresh object per response, so no two responses in the output (or a later
+// call's output) share one
+function errorContent() {
+  return { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } };
+}
 
 // The ErrorResponse schema, its enums generated from the registry. `details`
 // is any object for now; per-code schemas come with the registry's JSON Schemas.
@@ -33,7 +29,7 @@ export function errorResponseSchema() {
         type: 'object',
         required: ['type', 'code', 'message', 'doc_url', 'request_id'],
         properties: {
-          type: { type: 'string', enum: ERROR_TYPES },
+          type: { type: 'string', enum: [...ERROR_TYPES] },
           code: { type: 'string', enum: Object.keys(codes) },
           message: { type: 'string', description: 'For people. Never parse it; branch on `code`.' },
           param: { type: 'string', description: 'The request field that caused the error.' },
@@ -70,9 +66,9 @@ export function withErrorResponses<T extends OpenApiDocument>(document: T): T {
       if (!operation) continue;
       const responses = (operation.responses ??= {});
       for (const [status, response] of Object.entries(responses)) {
-        if (/^[45](\d\d|XX)$/.test(status) && !response.content) response.content = ERROR_CONTENT;
+        if (/^[45](\d\d|XX)$/.test(status) && !response.content) response.content = errorContent();
       }
-      responses.default ??= { description: 'Error', content: ERROR_CONTENT };
+      responses.default ??= { description: 'Error', content: errorContent() };
     }
   }
   return result;

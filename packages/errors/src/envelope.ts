@@ -43,7 +43,7 @@ export function toErrorEnvelope(
   requestId: string | undefined,
 ): { status: number; body: ErrorEnvelope } {
   const { status, code, message, param, details } = resolve(exception);
-  const safeMessage = status >= 500 || !message ? codes[code].message : message;
+  const safeMessage = status >= 500 || !message ? codes[code].defaultMessage : message;
   return {
     status,
     body: {
@@ -72,10 +72,8 @@ function resolve(exception: unknown): Resolved {
   }
   if (exception instanceof HttpException) return fromHttpException(exception);
 
-  // http-errors from Express's body parser and Fastify's FST_ERR_* errors
-  // (malformed JSON 400, 413, 415) carry their own status
-  const httpError = httpErrorOf(exception);
-  if (httpError && httpError.statusCode >= 400 && httpError.statusCode <= 599) {
+  const httpError = trustedHttpErrorOf(exception);
+  if (httpError) {
     return {
       status: httpError.statusCode,
       code: genericCodeForStatus(httpError.statusCode),
@@ -84,6 +82,21 @@ function resolve(exception: unknown): Resolved {
   }
 
   return { status: 500, code: 'internal_error' };
+}
+
+// Errors the HTTP layer itself raises before a handler runs keep their status
+// and message: Express's body parser (http-errors, whose `expose` flag marks a
+// message as safe to show: malformed JSON 400, 413, 415) and Fastify's own
+// FST_ERR_* errors. Nothing else is trusted, even with a statusCode: a library
+// error that escapes a handler (Stripe's carry statusCode 402/400) would
+// otherwise send its raw message to the client. Those are 500s.
+function trustedHttpErrorOf(exception: unknown): { statusCode: number; message: string } | undefined {
+  const httpError = httpErrorOf(exception);
+  if (!httpError || httpError.statusCode < 400 || httpError.statusCode > 599) return undefined;
+  const candidate = exception as { expose?: unknown; code?: unknown };
+  const fromBodyParser = candidate.expose === true;
+  const fromFastify = typeof candidate.code === 'string' && candidate.code.startsWith('FST_');
+  return fromBodyParser || fromFastify ? httpError : undefined;
 }
 
 function fromHttpException(exception: HttpException): Resolved {
@@ -96,7 +109,9 @@ function fromHttpException(exception: HttpException): Resolved {
   return {
     status,
     code: payloadCodeOf(status, response) ?? genericCodeForStatus(status),
-    message: messageOf(response, exception),
+    // the throttler's message is its class name ("ThrottlerException: Too Many
+    // Requests"), so a 429 always reads the registry's message
+    message: status === 429 ? undefined : messageOf(response, exception),
   };
 }
 
