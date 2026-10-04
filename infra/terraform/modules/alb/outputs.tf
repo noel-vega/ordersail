@@ -2,11 +2,12 @@ output "dns_name" {
   value = aws_lb.this.dns_name
 }
 
-output "target_group_arn" {
-  # read back through the HTTPS listener (not aws_lb_target_group.this directly)
+output "target_group_arns" {
+  description = "Target group ARN per var.services key."
+  # read back through each listener rule (not aws_lb_target_group.this directly)
   # so anything wiring an ECS service to this ALB gets an implicit dependency on
-  # the listener — ECS rejects a target group not yet attached to a load balancer
-  value = one(aws_lb_listener.https.default_action).target_group_arn
+  # the rule — ECS rejects a target group not yet attached to a load balancer
+  value = { for k, rule in aws_lb_listener_rule.this : k => one(rule.action).target_group_arn }
 }
 
 output "arn" {

@@ -3,9 +3,18 @@ variable "name_prefix" {
   default = "ordersail"
 }
 
-variable "name" {
-  description = "App name this ALB fronts, e.g. \"merchant-api\"."
-  type        = string
+variable "services" {
+  description = <<-EOT
+    The APIs behind this ALB, keyed by app name (e.g. "merchant-api") — the key
+    names the target group and the per-service alarms. `host` is matched against
+    the Host header; `priority` is the listener-rule priority, explicit so adding
+    a service never renumbers the existing rules.
+  EOT
+  type = map(object({
+    host     = string
+    port     = number
+    priority = number
+  }))
 }
 
 variable "vpc_id" {
@@ -16,12 +25,8 @@ variable "public_subnet_ids" {
   type = list(string)
 }
 
-variable "container_port" {
-  type = number
-}
-
 variable "ecs_tasks_security_group_id" {
-  description = "The shared ECS-tasks SG — this ALB is granted ingress into it on container_port."
+  description = "The shared ECS-tasks SG — this ALB is granted ingress into it on each service's port."
   type        = string
 }
 

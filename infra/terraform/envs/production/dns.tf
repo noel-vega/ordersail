@@ -70,40 +70,42 @@ resource "aws_route53_record" "merchant_web_alias" {
 }
 
 # pos-api's public endpoint — the native Expo POS app hits this directly, so it
-# needs a real *.${domain} host (the ALB serves the wildcard cert; a raw
-# *.elb.amazonaws.com name would fail TLS SNI).
+# needs a real *.${domain} host (the shared ALB serves the wildcard cert and
+# routes on this Host; a raw *.elb.amazonaws.com name would fail TLS SNI).
 resource "aws_route53_record" "pos_api_alias" {
   zone_id = data.aws_route53_zone.this.zone_id
   name    = "pos.${var.domain_name}"
   type    = "A"
 
   alias {
-    name                   = module.alb_pos_api.dns_name
-    zone_id                = module.alb_pos_api.zone_id
+    name                   = module.alb.dns_name
+    zone_id                = module.alb.zone_id
     evaluate_target_health = true
   }
 }
 
 # storefront-api's public endpoint. Unlike merchant-api — which needs no record,
-# because merchant-web's CloudFront proxies /api/* straight to its ALB
+# because merchant-web's CloudFront proxies /api/* straight to the shared ALB
 # (`enable_api_routing`) — storefront-api is called directly, over the open
 # internet, by third-party storefronts hosted on arbitrary merchant-owned
 # domains. There is no distribution of ours to hide it behind, so it needs a real
 # host for the same TLS-SNI reason as pos-api above.
 #
-# `api.${domain}` rather than `storefront.${domain}`: storefront-api is in
-# practice the only public, third-party-facing API here (merchant-api is proxied,
-# pos-api serves our own app), and this string ends up in every published code
-# sample, the OpenAPI `servers` array and the SDK README — so treat it as
-# permanent.
+# `storefront.${domain}`, not a generic `api.${domain}`: the host names which
+# API it is, so a second public API (e.g. an admin/integrations API) never makes
+# `api.` ambiguous. Hosted merchant stores, if they come, belong on a separate
+# registrable domain (cookie/phishing/reputation isolation, as myshopify.com is
+# to shopify.com), so they never compete for this name. This string ends up in
+# every published code sample, the OpenAPI `servers` array and the SDK README —
+# so treat it as permanent once the SDK docs publish it (OS-705).
 resource "aws_route53_record" "storefront_api_alias" {
   zone_id = data.aws_route53_zone.this.zone_id
-  name    = "api.${var.domain_name}"
+  name    = "storefront.${var.domain_name}"
   type    = "A"
 
   alias {
-    name                   = module.alb_storefront_api.dns_name
-    zone_id                = module.alb_storefront_api.zone_id
+    name                   = module.alb.dns_name
+    zone_id                = module.alb.zone_id
     evaluate_target_health = true
   }
 }
