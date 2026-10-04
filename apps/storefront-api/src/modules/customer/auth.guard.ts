@@ -1,11 +1,7 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { FastifyRequest } from 'fastify';
+import { ApiException } from 'errors';
 import { setLogContext } from 'logging';
 import type { AuthenticatedCustomer } from './auth.decorators';
 
@@ -26,28 +22,28 @@ export class CustomerAuthGuard implements CanActivate {
 
     const token = this.extractTokenFromHeader(request);
     if (!token) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_access_token');
     }
 
     let payload: AuthenticatedCustomer;
     try {
       payload = await this.jwtService.verifyAsync(token);
     } catch {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_access_token');
     }
 
     // AppKeyGuard (global) already resolved request.accountId from
     // x-app-key — a customer token issued by one merchant must not be
     // usable against a different merchant's app key
     if (payload.accountId !== request.accountId) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_access_token');
     }
 
     // a refresh token shares the same signature/claims shape as an access
     // token except for `typ` — without this check it would work as a full
     // access token for its entire (much longer) lifetime
     if (payload.typ !== 'access') {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_access_token');
     }
 
     request.customer = payload;

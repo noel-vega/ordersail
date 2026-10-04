@@ -3,7 +3,6 @@
 import './instrument';
 import { env } from './shared/env'; // validates process.env before anything else loads
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import {
   FastifyAdapter,
@@ -14,7 +13,6 @@ import fastifyHelmet from '@fastify/helmet';
 import { SwaggerModule } from '@nestjs/swagger';
 import {
   Logger,
-  LoggingExceptionFilter,
   configureLogging,
   exitOnFatal,
   installProcessHandlers,
@@ -22,6 +20,7 @@ import {
   requestLoggingMiddleware,
   trackRouteTemplates,
 } from 'logging';
+import { useApiErrors, withErrorResponses } from 'errors';
 import { shutdownTracing } from 'tracing';
 import { createSwaggerConfig } from './swagger.config';
 
@@ -43,8 +42,8 @@ async function bootstrap() {
       logger: new Logger(),
     },
   );
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-  app.useGlobalFilters(new LoggingExceptionFilter(app.getHttpAdapter()));
+  // validation, and the one error body every API returns (ADR 0001)
+  useApiErrors(app);
   // spans still in the batch are sent before the process exits on a deploy
   installShutdownHandler(app, { afterClose: shutdownTracing });
 
@@ -54,7 +53,9 @@ async function bootstrap() {
   trackRouteTemplates(app.getHttpAdapter().getInstance());
   app.use(requestLoggingMiddleware());
 
-  const document = SwaggerModule.createDocument(app, createSwaggerConfig());
+  const document = withErrorResponses(
+    SwaggerModule.createDocument(app, createSwaggerConfig()),
+  );
   SwaggerModule.setup('swagger', app, document, {
     jsonDocumentUrl: 'swagger/json',
   });

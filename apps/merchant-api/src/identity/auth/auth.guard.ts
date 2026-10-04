@@ -3,11 +3,11 @@ import {
   ExecutionContext,
   Injectable,
   Provider,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { FastifyRequest } from 'fastify';
+import { ApiException } from 'errors';
 import { setLogContext } from 'logging';
 import { AuthenticatedUser, IS_PUBLIC_KEY } from 'src/shared/auth/decorators';
 
@@ -32,7 +32,7 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const token = this.extractTokenFromHeader(request);
     if (!token) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_access_token');
     }
     try {
       // 💡 Here the JWT secret key that's used for verifying the payload
@@ -43,14 +43,14 @@ export class AuthGuard implements CanActivate {
       // access token except for `typ` — without this check it would work
       // as a full access token for its entire (much longer) lifetime
       if (payload.typ !== 'access') {
-        throw new UnauthorizedException();
+        throw new ApiException('invalid_access_token');
       }
       // 💡 We're assigning the payload to the request object here
       // so that we can access it in our route handlers
       request.user = payload;
       setLogContext({ accountId: payload.accountId, userId: payload.sub });
     } catch {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_access_token');
     }
     return true;
   }

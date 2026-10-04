@@ -208,12 +208,13 @@ describe('AuthService.signup — a new Account, its Owner signed in', () => {
   });
 
   // the translation itself is AccountService.provision's (account.service.spec)
-  it('rejects a duplicate email with a ConflictException', async () => {
+  it('rejects a duplicate email as email_taken', async () => {
     const service = await build();
     await service.signup(signupDto);
-    await expect(service.signup(signupDto)).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(service.signup(signupDto)).rejects.toMatchObject({
+      code: 'email_taken',
+      param: 'email',
+    });
   });
 
   // signup used to catch a unique violation from anywhere in its body —
@@ -309,9 +310,11 @@ describe('AuthService.me — who the caller is now', () => {
     const { caller } = await signedUp(service);
     await db.delete(usersTable).where(eq(usersTable.id, caller.sub));
 
-    await expect(service.me(caller)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    // invalid_access_token, so the client refreshes — where the Session is
+    // refused for good
+    await expect(service.me(caller)).rejects.toMatchObject({
+      code: 'invalid_access_token',
+    });
   });
 
   it('reports totpEnabled: true once a factor is confirmed', async () => {
@@ -1012,7 +1015,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
 
       await expect(
         service.signin({ email: user.email, password }),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      ).rejects.toMatchObject({ code: 'invalid_credentials' });
       expect(await db.select().from(userRefreshTokensTable)).toHaveLength(0);
     });
 

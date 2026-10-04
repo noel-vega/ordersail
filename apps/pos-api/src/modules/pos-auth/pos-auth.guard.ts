@@ -4,10 +4,10 @@ import {
   Inject,
   Injectable,
   Provider,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { APP_GUARD, Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
+import { ApiException } from "errors";
 import { and, eq, isNotNull, isNull, posDevicesTable, type db as Db } from "db";
 import { setLogContext } from "logging";
 import { DRIZZLE } from "../../database/database.constants";
@@ -37,7 +37,7 @@ export class PosDeviceGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const token = request.headers[DEVICE_TOKEN_HEADER];
     if (!token || Array.isArray(token)) {
-      throw new UnauthorizedException();
+      throw new ApiException("invalid_device_token");
     }
 
     const [device] = await this.db
@@ -52,7 +52,7 @@ export class PosDeviceGuard implements CanActivate {
       );
 
     if (!device) {
-      throw new UnauthorizedException();
+      throw new ApiException("invalid_device_token");
     }
 
     const posDevice: PosDeviceContext = {

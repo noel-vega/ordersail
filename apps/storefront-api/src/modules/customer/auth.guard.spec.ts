@@ -1,5 +1,4 @@
 import type { ExecutionContext } from '@nestjs/common';
-import { UnauthorizedException } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
 import { CustomerAuthGuard } from './auth.guard';
 import type { AuthenticatedCustomer } from './auth.decorators';
@@ -56,18 +55,18 @@ describe('CustomerAuthGuard', () => {
       accountId: 999,
     });
 
-    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+      code: 'invalid_access_token',
+    });
   });
 
   it('rejects a missing Authorization header', async () => {
     const guard = build(() => Promise.resolve(payload));
     const { ctx } = contextWithRequest({ headers: {}, accountId: 7 });
 
-    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+      code: 'invalid_access_token',
+    });
   });
 
   it('rejects an invalid or expired token', async () => {
@@ -79,9 +78,9 @@ describe('CustomerAuthGuard', () => {
       accountId: 7,
     });
 
-    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+      code: 'invalid_access_token',
+    });
   });
 
   // OS-455: access and refresh tokens share the same signature/claims shape
@@ -96,8 +95,8 @@ describe('CustomerAuthGuard', () => {
       accountId: 7,
     });
 
-    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+      code: 'invalid_access_token',
+    });
   });
 });
