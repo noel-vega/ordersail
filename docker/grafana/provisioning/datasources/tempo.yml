@@ -12,8 +12,10 @@ datasources:
       # trace → logs: the span's service (service.name → the service_name label
       # Fluent Bit sets), then the lines carrying this trace's ID. The window is
       # widened because the access line is written as the response finishes,
-      # a moment after the server span ends. `$$` is a literal `$` —
-      # provisioning files expand environment variables.
+      # a moment after the server span ends. The `|=` line filter keeps the
+      # json parser off every line in the window that can't match; the exact
+      # field match after it rules out the ID appearing elsewhere in a line.
+      # `$$` is a literal `$` — provisioning files expand environment variables.
       tracesToLogsV2:
         datasourceUid: loki
         spanStartTimeShift: '-1m'
@@ -22,4 +24,4 @@ datasources:
           - key: service.name
             value: service_name
         customQuery: true
-        query: '{$${__tags}} | json | trace_id = "$${__trace.traceId}"'
+        query: '{$${__tags}} |= "$${__trace.traceId}" | json | trace_id = "$${__trace.traceId}"'
