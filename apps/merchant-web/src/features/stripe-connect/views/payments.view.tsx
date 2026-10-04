@@ -92,7 +92,7 @@ export function PaymentsView() {
       // the factor-gate refusal already arrives as the global backstop toast,
       // with a "Set one up" action this line couldn't offer — don't say it
       // twice
-      if (err instanceof ApiError && err.code === "MFA_FACTOR_REQUIRED") return;
+      if (err instanceof ApiError && err.code === "mfa_factor_required") return;
       // otherwise keep the server's reason
       setLinkError(
         err instanceof ApiError

@@ -59,13 +59,12 @@ export function SignInView(props: {
     setErrorMessage("");
     signInMutation.mutate(formData, {
       onError: (err) => {
-        // Same shape as the passkey branch: only a 401 means the credentials
-        // were wrong (the API's 401 body is just "Unauthorized", so say what
-        // it means). A network failure used to land here too and claim the
-        // password was invalid.
+        // Only invalid_credentials means the email or password was wrong. A
+        // network failure used to land here too and claim the password was
+        // invalid.
         setErrorMessage(
           err instanceof ApiError
-            ? err.status === 401
+            ? err.code === "invalid_credentials"
               ? "Invalid email or password."
               : err.message
             : "Couldn't sign in — try again.",
