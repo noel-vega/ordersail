@@ -5,7 +5,7 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 
-describe('AppController (e2e)', () => {
+describe('storefront-api (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeEach(async () => {
@@ -18,11 +18,8 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/v1 (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/v1')
-      .expect(200)
-      .expect('Hello World!');
+  it('/v1/products (GET) without an app key is rejected', () => {
+    return request(app.getHttpServer()).get('/v1/products').expect(401);
   });
 
   afterEach(async () => {

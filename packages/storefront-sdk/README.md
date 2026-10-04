@@ -44,6 +44,17 @@ try {
 lives under `/v1`), and the SDK adds that prefix itself, so a given SDK
 release always talks to the API version it was generated from.
 
+### Upgrading from 0.6.x
+
+**0.7.0 is a breaking change.** storefront-api now serves every route under
+`/v1`, so 0.6.x clients, which call unprefixed paths, get `404` on every
+request. Upgrading is just the package bump; `baseUrl` stays the bare host
+(don't append `/v1` yourself):
+
+```bash
+npm install @ordersail/storefront-sdk@^0.7.0
+```
+
 ## Resources
 
 | Resource                 | Method                        | Throws `ApiError`? |

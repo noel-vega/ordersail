@@ -1,8 +1,4 @@
-import {
-  INestApplication,
-  RequestMethod,
-  ValidationPipe,
-} from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 
 // Every public route lives under /v1 (OS-714). @ordersail/storefront-sdk is on
@@ -11,7 +7,7 @@ import cookieParser from 'cookie-parser';
 // can't rewrite paths. Swagger reads it too, so the generated openapi.json
 // paths (and the SDK's typed calls) carry /v1 and SDK users only ever set the
 // bare host as baseUrl.
-export const API_PREFIX = 'v1';
+const API_PREFIX = 'v1';
 
 // The request handling every storefront-api instance shares — main.ts, the
 // OpenAPI generator and the SDK contract spec all build the app through this,
@@ -19,9 +15,7 @@ export const API_PREFIX = 'v1';
 export function configureApp(app: INestApplication): void {
   // /health stays unversioned: it's for the ALB target group, the ECS
   // container check and the deploy smoke tests, not for API consumers.
-  app.setGlobalPrefix(API_PREFIX, {
-    exclude: [{ path: 'health', method: RequestMethod.GET }],
-  });
+  app.setGlobalPrefix(API_PREFIX, { exclude: ['health'] });
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   app.use(cookieParser());
 }
