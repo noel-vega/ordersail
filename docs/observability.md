@@ -18,7 +18,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | **CloudWatch Logs** | the migrator's output, Fluent Bit's own output, and service logs from before the move to Loki | [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md` |
-| **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api only, off unless an OTLP endpoint is set — [Traces](#traces) |
+| **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api, storefront-api, pos-api (not the worker yet); off unless an OTLP endpoint is set — [Traces](#traces) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
 `correlationId` field on every log line, rides on every BullMQ job, and (later) is a Sentry tag.
@@ -314,8 +314,10 @@ tag the same in `docker-compose.yml` and the module.
 
 ## Traces
 
-`packages/tracing` sets up OpenTelemetry for a service. Today only merchant-api loads it
-(`apps/merchant-api/src/instrument.ts`, the first import in `main.ts`).
+`packages/tracing` sets up OpenTelemetry for a service. The three APIs load it —
+`apps/<api>/src/instrument.ts`, the first import in each `main.ts` — each naming its web
+framework: Fastify for merchant-api, Express for storefront-api and pos-api. The worker isn't
+traced yet (OS-704).
 
 **Off unless configured.** Nothing is registered or patched unless `OTEL_EXPORTER_OTLP_ENDPOINT`
 is set, so tests and CI run exactly as before. Local dev sets it to the local Tempo
@@ -329,10 +331,14 @@ variables, so a local Tempo, Grafana Cloud or a collector are all just configura
 
 ```text
 POST /auth/signin            HTTP server span — method, route template, status, ordersail.* IDs
-└─ request                   Fastify
+└─ request                   Fastify (merchant-api only)
    ├─ pg-pool.connect        waiting for a pooled connection
    └─ pg.query:SELECT …      one per query, with the SQL text
 ```
+
+On the Express APIs the `pg` spans sit directly under the HTTP server span. The Express
+instrumentation is there only for the route template: it ignores every layer type, so a Nest
+app's middleware and router layers add no spans of their own.
 
 Every span carries `service.name` and `deployment.environment`, the same two values as the
 Loki labels.
@@ -401,9 +407,9 @@ but no `pg` spans (or nothing at all), check that first.
 
 ### Traces in local Grafana
 
-`npm run up` also starts a local Tempo. merchant-api's `.env.example` points
-`OTEL_EXPORTER_OTLP_ENDPOINT` at it (`http://localhost:4318`); an `apps/merchant-api/.env`
-created before that line existed needs it added by hand, since `npm run setup` never
+`npm run up` also starts a local Tempo. Each API's `.env.example` points
+`OTEL_EXPORTER_OTLP_ENDPOINT` at it (`http://localhost:4318`); an existing `apps/<api>/.env`
+created before that line was there needs it added by hand, since `npm run setup` never
 overwrites. Under `npm run dev`, open <http://localhost:3300> → Explore → **Tempo**, then
 **Search**, or switch to **TraceQL**:
 
@@ -432,11 +438,12 @@ Grafana Cloud has the same two links, set up by hand ([Traces in production](#tr
 
 ### Traces in production (Grafana Cloud)
 
-merchant-api exports straight from its OpenTelemetry SDK to Grafana Cloud's OTLP gateway — no
-collector sidecar (OS-97). The other services aren't traced yet (OS-703, OS-704).
+merchant-api, storefront-api and pos-api export straight from their OpenTelemetry SDKs to
+Grafana Cloud's OTLP gateway — no collector sidecar (OS-97, OS-703). One switch and one
+`traces:write` token cover all three. The worker isn't traced yet (OS-704).
 
 - **Endpoint**: `otel_exporter_otlp_endpoint` in `infra/terraform/envs/production/terraform.tfvars`,
-  the gateway's base URL ending in `/otlp`. Unset, merchant-api's task definition has no
+  the gateway's base URL ending in `/otlp`. Unset, the APIs' task definitions have no
   `OTEL_*` variables and tracing is off (`infra/terraform/envs/production/tracing.tf`).
 - **Credentials**: the `OTEL_EXPORTER_OTLP_HEADERS` key of the `ordersail/production/grafana-cloud`
   secret, mapped into the app container's environment (the same secret's `LOKI_TOKEN` never

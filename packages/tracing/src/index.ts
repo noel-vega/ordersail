@@ -1,11 +1,12 @@
 // Loaded before each service's own env module (tracing has to patch `http`,
-// `fastify` and `pg` before anything requires them), so in local dev the .env
-// file hasn't been read yet — same on-import load as packages/config.
+// the web framework and `pg` before anything requires them), so in local dev
+// the .env file hasn't been read yet — same on-import load as packages/config.
 import 'dotenv/config';
 import { context, propagation, trace, type Attributes, type Link } from '@opentelemetry/api';
 import FastifyOtel from '@fastify/otel';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { registerInstrumentations, type Instrumentation } from '@opentelemetry/instrumentation';
+import { ExpressInstrumentation, ExpressLayerType } from '@opentelemetry/instrumentation-express';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import { resourceFromAttributes } from '@opentelemetry/resources';
@@ -27,10 +28,16 @@ function isIgnoredPath(url: string | undefined): boolean {
   return IGNORED_PATHS.has((url ?? '').split('?')[0]);
 }
 
-// The pinned instrumentation list — the only place an instrumentation is
+// The web framework a service runs on — Nest's Fastify adapter (merchant-api)
+// or its default, Express (storefront-api, pos-api). It decides which
+// instrumentation supplies the route template.
+export type Framework = 'fastify' | 'express';
+
+// The pinned instrumentation lists — the only place an instrumentation is
 // named. Adding one changes what every traced request records, so it is a
-// deliberate edit here (instrumentations.spec.ts pins the list and options).
-export function createInstrumentations(): Instrumentation[] {
+// deliberate edit here (instrumentations.spec.ts pins the lists and options).
+// HTTP and pg are the same for both frameworks; only the middle entry differs.
+export function createInstrumentations(framework: Framework): Instrumentation[] {
   return [
     new HttpInstrumentation({
       ignoreIncomingRequestHook: (request) => isIgnoredPath(request.url),
@@ -38,16 +45,25 @@ export function createInstrumentations(): Instrumentation[] {
       // bucket check at boot or any other background call
       requireParentforOutgoingSpans: true,
     }),
-    new FastifyOtelInstrumentation({
-      // subscribes to Fastify's own initialization channel, so the adapter
-      // Nest creates is instrumented without touching main.ts
-      registerOnInitialization: true,
-      // one span per lifecycle hook (cookie, CORS, helmet…) is noise, and the
-      // handler span covers the same time as the request span: keep that one
-      instrumentHooks: false,
-      instrumentHandler: false,
-      ignorePaths: (route) => isIgnoredPath(route.url),
-    }),
+    framework === 'fastify'
+      ? new FastifyOtelInstrumentation({
+          // subscribes to Fastify's own initialization channel, so the adapter
+          // Nest creates is instrumented without touching main.ts
+          registerOnInitialization: true,
+          // one span per lifecycle hook (cookie, CORS, helmet…) is noise, and the
+          // handler span covers the same time as the request span: keep that one
+          instrumentHooks: false,
+          instrumentHandler: false,
+          ignorePaths: (route) => isIgnoredPath(route.url),
+        })
+      : new ExpressInstrumentation({
+          // Here only for the route template: it records the matched route on
+          // the HTTP server span (http.route, and the span name) before it
+          // checks whether a layer is ignored. Every layer type is ignored, so
+          // it adds no spans — a Nest app is a stack of middleware and router
+          // layers, one span each otherwise.
+          ignoreLayersType: [ExpressLayerType.MIDDLEWARE, ExpressLayerType.ROUTER, ExpressLayerType.REQUEST_HANDLER],
+        }),
     new PgInstrumentation({
       // no parentless traces for boot-time queries or the /health ping
       requireParentSpan: true,
@@ -168,6 +184,8 @@ export class ScrubbingSpanExporter implements SpanExporter {
 export type TracingOptions = {
   // `service.name` on every span — the same value as the Loki `service_name` label
   service: string;
+  // which instrumentation supplies the route template (createInstrumentations)
+  framework: Framework;
   // Specs only: capture spans in memory instead of exporting over OTLP. Kept
   // on the public options rather than a test-only entry point so the specs
   // exercise the real setup path; services never pass it.
@@ -198,7 +216,9 @@ export function startTracing(options: TracingOptions): boolean {
     spanProcessors: [new BatchSpanProcessor(new ScrubbingSpanExporter(exporter))],
   });
   provider.register();
-  unregisterInstrumentations = registerInstrumentations({ instrumentations: createInstrumentations() });
+  unregisterInstrumentations = registerInstrumentations({
+    instrumentations: createInstrumentations(options.framework),
+  });
   return true;
 }
 

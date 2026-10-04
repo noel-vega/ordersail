@@ -23,6 +23,7 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/email-templates/package.json packages/email-templates/package.json
 COPY packages/logging/package.json packages/logging/package.json
+COPY packages/tracing/package.json packages/tracing/package.json
 COPY packages/pos-sdk/package.json packages/pos-sdk/package.json
 COPY packages/queue/package.json packages/queue/package.json
 COPY packages/storage/package.json packages/storage/package.json
@@ -34,7 +35,7 @@ RUN npm ci
 # (dependency order), then the app itself.
 FROM deps AS build
 COPY . .
-RUN npm run build --workspace=logging --workspace=config --workspace=db
+RUN npm run build --workspace=logging --workspace=tracing --workspace=config --workspace=db
 RUN npm run build --workspace=pos-api
 
 # --- prod-deps: same package.json-only copy, but omit devDependencies —
@@ -53,6 +54,7 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/email-templates/package.json packages/email-templates/package.json
 COPY packages/logging/package.json packages/logging/package.json
+COPY packages/tracing/package.json packages/tracing/package.json
 COPY packages/pos-sdk/package.json packages/pos-sdk/package.json
 COPY packages/queue/package.json packages/queue/package.json
 COPY packages/storage/package.json packages/storage/package.json
@@ -73,6 +75,7 @@ COPY --from=prod-deps /app/packages ./packages
 COPY --from=build /app/apps/pos-api/dist ./apps/pos-api/dist
 COPY --from=build /app/packages/config/dist ./packages/config/dist
 COPY --from=build /app/packages/logging/dist ./packages/logging/dist
+COPY --from=build /app/packages/tracing/dist ./packages/tracing/dist
 COPY --from=build /app/packages/db/dist ./packages/db/dist
 USER app
 EXPOSE 3004

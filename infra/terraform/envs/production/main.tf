@@ -317,7 +317,7 @@ module "ecs_service_storefront_api" {
   target_group_arn            = module.alb.target_group_arns["storefront-api"]
   log_shipping                = local.log_shipping_enabled ? local.log_shipping : null
 
-  environment = [
+  environment = concat([
     { name = "NODE_ENV", value = "production" },
     { name = "PORT", value = tostring(local.api_ports["storefront-api"]) },
     { name = "REDIS_HOST", value = local.redis_host },
@@ -327,9 +327,12 @@ module "ecs_service_storefront_api" {
     # EmailService.resolveStorefrontUrl (OS-439) prefers the account's own
     # registered origin, falling back to the app's env default only when an
     # account hasn't registered one yet.
-  ]
+    ], local.trace_export_enabled ? [
+    # trace export to Grafana Cloud Tempo (tracing.tf); unset, tracing is off
+    { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = var.otel_exporter_otlp_endpoint },
+  ] : [])
 
-  secrets = [
+  secrets = concat([
     { name = "DATABASE_URL", valueFrom = module.secrets.database_url_secret_arn },
     { name = "CUSTOMER_JWT_SECRET", valueFrom = "${module.secrets.app_secret_arns["storefront-api"]}:CUSTOMER_JWT_SECRET::" },
     { name = "STRIPE_SECRET_KEY", valueFrom = "${module.secrets.app_secret_arns["storefront-api"]}:STRIPE_SECRET_KEY::" },
@@ -337,12 +340,15 @@ module "ecs_service_storefront_api" {
     # (M9). The next deploy drops it from the live task def; the JSON key can then
     # be removed from the storefront-api secret.
     { name = "SHIPPO_API_KEY", valueFrom = "${module.secrets.app_secret_arns["storefront-api"]}:SHIPPO_API_KEY::" },
-  ]
+    ], local.trace_export_enabled ? [
+    # the same header as merchant-api's — one traces:write token (tracing.tf)
+    { name = "OTEL_EXPORTER_OTLP_HEADERS", valueFrom = "${module.secrets.grafana_cloud_secret_arn}:OTEL_EXPORTER_OTLP_HEADERS::" },
+  ] : [])
 
-  secrets_manager_secret_arns = [
+  secrets_manager_secret_arns = concat([
     module.secrets.database_url_secret_arn,
     module.secrets.app_secret_arns["storefront-api"],
-  ]
+  ], local.trace_export_enabled ? [module.secrets.grafana_cloud_secret_arn] : [])
 }
 
 module "ecs_service_worker" {
@@ -404,21 +410,27 @@ module "ecs_service_pos_api" {
   target_group_arn = module.alb.target_group_arns["pos-api"]
   log_shipping     = local.log_shipping_enabled ? local.log_shipping : null
 
-  environment = [
+  environment = concat([
     { name = "NODE_ENV", value = "production" },
     { name = "PORT", value = tostring(local.api_ports["pos-api"]) },
     # POS is a native Expo app (no browser Origin), so POS_WEB_URL is left
     # unset and pos-api/src/main.ts falls back to CORS origin:true. Set it if a
     # POS web console ever ships.
-  ]
+    ], local.trace_export_enabled ? [
+    # trace export to Grafana Cloud Tempo (tracing.tf); unset, tracing is off
+    { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = var.otel_exporter_otlp_endpoint },
+  ] : [])
 
-  secrets = [
+  secrets = concat([
     { name = "DATABASE_URL", valueFrom = module.secrets.database_url_secret_arn },
-  ]
+    ], local.trace_export_enabled ? [
+    # the same header as merchant-api's — one traces:write token (tracing.tf)
+    { name = "OTEL_EXPORTER_OTLP_HEADERS", valueFrom = "${module.secrets.grafana_cloud_secret_arn}:OTEL_EXPORTER_OTLP_HEADERS::" },
+  ] : [])
 
-  secrets_manager_secret_arns = [
+  secrets_manager_secret_arns = concat([
     module.secrets.database_url_secret_arn,
-  ]
+  ], local.trace_export_enabled ? [module.secrets.grafana_cloud_secret_arn] : [])
 }
 
 module "frontend_merchant_web" {

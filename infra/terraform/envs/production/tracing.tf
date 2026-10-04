@@ -1,9 +1,10 @@
-# Trace export to Grafana Cloud Tempo — merchant-api only for now (OS-97;
-# the other services are OS-703/OS-704).
+# Trace export to Grafana Cloud Tempo — the three APIs: merchant-api (OS-97),
+# storefront-api and pos-api (OS-703). The worker isn't traced yet (OS-704).
 #
-# Direct from the app's OpenTelemetry SDK to Grafana Cloud's OTLP gateway: no
-# collector sidecar. packages/tracing reads two standard variables, which only
-# merchant-api's task definition gets (main.tf), and only while this is on:
+# Direct from each app's OpenTelemetry SDK to Grafana Cloud's OTLP gateway: no
+# collector sidecar. packages/tracing reads two standard variables, which the
+# three APIs' task definitions get (main.tf), and only while this is on. One
+# switch for all of them:
 #
 #   OTEL_EXPORTER_OTLP_ENDPOINT  var.otel_exporter_otlp_endpoint (plain)
 #   OTEL_EXPORTER_OTLP_HEADERS   `ordersail/production/grafana-cloud` secret,
@@ -20,7 +21,7 @@
 # the deploy either way.
 #
 # A rejected token or an unreachable gateway never fails a request: it shows up
-# as `tracing.export_failed` warn lines in merchant-api's own logs, at most one
+# as `tracing.export_failed` warn lines in that service's own logs, at most one
 # per export batch. docs/observability.md → "Traces missing in production".
 
 locals {
