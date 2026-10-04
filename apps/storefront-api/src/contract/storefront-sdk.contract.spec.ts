@@ -5,9 +5,11 @@
 // SDK client, catching runtime contract breaks (status codes, response
 // shapes, auth behavior) too. Required before M2 can remove storefront-web
 // from this monorepo/CI without losing coverage.
-import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { INestApplication } from '@nestjs/common';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import { Test, TestingModule } from '@nestjs/testing';
 import { db as sharedDb } from 'db';
 import type { Redis } from 'ioredis';
@@ -70,7 +72,7 @@ function newStripeMock() {
 }
 
 describe('storefront-sdk contract', () => {
-  let app: INestApplication<Server>;
+  let app: NestFastifyApplication;
   let baseUrl: string;
   let stripe: ReturnType<typeof newStripeMock>;
 
@@ -87,10 +89,12 @@ describe('storefront-sdk contract', () => {
 
     // the same configureApp as main.ts (minus CORS, which only a browser
     // enforces, and Swagger, which nothing here reads)
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<NestFastifyApplication>(
+      new FastifyAdapter(),
+    );
     configureApp(app);
     await app.init();
-    await app.listen(0);
+    await app.listen(0, '127.0.0.1');
     const { port } = app.getHttpServer().address() as AddressInfo;
     baseUrl = `http://127.0.0.1:${port}`;
   });
