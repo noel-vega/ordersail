@@ -44,6 +44,25 @@ try {
 lives under `/v1`), and the SDK adds that prefix itself, so a given SDK
 release always talks to the API version it was generated from.
 
+### Upgrading from 0.7.x
+
+**0.8.0 changes how errors arrive.** Every API error now has one body, and
+`ApiError` carries it as typed fields: branch on `err.code` (see
+[Error handling](#error-handling)) instead of `err.status` or the message.
+Two behaviours change with it:
+
+- The client refreshes the customer's token only on `invalid_access_token`.
+  A bad app key or wrong credentials no longer trigger a refresh and retry.
+- `ApiError`'s constructor changed. If you construct one yourself (in tests,
+  say), pass `(message, status, body?)`.
+
+0.7.x clients keep working against the new API, but every `ApiError.message`
+is the generic `Request failed (<status>)`.
+
+```bash
+npm install @ordersail/storefront-sdk@^0.8.0
+```
+
 ### Upgrading from 0.6.x
 
 **0.7.0 is a breaking change.** storefront-api now serves every route under
@@ -111,7 +130,7 @@ try {
     setFieldError(err.param ?? "email", "That email already has an account.");
   } else if (isApiError(err, "validation_failed")) {
     // details.fields lists every failing field as { param, message }
-    showFieldErrors(err.details?.fields);
+    for (const { param, message } of err.details.fields) setFieldError(param, message);
   } else {
     throw err;
   }
@@ -128,7 +147,6 @@ A few codes worth knowing:
 | `email_taken` | `signUp` (or a profile update) with an email that already has an account. |
 | `validation_failed` | A request field failed validation; `param` is the first, `details.fields` lists all. |
 | `not_found` | The resource doesn't exist (single-resource reads return `undefined` instead). |
-| `rate_limited` | Too many requests; back off and retry. |
 | `internal_error` | Something failed on OrderSail's side. The message is always generic; quote `requestId`. |
 
 `code` is `undefined` only when the response carried no error body at all (a

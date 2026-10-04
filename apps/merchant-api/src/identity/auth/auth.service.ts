@@ -319,8 +319,10 @@ export class AuthService {
       .select()
       .from(usersTable)
       .where(eq(usersTable.id, userId));
+    // the token outlived its User: send the client to refresh, which refuses
+    // the Session for good (same as me())
     if (!user) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_access_token');
     }
     if (!user.emailVerifiedAt) {
       throw new ForbiddenException('Verify your email before enabling MFA');
@@ -361,7 +363,12 @@ export class AuthService {
       .select()
       .from(usersTable)
       .where(eq(usersTable.id, userId));
-    if (!user || !user.password) {
+    // the token outlived its User: send the client to refresh, which refuses
+    // the Session for good (same as me())
+    if (!user) {
+      throw new ApiException('invalid_access_token');
+    }
+    if (!user.password) {
       throw new UnauthorizedException();
     }
     if (!(await bcrypt.compare(password, user.password))) {

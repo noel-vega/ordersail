@@ -6,6 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ApiException } from 'errors';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -62,7 +63,8 @@ export class PasskeysService {
       .select()
       .from(usersTable)
       .where(eq(usersTable.id, userId));
-    if (!user) throw new UnauthorizedException();
+    // the token outlived its User: refresh, which refuses the Session
+    if (!user) throw new ApiException('invalid_access_token');
 
     // Same bar as enrollMfa (OS-470): don't let anyone lock in a second
     // factor before they've proven they can read the inbox that recovery

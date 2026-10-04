@@ -125,10 +125,10 @@ already have. One registry means a code means the same thing everywhere.
 ## Consequences
 
 - **Breaking for SDK readers, once.** merchant-sdk, storefront-sdk and merchant-web switch in the
-  same change as the APIs. storefront-sdk ships it as 0.7.0, a minor bump pre-1.0. A storefront
-  on 0.6.0 keeps working but shows `Request failed (N)` instead of the server's message until it
-  upgrades. pos-sdk doesn't read error bodies today, so nothing in POS breaks; it gains the
-  envelope fields in a follow-up.
+  same change as the APIs. storefront-sdk ships it as 0.8.0, a minor bump pre-1.0 (0.7.0 had
+  already shipped the `/v1` prefix). A storefront on 0.7.x keeps working but shows
+  `Request failed (N)` instead of the server's message until it upgrades. pos-sdk doesn't read
+  error bodies today, so nothing in POS breaks; it gains the envelope fields in a follow-up.
 - **No mass migration.** Existing throws that only set a status keep working and get generic
   codes. Specific codes are added where a client needs to tell cases apart. New errors name a
   registry code, not just a status and a message string.

@@ -10,6 +10,7 @@ export {
   ApiError,
   isApiError,
   type ApiErrorCode,
+  type ApiErrorDetails,
   type ApiErrorType,
   type ErrorBody,
 } from "./http.js";
