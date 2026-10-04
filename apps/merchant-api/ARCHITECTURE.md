@@ -83,10 +83,14 @@ Adding a new cross-context edge = update the table above **and** the
     `sales` (`transitionOrderStatus` / `recordRefund`); `payments` only talks to
     Stripe.
   - **`catalog → stock`** and **`platform → stock`** (OS-696). `stock` owns
-    locations, so "this location is the caller's account's" is one method,
-    `LocationsService.assertAccountLocation` (400 `Location not found`), which
-    `InventoryService` also uses. `ProductsService` (opening stock) and
-    `PosDevicesService` (a device's location) each depend on a local
+    locations, so the location rules live there.
+    `LocationsService.assertAccountLocation` (400 `Location not found`) checks
+    that a location is the caller's account's. `InventoryService` and
+    `PosDevicesService` (a device's location) use it.
+    `LocationsService.resolveOpeningStockLocation` holds the whole
+    opening-stock rule: an explicit location must be the account's, otherwise
+    the only location is used, and with none or several, stock > 0 is a 400.
+    `ProductsService` uses only that. Each consumer depends on a local
     `LocationsPort` (`<module>/ports/locations.port.ts`); `LocationsAdapter`
     beside it is the only file in that context that imports `src/stock`.
     `catalog`'s other `db/stock` reads and writes (stock levels, opening

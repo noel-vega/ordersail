@@ -33,7 +33,7 @@ import {
   type SQL,
   variantOptionValuesTable,
 } from 'db/catalog';
-import { inventoryTable, locationsTable } from 'db/stock';
+import { inventoryTable } from 'db/stock';
 import { PaginatedProducts } from './entities/paginated-products.entity';
 
 export type ProductStatus = (typeof productStatusEnum.enumValues)[number];
@@ -116,7 +116,7 @@ export class ProductsService {
       }
     }
 
-    const stockLocationId = await this.openingStockLocationId(
+    const stockLocationId = await this.locations.resolveOpeningStockLocation(
       accountId,
       createProductDto.stock,
       createProductDto.locationId,
@@ -338,40 +338,6 @@ export class ProductsService {
       ...variant,
       images: imagesByVariant.get(variant.id) ?? [],
     }));
-  }
-
-  // where a new variant's opening stock is held. An explicit locationId must
-  // be the account's own. Omitted, the account's only location is used; with
-  // two or more, which one holds the stock is the merchant's call, not ours to
-  // guess (OS-696). With nowhere to put it — no location yet (OS-689), or an
-  // ambiguous one — stock 0 writes no inventory row (no row reads as 0
-  // everywhere stock is summed), and anything more is a 400 rather than stock
-  // silently dropped.
-  private async openingStockLocationId(
-    accountId: number,
-    stock: number,
-    locationId: number | undefined,
-  ): Promise<number | null> {
-    if (locationId !== undefined) {
-      await this.locations.assertAccountLocation(accountId, locationId);
-      return locationId;
-    }
-
-    // two rows are enough to tell "exactly one" from "more than one"
-    const locations = await this.db
-      .select({ id: locationsTable.id })
-      .from(locationsTable)
-      .where(eq(locationsTable.accountId, accountId))
-      .limit(2);
-    if (locations.length === 1) return locations[0].id;
-    if (stock > 0) {
-      throw new BadRequestException(
-        locations.length === 0
-          ? 'Add a location before setting stock'
-          : 'Choose a location for the opening stock',
-      );
-    }
-    return null;
   }
 
   // every nested product resource (variants/options) is reached only via a
@@ -731,7 +697,7 @@ export class ProductsService {
   ): Promise<ProductVariant[]> {
     if (!(await this.productExists(productId, accountId))) return [];
 
-    const stockLocationId = await this.openingStockLocationId(
+    const stockLocationId = await this.locations.resolveOpeningStockLocation(
       accountId,
       createVariantsDto.stock,
       createVariantsDto.locationId,

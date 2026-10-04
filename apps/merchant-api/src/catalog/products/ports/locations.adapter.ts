@@ -9,7 +9,15 @@ import type { LocationsPort } from './locations.port';
 export class LocationsAdapter implements LocationsPort {
   constructor(private readonly locations: LocationsService) {}
 
-  assertAccountLocation(accountId: number, locationId: number): Promise<void> {
-    return this.locations.assertAccountLocation(accountId, locationId);
+  resolveOpeningStockLocation(
+    accountId: number,
+    stock: number,
+    locationId: number | undefined,
+  ): Promise<number | null> {
+    return this.locations.resolveOpeningStockLocation(
+      accountId,
+      stock,
+      locationId,
+    );
   }
 }

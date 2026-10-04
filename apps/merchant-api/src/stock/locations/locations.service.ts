@@ -86,6 +86,40 @@ export class LocationsService {
     if (!location) throw new BadRequestException('Location not found');
   }
 
+  // where a new variant's opening stock is held. An explicit locationId must
+  // be the account's own. Omitted, the account's only location is used; with
+  // two or more, which one holds the stock is the merchant's call, not ours to
+  // guess (OS-696). With nowhere to put it — no location yet (OS-689), or an
+  // ambiguous one — stock 0 means no inventory row (null; no row reads as 0
+  // everywhere stock is summed), and anything more is a 400 rather than stock
+  // silently dropped.
+  async resolveOpeningStockLocation(
+    accountId: number,
+    stock: number,
+    locationId: number | undefined,
+  ): Promise<number | null> {
+    if (locationId !== undefined) {
+      await this.assertAccountLocation(accountId, locationId);
+      return locationId;
+    }
+
+    // two rows are enough to tell "exactly one" from "more than one"
+    const locations = await this.db
+      .select({ id: locationsTable.id })
+      .from(locationsTable)
+      .where(eq(locationsTable.accountId, accountId))
+      .limit(2);
+    if (locations.length === 1) return locations[0].id;
+    if (stock > 0) {
+      throw new BadRequestException(
+        locations.length === 0
+          ? 'Add a location before setting stock'
+          : 'Choose a location for the opening stock',
+      );
+    }
+    return null;
+  }
+
   private listFilter(accountId: number, q?: string): SQL | undefined {
     const scope = eq(locationsTable.accountId, accountId);
     const term = q?.trim();
