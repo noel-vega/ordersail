@@ -24,9 +24,11 @@ is the error contract those developers already know.
 }
 ```
 
-The registry drives the exception class the APIs throw, the one global filter that writes the
-body, the `ErrorResponse` schema in each OpenAPI document, and therefore the `ErrorCode` union in
-the generated SDK types. Clients branch on `code` and never on `message`.
+The registry is the only definition of the codes. Each API's error handling, the `ErrorResponse`
+schema in its OpenAPI document, and therefore the `ErrorCode` union in the generated SDK types all
+come from it. The contract doesn't depend on the APIs' framework or language: an API rewritten
+outside Node reads the registry as data and never keeps its own copy. Clients branch on `code`
+and never on `message`.
 
 ## Context
 
@@ -65,23 +67,24 @@ deprecation cycle.
 
 - **`code`** is the specific reason. It's snake_case, stable once published, and **always
   present**. Stripe sometimes omits `code`; we don't, so a client never needs a fallback branch.
-  A throw that hasn't been given a specific code gets a **generic code** by one rule: the
-  status's standard reason phrase in snake_case (405 → `method_not_allowed`, 503 →
-  `service_unavailable`), except for three statuses where the phrase reads badly:
+  An error that hasn't been given a specific code gets a **generic code** by one rule: the
+  status's reason phrase from RFC 9110, in snake_case (413 → `content_too_large`, 422 →
+  `unprocessable_content`). The source is the RFC, not any framework's names for the statuses,
+  because frameworks disagree (Nest says "Payload Too Large", for one) and an API may change
+  framework or language. Three statuses get a better name than their phrase:
 
   | Status | Reason phrase | Generic `code` |
   |---|---|---|
   | 401 | Unauthorized | `unauthenticated` (it means "not signed in", not "not allowed") |
-  | 429 | Too Many Requests | `rate_limited` |
+  | 429 | Too Many Requests (RFC 6585) | `rate_limited` |
   | 500 | Internal Server Error | `internal_error` |
 
-  Each status our stack can produce gets its own generic code, so no two of them share one.
-  Sharing would force a breaking change the day a client needs to tell them apart. Those
-  statuses are the HTTP exceptions in `@nestjs/common` (except 418), plus 429 from the
-  throttler: 400, 401, 403, 404, 405, 406, 408, 409, 410, 412, 413, 415, 421, 422, 429, 500,
-  501, 502, 503, 504 and 505. A status
-  outside that set is a bug in the thrower. It falls back to `bad_request` (4xx) or
-  `internal_error` (5xx), sharing that code with 400 or 500, so the body is never invalid.
+  The registry has a generic code for each status in a fixed set: 400, 401, 403, 404, 405, 406,
+  408, 409, 410, 412, 413, 415, 421, 422, 429, 500, 501, 502, 503, 504 and 505. No two of them
+  share a code, because sharing would force a breaking change the day a client needs to tell
+  them apart. A status outside the set is a bug in the thrower. It falls back to `bad_request`
+  (4xx) or `internal_error` (5xx), sharing that code with 400 or 500, so the body is never
+  invalid. The fix for such a bug is to add the status to the set, with its own code.
 - **`message`** is for people, and it may change at any time. On a 5xx it's always generic: no
   upstream error text, no stack, no `cause`.
 - **`param`** is the request field that caused the error, when there is one.
@@ -125,13 +128,13 @@ already have. One registry means a code means the same thing everywhere.
   same change as the APIs. storefront-sdk ships it as 0.7.0, a minor bump pre-1.0. A storefront
   on 0.6.0 keeps working but shows `Request failed (N)` instead of the server's message until it
   upgrades.
-- **No mass migration.** Existing `NotFoundException`-style throws keep working and get generic
-  codes. Specific codes are added where a client needs to tell cases apart. New errors use
-  `ApiException` with a registry entry, not a bare Nest exception with a message string.
+- **No mass migration.** Existing throws that only set a status keep working and get generic
+  codes. Specific codes are added where a client needs to tell cases apart. New errors name a
+  registry code, not just a status and a message string.
 - **A code is a public contract.** Renaming or removing one is a breaking SDK change. Messages can
   be reworded freely.
-- **The response body stops coming from Nest's `BaseExceptionFilter`.** The global filter
-  writes it for both Express and Fastify, and keeps the existing log events and levels.
+- **Each API writes the body itself, in one place.** Framework default error bodies are
+  replaced, not wrapped, and the existing log events and levels stay as they are.
 - **Errors become part of the OpenAPI documents**, so the API reference and the generated SDK
   types describe them. Today every error response except the `/health` 503 has an empty
   `content`.
