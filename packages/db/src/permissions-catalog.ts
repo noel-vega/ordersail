@@ -33,7 +33,8 @@ export const PERMISSIONS_CATALOG: PermissionDef[] = [
   { key: "inventory:read", resource: "inventory", action: "read", description: "View inventory levels" },
   { key: "inventory:write", resource: "inventory", action: "write", description: "Adjust inventory levels" },
 
-  { key: "locations:read", resource: "locations", action: "read", description: "View locations" },
+  // no locations:read — every staff member can view locations (GET /locations
+  // is @AuthenticatedOnly); only managing them is a permission
   { key: "locations:write", resource: "locations", action: "write", description: "Create and edit locations" },
   { key: "locations:delete", resource: "locations", action: "delete", description: "Delete locations" },
 

@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -36,6 +37,13 @@ export class CreateProductDto {
   @ApiProperty({ type: Number })
   @Min(0)
   stock!: number;
+
+  // where the opening stock is held; required for stock above 0 once the
+  // account has more than one location (OS-696)
+  @ApiProperty({ type: Number, required: false })
+  @IsOptional()
+  @IsInt()
+  locationId?: number;
 
   @ApiProperty({ enum: productStatusEnum.enumValues })
   @IsIn(productStatusEnum.enumValues)

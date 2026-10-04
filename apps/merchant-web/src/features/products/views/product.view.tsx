@@ -66,6 +66,8 @@ export function ProductView({ id }: { id: number }) {
   const deleteProduct = useDeleteProductMutation();
   const updateProduct = useUpdateProductMutation(id);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  // controlled so the variant rows can open the Inventory tab (OS-696)
+  const [tab, setTab] = useState("details");
 
   const detailsForm = useForm<DetailsForm>({
     resolver: zodResolver(DetailsFormSchema),
@@ -181,7 +183,7 @@ export function ProductView({ id }: { id: number }) {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Tabs defaultValue="details" className="gap-0">
+      <Tabs value={tab} onValueChange={setTab} className="gap-0">
         <TabsList variant="line">
           <TabsTrigger value="details" className="px-4">Details</TabsTrigger>
           <TabsTrigger value="variants" className="px-4">
@@ -289,7 +291,11 @@ export function ProductView({ id }: { id: number }) {
         </TabsContent>
 
         <TabsContent value="variants" className="pt-6">
-          <VariantSection productId={id} productName={data.name} />
+          <VariantSection
+            productId={id}
+            productName={data.name}
+            onViewStockByLocation={() => setTab("inventory")}
+          />
         </TabsContent>
 
         <Can permission="inventory:read">

@@ -35,7 +35,8 @@ import { NavUser } from "./nav-user";
 import { navItemVisible, useVisibleNavItems } from "./use-visible-nav-items";
 
 // `permission` hides the item unless the current user holds that key.
-// undefined = always visible (Home only — every role lands there post-login).
+// undefined = always visible: Home (every role lands there post-login) and
+// Locations (every staff member can view them, OS-696).
 export const NAV_ITEMS = [
   {
     key: "home",
@@ -101,7 +102,7 @@ export const NAV_ITEMS = [
     label: "Locations",
     icon: MapPinIcon,
     to: "/app/locations",
-    permission: "locations:read",
+    permission: undefined,
     children: undefined,
   },
   {

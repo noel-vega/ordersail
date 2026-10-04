@@ -1,5 +1,8 @@
 import { Reflector } from '@nestjs/core';
-import { PERMISSIONS_KEY } from 'src/shared/auth/decorators';
+import {
+  AUTHENTICATED_ONLY_KEY,
+  PERMISSIONS_KEY,
+} from 'src/shared/auth/decorators';
 import { InventoryController } from './inventory/inventory.controller';
 import { LocationsController } from './locations/locations.controller';
 
@@ -8,6 +11,11 @@ const reflector = new Reflector();
 const perm = (controller: object, method: string): string[] | undefined =>
   reflector.get(
     PERMISSIONS_KEY,
+    (controller as Record<string, () => unknown>)[method],
+  );
+const authenticatedOnly = (controller: object, method: string) =>
+  reflector.get<boolean | undefined>(
+    AUTHENTICATED_ONLY_KEY,
     (controller as Record<string, () => unknown>)[method],
   );
 
@@ -25,9 +33,11 @@ describe('stock RBAC (OS-177)', () => {
   });
 
   it('gates location routes', () => {
-    expect(perm(LocationsController.prototype, 'findAll')).toEqual([
-      'locations:read',
-    ]);
+    // listing locations is open to every staff member (@AuthenticatedOnly)
+    expect(perm(LocationsController.prototype, 'findAll')).toBeUndefined();
+    expect(authenticatedOnly(LocationsController.prototype, 'findAll')).toBe(
+      true,
+    );
     expect(perm(LocationsController.prototype, 'create')).toEqual([
       'locations:write',
     ]);

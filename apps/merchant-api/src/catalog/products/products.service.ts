@@ -33,7 +33,7 @@ import {
   type SQL,
   variantOptionValuesTable,
 } from 'db/catalog';
-import { inventoryTable, locationsTable } from 'db/stock';
+import { inventoryTable } from 'db/stock';
 import { PaginatedProducts } from './entities/paginated-products.entity';
 
 export type ProductStatus = (typeof productStatusEnum.enumValues)[number];
@@ -43,6 +43,7 @@ import { ProductDetail } from './entities/product-detail.entity';
 import { ProductImage } from './entities/product-image.entity';
 import { StorageService } from 'src/shared/storage/storage.service';
 import { generateToken } from '../../shared/common/generate-token.util';
+import { LOCATIONS_PORT, type LocationsPort } from './ports/locations.port';
 
 function toProductImage(
   row: typeof productImagesTable.$inferSelect,
@@ -84,6 +85,7 @@ export class ProductsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private readonly storageService: StorageService,
+    @Inject(LOCATIONS_PORT) private readonly locations: LocationsPort,
   ) {}
   async create(createProductDto: CreateProductDto, accountId: number) {
     const [brand] = await this.db
@@ -114,9 +116,10 @@ export class ProductsService {
       }
     }
 
-    const stockLocationId = await this.openingStockLocationId(
+    const stockLocationId = await this.locations.resolveOpeningStockLocation(
       accountId,
       createProductDto.stock,
+      createProductDto.locationId,
     );
 
     const product = await this.db.transaction(async (tx) => {
@@ -335,28 +338,6 @@ export class ProductsService {
       ...variant,
       images: imagesByVariant.get(variant.id) ?? [],
     }));
-  }
-
-  // where a new variant's opening stock is held: the account's first
-  // location. An account can have none yet — signup no longer seeds one
-  // (OS-689) — and then there's nowhere to put stock: fine at 0, since no
-  // inventory row reads as 0 everywhere stock is summed, but a 400 otherwise
-  // rather than stock silently dropped.
-  private async openingStockLocationId(
-    accountId: number,
-    stock: number,
-  ): Promise<number | null> {
-    const [location] = await this.db
-      .select({ id: locationsTable.id })
-      .from(locationsTable)
-      .where(eq(locationsTable.accountId, accountId))
-      .orderBy(locationsTable.id)
-      .limit(1);
-    if (location) return location.id;
-    if (stock > 0) {
-      throw new BadRequestException('Add a location before setting stock');
-    }
-    return null;
   }
 
   // every nested product resource (variants/options) is reached only via a
@@ -716,9 +697,10 @@ export class ProductsService {
   ): Promise<ProductVariant[]> {
     if (!(await this.productExists(productId, accountId))) return [];
 
-    const stockLocationId = await this.openingStockLocationId(
+    const stockLocationId = await this.locations.resolveOpeningStockLocation(
       accountId,
       createVariantsDto.stock,
+      createVariantsDto.locationId,
     );
 
     const variantIds = await this.db.transaction(async (tx) => {

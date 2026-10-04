@@ -20,7 +20,8 @@ import { useCreateProductMutation } from "../products.hooks";
 import { BrandCombobox } from "../../brands/components/brand-combobox";
 import { CategoryCombobox } from "../../categories/components/category-combobox";
 import { centsToDollars, dollarsToCents } from "../../../lib/currency";
-import { useStockLocation } from "../../locations/locations.hooks";
+import { useStockLocations } from "../../locations/locations.hooks";
+import { StockLocationSelect } from "../../locations/components/stock-location-select";
 
 export const CreateProductFormSchema = z.object({
   name: z.string(),
@@ -36,21 +37,40 @@ export const CreateProductFormSchema = z.object({
   barcodes: z.object({ value: z.string() }).array(),
   priceCents: z.number(),
   stock: z.number(),
+  // where the opening stock goes; only asked for with more than one location
+  // (OS-696) — with one, the API uses it
+  locationId: z.number().nullable(),
   brandId: z.number().nullable(),
   categoryIds: z.number().array(),
 });
 
 export type CreateProductForm = z.infer<typeof CreateProductFormSchema>;
 
+// with more than one location, opening stock needs one picked
+function createProductFormSchema(locationRequired: boolean) {
+  return CreateProductFormSchema.superRefine((data, ctx) => {
+    if (locationRequired && data.stock > 0 && data.locationId === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["locationId"],
+        message: "Choose a location",
+      });
+    }
+  });
+}
+
 export function CreateProductView() {
   const navigate = useNavigate();
   const createProduct = useCreateProductMutation();
-  // opening stock goes to the first location; with none yet there's nowhere
-  // to put it, and the API refuses stock above 0 (OS-689)
-  const stockLocation = useStockLocation();
-  const noLocation = stockLocation.isLoaded && !stockLocation.location;
+  // opening stock needs a known location: with none yet the API refuses
+  // stock above 0 (OS-689), and with several the merchant picks one (OS-696).
+  // Until the list loads which case applies is unknown, so stock stays at 0
+  // rather than risk a 400 the form couldn't resolve
+  const stockLocations = useStockLocations();
+  const { noLocation, multiLocation } = stockLocations;
+  const canSetStock = stockLocations.isLoaded && !noLocation;
   const form = useForm({
-    resolver: zodResolver(CreateProductFormSchema),
+    resolver: zodResolver(createProductFormSchema(multiLocation)),
     defaultValues: {
       name: "",
       description: "",
@@ -58,6 +78,7 @@ export function CreateProductView() {
       sku: null,
       priceCents: 0,
       stock: 0,
+      locationId: null,
       barcodes: [],
       brandId: null,
       categoryIds: [],
@@ -83,14 +104,20 @@ export function CreateProductView() {
   };
 
   const handleSubmit = (data: CreateProductForm) => {
-    const { brandId, ...rest } = data;
+    const { brandId, locationId, ...rest } = data;
     if (!brandId) {
       return;
     }
     const barcodes = data.barcodes.map((b) => b.value);
     const sku = data.sku?.trim() || null;
     createProduct.mutate(
-      { ...rest, brandId, barcodes, sku },
+      {
+        ...rest,
+        brandId,
+        barcodes,
+        sku,
+        locationId: locationId ?? undefined,
+      },
       {
         onSuccess: () => {
           navigate({ to: "/app/products" });
@@ -186,7 +213,7 @@ export function CreateProductView() {
                 <Input
                   type="number"
                   value={field.value}
-                  disabled={noLocation}
+                  disabled={!canSetStock}
                   onChange={(e) =>
                     field.onChange(e.currentTarget.valueAsNumber)
                   }
@@ -199,9 +226,37 @@ export function CreateProductView() {
                     first — stock needs somewhere to live.
                   </FieldDescription>
                 )}
+                {stockLocations.loadFailed && (
+                  <FieldDescription>
+                    Locations didn't load, so stock can't be set yet.{" "}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={stockLocations.retry}
+                    >
+                      Retry
+                    </button>
+                  </FieldDescription>
+                )}
               </Field>
             )}
           />
+
+          {multiLocation && (
+            <Controller
+              control={form.control}
+              name="locationId"
+              render={({ field, fieldState }) => (
+                <StockLocationSelect
+                  label="Stock location"
+                  locations={stockLocations.locations}
+                  value={field.value}
+                  onChange={field.onChange}
+                  error={fieldState.error?.message}
+                />
+              )}
+            />
+          )}
         </FieldGroup>
 
         <FieldGroup className="flex flex-row">

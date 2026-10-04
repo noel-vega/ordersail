@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import z from "zod";
-import type { InventoryRecord } from "merchant-sdk";
+import { fixedLocation, type AdjustStockTarget } from "./adjust-stock-target";
 import {
   Sheet,
   SheetContent,
@@ -12,6 +12,7 @@ import {
   SheetFooter,
 } from "ui/sheet";
 import { Field, FieldLabel } from "ui/field";
+import { StockLocationSelect } from "../../locations/components/stock-location-select";
 import { Input } from "ui/input";
 import { Textarea } from "ui/textarea";
 import {
@@ -31,6 +32,9 @@ const IN_REASONS: readonly string[] = ["received", "return", "adjustment"];
 const OUT_REASONS: readonly string[] = ["sold", "damaged", "adjustment"];
 
 const AdjustStockFormSchema = z.object({
+  // null until the merchant picks one — with several locations it's never
+  // guessed (OS-696)
+  locationId: z.number().nullable().refine((id) => id !== null, "Choose a location"),
   direction: z.union([z.literal("in"), z.literal("out")]),
   quantity: z.number().int().positive("Must be at least 1"),
   reason: z.union([
@@ -43,27 +47,27 @@ const AdjustStockFormSchema = z.object({
   note: z.string(),
 });
 
-type AdjustStockForm = z.infer<typeof AdjustStockFormSchema>;
-
 export function AdjustStockSheet(props: {
-  record: InventoryRecord | null;
+  target: AdjustStockTarget | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const target = props.target;
+  const pinned = target && fixedLocation(target);
   return (
     <Sheet open={props.open} onOpenChange={props.onOpenChange}>
       <SheetContent>
         <SheetHeader>
           <SheetTitle>Adjust stock</SheetTitle>
           <SheetDescription>
-            {props.record
-              ? `${props.record.productName}${props.record.sku ? ` (${props.record.sku})` : ""} at ${props.record.locationName}`
+            {target
+              ? `${target.productName}${target.sku ? ` (${target.sku})` : ""}${pinned ? ` at ${pinned.name}` : ""}`
               : ""}
           </SheetDescription>
         </SheetHeader>
-        {props.open && props.record && (
+        {props.open && target && (
           <AdjustStockForm
-            record={props.record}
+            target={target}
             onDone={() => props.onOpenChange(false)}
           />
         )}
@@ -73,11 +77,17 @@ export function AdjustStockSheet(props: {
 }
 
 // mounted only while the sheet is open, so it always starts from a clean draft
-function AdjustStockForm(props: { record: InventoryRecord; onDone: () => void }) {
+function AdjustStockForm(props: { target: AdjustStockTarget; onDone: () => void }) {
   const createMovement = useCreateInventoryMovementMutation();
-  const form = useForm<AdjustStockForm>({
+  const { locations } = props.target;
+  const form = useForm<
+    z.input<typeof AdjustStockFormSchema>,
+    unknown,
+    z.output<typeof AdjustStockFormSchema>
+  >({
     resolver: zodResolver(AdjustStockFormSchema),
     defaultValues: {
+      locationId: fixedLocation(props.target)?.id ?? null,
       direction: "in",
       quantity: 1,
       reason: "received",
@@ -88,14 +98,15 @@ function AdjustStockForm(props: { record: InventoryRecord; onDone: () => void })
 
   const direction = form.watch("direction");
   const reasonOptions = direction === "in" ? IN_REASONS : OUT_REASONS;
+  const selected = locations.find((l) => l.id === form.watch("locationId"));
 
   const handleSubmit = form.handleSubmit(async (data) => {
     setError(null);
     const delta = data.direction === "in" ? data.quantity : -data.quantity;
     try {
       await createMovement.mutateAsync({
-        variantId: props.record.variantId,
-        locationId: props.record.locationId,
+        variantId: props.target.variantId,
+        locationId: data.locationId,
         delta,
         reason: data.reason,
         note: data.note.trim() || null,
@@ -109,10 +120,28 @@ function AdjustStockForm(props: { record: InventoryRecord; onDone: () => void })
   return (
     <form onSubmit={handleSubmit} className="flex flex-1 flex-col">
       <div className="flex-1 space-y-4 px-4">
-        <Field>
-          <FieldLabel>Current stock</FieldLabel>
-          <p className="text-sm text-muted-foreground">{props.record.stock}</p>
-        </Field>
+        {!fixedLocation(props.target) && (
+          <Controller
+            control={form.control}
+            name="locationId"
+            render={({ field, fieldState }) => (
+              <StockLocationSelect
+                label="Location"
+                locations={locations}
+                value={field.value}
+                onChange={field.onChange}
+                error={fieldState.error?.message}
+              />
+            )}
+          />
+        )}
+
+        {selected && selected.stock != null && (
+          <Field>
+            <FieldLabel>Current stock</FieldLabel>
+            <p className="text-sm text-muted-foreground">{selected.stock}</p>
+          </Field>
+        )}
 
         <Controller
           control={form.control}

@@ -4,6 +4,7 @@ import type { InventoryRecord } from "merchant-sdk";
 import { DataTable } from "../../../components/data-table";
 import { Button } from "ui/button";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
+import { targetFromInventoryRecord } from "../../inventory/components/adjust-stock-target";
 import { StockLevel } from "../../inventory/components/stock-level";
 import { usePermissions } from "../../auth/permission-context";
 
@@ -63,7 +64,7 @@ export function ProductInventoryTab(props: {
       />
 
       <AdjustStockSheet
-        record={adjustingRecord}
+        target={adjustingRecord && targetFromInventoryRecord(adjustingRecord)}
         open={adjustingRecord !== null}
         onOpenChange={(open) => !open && setAdjustingRecord(null)}
       />

@@ -128,13 +128,29 @@ export default tseslint.config(
               },
             },
             {
-              // platform/dashboard is the documented cross-context read-model
+              // catalog → stock: where opening stock goes, through
+              // catalog/products/ports/ (LocationsPort + LocationsAdapter)
+              from: { element: { type: 'context', captured: { context: 'catalog' } } },
+              allow: {
+                to: {
+                  element: {
+                    type: 'context',
+                    captured: { context: 'stock' },
+                    fileInternalPath: 'index.ts',
+                  },
+                },
+              },
+            },
+            {
+              // platform/dashboard is the documented cross-context read-model;
+              // platform → stock is pos-devices' location check, through
+              // platform/pos-devices/ports/ (LocationsPort + LocationsAdapter)
               from: { element: { type: 'context', captured: { context: 'platform' } } },
               allow: {
                 to: {
                   element: {
                     type: 'context',
-                    captured: { context: '{identity,sales}' },
+                    captured: { context: '{identity,sales,stock}' },
                     fileInternalPath: 'index.ts',
                   },
                 },
@@ -148,11 +164,23 @@ export default tseslint.config(
     },
   },
 
-  // ── Data-access read-graph (see ARCHITECTURE.md § Data access) ────────────
-  // packages/db has a per-domain entrypoint per context (db/identity, db/catalog,
-  // …). A context imports its OWN db/<domain> plus the entrypoints on its
-  // read-graph; root `db` and `db/schema` are blocked in every context (they're
-  // the full schema — for platform/dashboard, migrations, and the other apps).
+  // ── Data-access read-graph + port-only service edges ──────────────────────
+  // (see ARCHITECTURE.md § Data access and § Cross-context communication)
+  //
+  // Read-graph: packages/db has a per-domain entrypoint per context
+  // (db/identity, db/catalog, …). A context imports its OWN db/<domain> plus
+  // the entrypoints on its read-graph; root `db` and `db/schema` are blocked in
+  // every context (they're the full schema — for platform/dashboard,
+  // migrations, and the other apps).
+  //
+  // Port-only edges: where a context calls another context's services, only
+  // its anti-corruption layer (ports/) and the module that wires it may import
+  // that context; the rest depends on the local port.
+  //
+  // Both are `no-restricted-imports`, and a later flat-config block replaces
+  // an earlier one's options for the same rule — so each context gets one
+  // block carrying both, plus one block per ports/ folder that drops only the
+  // edge that folder is the adapter for.
   ...(() => {
     // context → the db/* entrypoints it is NOT allowed to import
     const denied = {
@@ -166,48 +194,56 @@ export default tseslint.config(
       // shared kernel: only root `db` (the DRIZZLE provider) — never the schema
       shared: ['db/schema', 'db/identity', 'db/catalog', 'db/stock', 'db/sales', 'db/payments'],
       // platform is exempt — dashboard is the cross-context read-model
+      platform: [],
     };
-    return Object.entries(denied).map(([ctx, names]) => ({
-      files: [`src/${ctx}/**/*.ts`],
-      ignores: ['src/**/*.spec.ts'],
-      rules: {
-        'no-restricted-imports': [
-          'error',
-          {
-            paths: names.map((name) => ({
-              name,
-              message: `${ctx} may not import '${name}' — use db/${ctx} + its read-graph. See apps/merchant-api/ARCHITECTURE.md § Data access.`,
-            })),
-          },
-        ],
+    // context → { target context: the files allowed to import it }
+    const portOnly = {
+      catalog: {
+        stock: ['src/catalog/products/ports/**', 'src/catalog/products/products.module.ts'],
       },
-    }));
-  })(),
+      platform: {
+        sales: ['src/platform/dashboard/ports/**', 'src/platform/dashboard/dashboard.module.ts'],
+        stock: ['src/platform/pos-devices/ports/**', 'src/platform/pos-devices/pos-devices.module.ts'],
+      },
+      sales: {
+        payments: ['src/sales/orders/ports/**', 'src/sales/orders/orders.module.ts'],
+      },
+    };
 
-  // ── dashboard → sales goes through the adapter, nowhere else ──────────────
-  // platform/dashboard is the cross-context read-model, but only its
-  // anti-corruption layer (ports/) — and the module that wires it — may touch
-  // src/sales. dashboard.service / entities depend on the local SalesPort.
-  {
-    files: ['src/platform/**/*.ts'],
-    ignores: [
-      'src/platform/dashboard/ports/**',
-      'src/platform/dashboard/dashboard.module.ts',
-      'src/**/*.spec.ts',
-    ],
-    rules: {
-      'no-restricted-imports': [
-        'error',
+    const rule = (ctx, targets) => [
+      'error',
+      {
+        paths: denied[ctx].map((name) => ({
+          name,
+          message: `${ctx} may not import '${name}' — use db/${ctx} + its read-graph. See apps/merchant-api/ARCHITECTURE.md § Data access.`,
+        })),
+        patterns: targets.map((target) => ({
+          group: [`src/${target}`, `src/${target}/*`],
+          message: `${ctx} reaches ${target} only through its ports/ adapter, not directly — see apps/merchant-api/ARCHITECTURE.md § Cross-context communication`,
+        })),
+      },
+    ];
+
+    return Object.keys(denied).flatMap((ctx) => {
+      const edges = portOnly[ctx] ?? {};
+      const targets = Object.keys(edges);
+      return [
         {
-          patterns: [
-            {
-              group: ['src/sales', 'src/sales/*'],
-              message:
-                "reach sales through platform/dashboard/ports (SalesPort + SalesAdapter), not directly — see apps/merchant-api/ARCHITECTURE.md § Cross-context communication",
-            },
-          ],
+          files: [`src/${ctx}/**/*.ts`],
+          ignores: ['src/**/*.spec.ts'],
+          rules: { 'no-restricted-imports': rule(ctx, targets) },
         },
-      ],
-    },
-  },
+        ...targets.map((target) => ({
+          files: edges[target],
+          ignores: ['src/**/*.spec.ts'],
+          rules: {
+            'no-restricted-imports': rule(
+              ctx,
+              targets.filter((t) => t !== target),
+            ),
+          },
+        })),
+      ];
+    });
+  })(),
 );

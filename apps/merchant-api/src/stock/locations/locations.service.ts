@@ -1,4 +1,9 @@
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { DRIZZLE } from 'src/shared/database/database.constants';
@@ -59,6 +64,60 @@ export class LocationsService {
     ]);
 
     return { items, total, limit: take, offset: skip };
+  }
+
+  // a locationId taken from a request body must be the caller's own account's
+  // — the one check behind every write that places something at a location
+  // (stock movements, opening stock, POS devices). 400, not 404: the
+  // resource being written exists, one of its fields is bad.
+  async assertAccountLocation(
+    accountId: number,
+    locationId: number,
+  ): Promise<void> {
+    const [location] = await this.db
+      .select({ id: locationsTable.id })
+      .from(locationsTable)
+      .where(
+        and(
+          eq(locationsTable.id, locationId),
+          eq(locationsTable.accountId, accountId),
+        ),
+      );
+    if (!location) throw new BadRequestException('Location not found');
+  }
+
+  // where a new variant's opening stock is held. An explicit locationId must
+  // be the account's own. Omitted, the account's only location is used; with
+  // two or more, which one holds the stock is the merchant's call, not ours to
+  // guess (OS-696). With nowhere to put it — no location yet (OS-689), or an
+  // ambiguous one — stock 0 means no inventory row (null; no row reads as 0
+  // everywhere stock is summed), and anything more is a 400 rather than stock
+  // silently dropped.
+  async resolveOpeningStockLocation(
+    accountId: number,
+    stock: number,
+    locationId: number | undefined,
+  ): Promise<number | null> {
+    if (locationId !== undefined) {
+      await this.assertAccountLocation(accountId, locationId);
+      return locationId;
+    }
+
+    // two rows are enough to tell "exactly one" from "more than one"
+    const locations = await this.db
+      .select({ id: locationsTable.id })
+      .from(locationsTable)
+      .where(eq(locationsTable.accountId, accountId))
+      .limit(2);
+    if (locations.length === 1) return locations[0].id;
+    if (stock > 0) {
+      throw new BadRequestException(
+        locations.length === 0
+          ? 'Add a location before setting stock'
+          : 'Choose a location for the opening stock',
+      );
+    }
+    return null;
   }
 
   private listFilter(accountId: number, q?: string): SQL | undefined {

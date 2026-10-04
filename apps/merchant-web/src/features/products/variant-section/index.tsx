@@ -8,23 +8,27 @@ import {
   SheetDescription,
 } from "ui/sheet";
 import { PlusCircleIcon } from "lucide-react";
-import type { InventoryRecord, ProductOption, ProductVariant } from "merchant-sdk";
+import type { ProductOption, ProductVariant } from "merchant-sdk";
 import { DataTable } from "../../../components/data-table";
 import { useVariantOptions } from "./shared";
 import { VariantOptionForm } from "./variant-option-form";
-import { getVariantColumns } from "./variant-columns";
+import { getVariantColumns, type VariantStockAction } from "./variant-columns";
 import { EditVariantSheet } from "./edit-variant-sheet";
-import { useStockLocation } from "../../locations/locations.hooks";
+import { useStockLocations } from "../../locations/locations.hooks";
 import { AdjustStockSheet } from "../../inventory/components/adjust-stock-sheet";
+import type { AdjustStockTarget } from "../../inventory/components/adjust-stock-target";
 import { useProductInventoryQuery } from "../../inventory/inventory.hooks";
 import { usePermissions } from "../../auth/permission-context";
 
 export function VariantSection({
   productId,
   productName,
+  onViewStockByLocation,
 }: {
   productId: number;
   productName: string;
+  // opens the product's Inventory tab, which lists stock per location
+  onViewStockByLocation: () => void;
 }) {
   const { variants, productOptions, saveOption, removeOption, isSaving } =
     useVariantOptions(productId);
@@ -36,25 +40,7 @@ export function VariantSection({
   const [editingVariant, setEditingVariant] = useState<ProductVariant | null>(null);
 
   const navigate = useNavigate();
-  // single-location for now — once there's more than one, adjusting stock
-  // from here will need a location picker instead of a silent default
-  const { location: stockLocation, isLoaded: locationsLoaded } =
-    useStockLocation();
-
-  const adjustingRecord: InventoryRecord | null =
-    adjustingVariant && stockLocation
-      ? {
-          id: adjustingVariant.id,
-          variantId: adjustingVariant.id,
-          sku: adjustingVariant.sku,
-          productId,
-          productName,
-          locationId: stockLocation.id,
-          locationName: stockLocation.name,
-          stock: adjustingVariant.stock,
-          updatedAt: adjustingVariant.updatedAt,
-        }
-      : null;
+  const stockLocations = useStockLocations();
 
   // shares ProductView's cached query; the threshold rides on the inventory
   // response so staff without account:read still get Low badges (OS-668)
@@ -63,20 +49,53 @@ export function VariantSection({
   // is flagged, never a guessed "low"
   const lowStockThreshold = inventory?.lowStockThreshold ?? 0;
   const permissions = usePermissions();
+  const canReadInventory = permissions.has("inventory:read");
   const canWriteInventory = permissions.has("inventory:write");
   const canWriteProducts = permissions.has("products:write");
+  const { multiLocation } = stockLocations;
+
+  // a variant's stock at each location it could be adjusted at. With one
+  // location that's simply its total; with several it's read off the
+  // product's inventory rows — 0 where a row is missing, unless the rows were
+  // cut off by the page cap (or can't be read) and missing means unknown
+  const stockAt = (variant: ProductVariant, locationId: number) => {
+    if (!inventory) return null;
+    const row = inventory.items.find(
+      (r) => r.variantId === variant.id && r.locationId === locationId,
+    );
+    if (row) return row.stock;
+    return inventory.total <= inventory.items.length ? 0 : null;
+  };
+
+  const adjustingTarget: AdjustStockTarget | null = adjustingVariant && {
+    variantId: adjustingVariant.id,
+    productName,
+    sku: adjustingVariant.sku,
+    // with more than one location the merchant picks — none is preselected
+    // (OS-696)
+    locations: stockLocations.locations.map((l) => ({
+      id: l.id,
+      name: l.name,
+      stock: multiLocation
+        ? stockAt(adjustingVariant, l.id)
+        : adjustingVariant.stock,
+    })),
+  };
+
   const columns = getVariantColumns({
-    // an account has no location until the merchant creates one (OS-689);
-    // stock needs somewhere to live, so send them there first
-    onAdjustStock: (variant) =>
-      stockLocation
-        ? setAdjustingVariant(variant)
-        : navigate({ to: "/app/locations/create" }),
+    adjustStock: canWriteInventory
+      ? variantStockAction({
+          stockLocations,
+          openSheet: setAdjustingVariant,
+          createLocation: () => navigate({ to: "/app/locations/create" }),
+        })
+      : undefined,
     onEdit: (variant) => setEditingVariant(variant),
     lowStockThreshold,
-    // unknown while loading: assume there's one rather than flash the prompt
-    canAdjustStock: !locationsLoaded || !!stockLocation,
-    showAdjustStock: canWriteInventory,
+    // the row's number is the total across locations; the breakdown lives on
+    // the Inventory tab
+    onViewStockByLocation:
+      multiLocation && canReadInventory ? onViewStockByLocation : undefined,
     showEdit: canWriteProducts,
   });
 
@@ -103,7 +122,7 @@ export function VariantSection({
       <DataTable columns={columns} data={variants} />
 
       <AdjustStockSheet
-        record={adjustingRecord}
+        target={adjustingTarget}
         open={adjustingVariant !== null}
         onOpenChange={(open) => !open && setAdjustingVariant(null)}
       />
@@ -149,6 +168,31 @@ export function VariantSection({
       </Sheet>
     </section>
   );
+}
+
+// where a variant row's stock action leads. It never guesses a location: with
+// several, the sheet asks (OS-696)
+function variantStockAction(deps: {
+  stockLocations: ReturnType<typeof useStockLocations>;
+  openSheet: (variant: ProductVariant) => void;
+  createLocation: () => void;
+}): VariantStockAction {
+  const { stockLocations } = deps;
+  if (stockLocations.loadFailed) {
+    return {
+      label: "Locations didn't load — retry",
+      run: stockLocations.retry,
+    };
+  }
+  if (!stockLocations.isLoaded) {
+    return { label: "Adjust stock", run: () => {}, disabled: true };
+  }
+  if (stockLocations.noLocation) {
+    // an account has no location until the merchant creates one (OS-689);
+    // stock needs somewhere to live, so send them there first
+    return { label: "Add a location to adjust stock", run: deps.createLocation };
+  }
+  return { label: "Adjust stock", run: deps.openSheet };
 }
 
 function SheetOptionForm({

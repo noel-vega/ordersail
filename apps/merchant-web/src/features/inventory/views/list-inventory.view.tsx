@@ -20,6 +20,7 @@ import { PAGE_SIZE } from "../../../lib/list-search";
 import { useListLocationsQuery } from "../../locations/locations.hooks";
 import { useInventoryPageQuery } from "../inventory.hooks";
 import { AdjustStockSheet } from "../components/adjust-stock-sheet";
+import { targetFromInventoryRecord } from "../components/adjust-stock-target";
 import { StockLevel } from "../components/stock-level";
 import { usePermissions } from "../../auth/permission-context";
 
@@ -160,7 +161,7 @@ export function ListInventoryView() {
       />
 
       <AdjustStockSheet
-        record={adjustingRecord}
+        target={adjustingRecord && targetFromInventoryRecord(adjustingRecord)}
         open={adjustingRecord !== null}
         onOpenChange={(open) => !open && setAdjustingRecord(null)}
       />

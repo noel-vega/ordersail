@@ -4,11 +4,9 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"
-import type { Location } from "merchant-sdk"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { PAGE_SIZE, pageOffset, type ListSearch } from "../../lib/list-search"
-import { usePermissions } from "../auth/permission-context"
 
 // No `search` → the full list (capped at 100) for the location pickers. With a
 // `search` → one page for the Locations list route.
@@ -26,10 +24,9 @@ export function getListLocationsQueryOptions(search?: ListSearch) {
           : { limit: 100 },
       ),
     placeholderData: keepPreviousData,
-    // used as a filter picker on other pages (e.g. Inventory) where the user
-    // may hold that page's read perm but not locations:read — degrade to an
-    // empty picker instead of throwing the host page to the error boundary.
-    // The Locations route itself is guarded in beforeLoad (requirePermission).
+    // used as a picker on other pages (Inventory, POS devices, products) — a
+    // failed load degrades to an empty picker instead of throwing the host
+    // page to the error boundary
     throwOnError: false,
   })
 }
@@ -38,24 +35,25 @@ export function useListLocationsQuery(search?: ListSearch) {
   return useQuery(getListLocationsQueryOptions(search))
 }
 
-// The location a variant's stock lives at until there's a picker: the lowest
-// id, the same one the API puts opening stock in (products.service
-// openingStockLocationId). Not the list's first item — the list sorts by name,
-// so a rename would silently move it. `location` is undefined both while
-// loading and when the account has none (OS-689); `isLoaded` tells them apart.
-// Used on product pages, which need only products:read — so without
-// locations:read it doesn't fetch (no 403, OS-672) and stays not-loaded.
-export function useStockLocation() {
-  const canReadLocations = usePermissions().has("locations:read")
-  const locations = useQuery({
-    ...getListLocationsQueryOptions(),
-    enabled: canReadLocations,
-  })
-  const location = locations.data?.items.reduce<Location | undefined>(
-    (lowest, l) => (!lowest || l.id < lowest.id ? l : lowest),
-    undefined,
-  )
-  return { location, isLoaded: locations.isSuccess }
+// The locations a variant's stock can be placed at, for the product pages'
+// stock pickers. `locations` is the capped (100) picker list, for the merchant
+// to choose from, never to pick one from (OS-696). `noLocation` and
+// `multiLocation` come from the real `total`, so they hold past the cap, and
+// both stay false until the list has loaded. A failed load is `loadFailed`
+// with a `retry`, so callers can say so instead of sitting disabled.
+export function useStockLocations() {
+  const query = useQuery(getListLocationsQueryOptions())
+  const total = query.data?.total ?? 0
+  return {
+    isLoaded: query.isSuccess,
+    loadFailed: query.isError,
+    retry: () => void query.refetch(),
+    locations: query.data?.items ?? [],
+    // nowhere for stock to go yet (OS-689)
+    noLocation: query.isSuccess && total === 0,
+    // which location holds stock is the merchant's call (OS-696)
+    multiLocation: total > 1,
+  }
 }
 
 export function useCreateLocationMutation() {
