@@ -4,10 +4,11 @@ status: accepted
 
 # API errors use one Stripe-style envelope, keyed by a code from a single registry
 
-Nest's default error body has no stable identifier, so our clients match message strings. So
-every error from `merchant-api`, `storefront-api` and `pos-api` gets one Stripe-style body whose `code` comes from a single registry in `packages/errors`: developer
-experience for people building on the SDK is the deciding priority, and Stripe's is the error
-contract those developers already know.
+Nest's default error body has no stable identifier, so our clients match message strings.
+Instead, every error from `merchant-api`, `storefront-api` and `pos-api` gets one Stripe-style
+body whose `code` comes from a single registry in `packages/errors`. Developer experience for
+people building on the public `@ordersail/storefront-sdk` is the deciding priority, and Stripe's
+is the error contract those developers already know.
 
 ```json
 {
@@ -76,9 +77,9 @@ deprecation cycle.
 
   Each status our stack can produce gets its own generic code, so no two of them share one.
   Sharing would force a breaking change the day a client needs to tell them apart. Those
-  statuses are the HTTP exceptions in
-  `@nestjs/common` (except 418), plus 429 from the throttler: 400, 401, 403, 404, 405,
-  406, 408, 409, 410, 412, 413, 415, 421, 422, 429, 500, 501, 502, 503, 504 and 505. A status
+  statuses are the HTTP exceptions in `@nestjs/common` (except 418), plus 429 from the
+  throttler: 400, 401, 403, 404, 405, 406, 408, 409, 410, 412, 413, 415, 421, 422, 429, 500,
+  501, 502, 503, 504 and 505. A status
   outside that set is a bug in the thrower. It falls back to `bad_request` (4xx) or
   `internal_error` (5xx), sharing that code with 400 or 500, so the body is never invalid.
 - **`message`** is for people, and it may change at any time. On a 5xx it's always generic: no
