@@ -82,9 +82,9 @@ deprecation cycle.
   The registry has a generic code for each status in a fixed set: 400, 401, 403, 404, 405, 406,
   408, 409, 410, 412, 413, 415, 421, 422, 429, 500, 501, 502, 503, 504 and 505. No two statuses
   in the set share a code, because sharing would force a breaking change the day a client needs
-  to tell them apart. A status outside the set is a bug in the thrower. It falls back to `bad_request`
-  (4xx) or `internal_error` (5xx), sharing that code with 400 or 500, so the body is never
-  invalid. The fix for such a bug is to add the status to the set, with its own code.
+  to tell them apart. A status outside the set is a bug in the thrower. It falls back to
+  `bad_request` (4xx) or `internal_error` (5xx), sharing that code with 400 or 500, so the body
+  is never invalid. The fix for such a bug is to add the status to the set, with its own code.
 - **`message`** is for people, and it may change at any time. On a 5xx it's always generic: no
   upstream error text, no stack, no `cause`.
 - **`param`** is the request field that caused the error, when there is one.
