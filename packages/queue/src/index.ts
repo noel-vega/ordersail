@@ -1,5 +1,5 @@
 import { Redis } from "ioredis";
-import type { JobsOptions } from "bullmq";
+import { RedisConnection, createIORedisClient, type JobsOptions, type RedisOptions } from "bullmq";
 import type { JobLogContext } from "logging";
 
 export const QUEUE_NAMES = {
@@ -113,30 +113,42 @@ export const ORDER_JOB_OPTIONS: JobsOptions = {
   removeOnComplete: { age: 24 * 60 * 60, count: 1000 },
 };
 
-// hands BullMQ an already-constructed ioredis client rather than plain
-// connection options — under this monorepo's ESM setup, BullMQ's internal
-// *dynamic* `require('ioredis')` can't reliably resolve the package across
-// workspace symlinks, so we do the (static, ESM-safe) import here instead
-// and pass the instance directly. One call per app, at its single
-// BullModule.forRoot(...) site.
+// BullMQ builds and closes its own Redis clients from connection *options*,
+// through this factory. Its default path is a dynamic `require('ioredis')`,
+// which can't reliably resolve the package across this monorepo's workspace
+// symlinks under ESM — so hand it the statically imported constructor here
+// instead. Set on import: every app imports `queue` before BullModule
+// constructs a Queue or Worker.
 //
-// `maxRetriesPerRequest: null` is required by BullMQ on any client instance
-// it's handed directly (it validates for this at startup) — but on its own
-// that means a command issued while Redis is unreachable retries forever
-// and never rejects, so a caller's try/catch (EmailService) or an unguarded
-// await (CheckoutService, deliberately left to throw) would just hang
-// instead of failing. `commandTimeout` bounds that: it's opt-in and only
-// producer apps (merchant-api, storefront-api) pass it — apps/worker
-// calls this with no options, since its Worker duplicates this connection
-// for BullMQ's own blocking job-wait reads, which are supposed to sit idle
-// for a long time and must not be cut off by a command timeout.
-export function createRedisConnection(options?: { commandTimeout?: number }): Redis {
-  return new Redis({
+// Options rather than a pre-built client so the client's owner closes it:
+// BullMQ never closes a client it was handed, so a shared instance outlived
+// app.close() and kept every script and spec alive (OS-722). The cost is a
+// client per Queue/Worker instead of one shared one — a handful per app.
+RedisConnection.clientFactory = (options) => createIORedisClient(new Redis(options));
+
+// `maxRetriesPerRequest: null` keeps a command from being rejected after a
+// fixed number of reconnect attempts — BullMQ requires it on a Worker's
+// blocking connection — but on its own that means a command issued while
+// Redis is unreachable retries forever and never rejects, so a caller's
+// try/catch (EmailService) or an unguarded await (CheckoutService,
+// deliberately left to throw) would just hang instead of failing.
+// `commandTimeout` bounds that: it's opt-in and only producer apps
+// (merchant-api, storefront-api) pass it — apps/worker passes none, since
+// BullMQ's blocking job-wait reads are supposed to sit idle for a long time
+// and must not be cut off by a command timeout.
+export function redisConnectionOptions(options?: { commandTimeout?: number }): RedisOptions {
+  return {
     host: process.env.REDIS_HOST ?? "localhost",
     port: Number(process.env.REDIS_PORT ?? 6379),
     maxRetriesPerRequest: null,
     ...(options?.commandTimeout ? { commandTimeout: options.commandTimeout } : {}),
-  });
+  };
+}
+
+// A client of the app's own, outside BullMQ (each API's health check) — its
+// owner closes it on shutdown.
+export function createRedisConnection(options?: { commandTimeout?: number }): Redis {
+  return new Redis(redisConnectionOptions(options));
 }
 
 // `commandTimeout` above only bounds a command's round trip once ioredis has
