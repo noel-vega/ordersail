@@ -87,7 +87,7 @@ one line per HTTP request when the response finishes:
 
 - `route` is the matched **template**, never the raw URL or query string (they can carry IDs
   and tokens); `null` when nothing matched. Every API runs Nest on Fastify, which reports it via
-  `setRequestRoute()` from an `onRequest` hook in `main.ts`.
+  `trackRouteTemplates()` (an `onRequest` hook) in `main.ts`.
 - Level: 5xx `error`, 4xx `warn`, otherwise `info`. A client disconnect before the response
   finishes logs `aborted: true` at `warn` with **no** `res.statusCode` (none was sent).
 - `/health` is never logged.
