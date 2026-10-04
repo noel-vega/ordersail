@@ -83,8 +83,8 @@ An Nx-managed npm workspace monorepo.
 |---|---|---|
 | `apps/merchant-api` | Merchant-facing REST API, a modular monolith of six bounded contexts (see [its ARCHITECTURE.md](./apps/merchant-api/ARCHITECTURE.md)); also the single Stripe webhook endpoint | NestJS (Fastify), Drizzle, JWT |
 | `apps/merchant-web` | Merchant dashboard | React 19, TanStack Router/Query/Table, Tailwind |
-| `apps/storefront-api` | Public REST API consumed by storefronts — products, cart, checkout, customer accounts + orders | NestJS (Express), Drizzle, Stripe, Shippo |
-| `apps/pos-api` | REST API for the POS app — device pairing, catalog, in-person orders | NestJS (Express), Drizzle |
+| `apps/storefront-api` | Public REST API consumed by storefronts — products, cart, checkout, customer accounts + orders | NestJS (Fastify), Drizzle, Stripe, Shippo |
+| `apps/pos-api` | REST API for the POS app — device pairing, catalog, in-person orders | NestJS (Fastify), Drizzle |
 | `apps/pos` | Point-of-sale app — pairs to the account, builds orders, cash/card checkout | Expo / React Native |
 | `apps/worker` | Background job consumer — order processing + transactional email; exposes `GET /health` only | NestJS, BullMQ |
 | `apps/website` | Marketing site | Astro |
