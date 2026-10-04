@@ -258,7 +258,7 @@ module "ecs_service_merchant_api" {
   task_role_policy_json       = data.aws_iam_policy_document.merchant_api_task.json
   log_shipping                = local.log_shipping_enabled ? local.log_shipping : null
 
-  environment = [
+  environment = concat([
     { name = "NODE_ENV", value = "production" },
     { name = "PORT", value = "3000" },
     { name = "REDIS_HOST", value = local.redis_host },
@@ -284,9 +284,12 @@ module "ecs_service_merchant_api" {
     { name = "MINIO_BUCKET", value = module.secrets.product_images_bucket_name },
     { name = "MINIO_PUBLIC_BASE_URL", value = "https://${module.secrets.product_images_bucket_name}.s3.${var.region}.amazonaws.com" },
     { name = "MINIO_FORCE_PATH_STYLE", value = "false" },
-  ]
+    ], local.trace_export_enabled ? [
+    # trace export to Grafana Cloud Tempo (tracing.tf); unset, tracing is off
+    { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = var.otel_exporter_otlp_endpoint },
+  ] : [])
 
-  secrets = [
+  secrets = concat([
     { name = "DATABASE_URL", valueFrom = module.secrets.database_url_secret_arn },
     { name = "STAFF_JWT_SECRET", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:STAFF_JWT_SECRET::" },
     # AES-256-GCM key for TOTP secrets at rest (OS-316). Key must exist in
@@ -298,12 +301,16 @@ module "ecs_service_merchant_api" {
     # M9/OS-360. Key must exist in the ordersail/production/merchant-api secret JSON.
     { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:STRIPE_WEBHOOK_SECRET::" },
     { name = "SHIPPO_API_KEY", valueFrom = "${module.secrets.app_secret_arns["merchant-api"]}:SHIPPO_API_KEY::" },
-  ]
+    ], local.trace_export_enabled ? [
+    # `Authorization=Basic%20<base64(instance ID:token)>` — the whole header, in
+    # the OTLP env format; a `traces:write` token (tracing.tf)
+    { name = "OTEL_EXPORTER_OTLP_HEADERS", valueFrom = "${module.secrets.grafana_cloud_secret_arn}:OTEL_EXPORTER_OTLP_HEADERS::" },
+  ] : [])
 
-  secrets_manager_secret_arns = [
+  secrets_manager_secret_arns = concat([
     module.secrets.database_url_secret_arn,
     module.secrets.app_secret_arns["merchant-api"],
-  ]
+  ], local.trace_export_enabled ? [module.secrets.grafana_cloud_secret_arn] : [])
 }
 
 module "ecs_service_storefront_api" {

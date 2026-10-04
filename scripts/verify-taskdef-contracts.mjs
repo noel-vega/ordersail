@@ -191,6 +191,14 @@ function selfTest() {
       expect: 'Http_Passwd',
     },
     {
+      name: 'app secret key still empty (trace export rejected — merchant-api serves, traces go nowhere)',
+      container: {
+        secrets: [{ name: 'OTEL_EXPORTER_OTLP_HEADERS', valueFrom: 'arn:aws:secretsmanager:us-east-1:1:secret:ordersail/production/grafana-cloud-DDDD:OTEL_EXPORTER_OTLP_HEADERS::' }],
+      },
+      resolveKeys: () => new Map([['LOKI_TOKEN', false], ['OTEL_EXPORTER_OTLP_HEADERS', true]]),
+      expect: 'OTEL_EXPORTER_OTLP_HEADERS',
+    },
+    {
       name: 'log router listed before the app (deploys would retag the sidecar)',
       container: { name: 'log-router', firelensConfiguration: { type: 'fluentbit' } },
       resolveKeys: () => new Set(),

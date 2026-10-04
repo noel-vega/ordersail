@@ -13,10 +13,6 @@ const FINE_UNSET_IN_PRODUCTION: Record<string, string> = {
   MINIO_ACCESS_KEY: 'S3 credentials come from the ECS task role in production',
   MINIO_SECRET_KEY: 'S3 credentials come from the ECS task role in production',
   LOG_LEVEL: 'unset → info in production (docs/observability.md)',
-  OTEL_EXPORTER_OTLP_ENDPOINT:
-    'unset → tracing is off; production export is mapped in OS-97',
-  OTEL_EXPORTER_OTLP_HEADERS:
-    'only needed with OTEL_EXPORTER_OTLP_ENDPOINT; mapped as a secret in OS-97',
 };
 
 describe('merchant-api env → production task def', () => {

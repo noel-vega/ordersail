@@ -25,6 +25,10 @@ resource "aws_secretsmanager_secret" "app" {
 # --- grafana-cloud: credentials for shipping telemetry to Grafana Cloud. Keys:
 #   LOKI_TOKEN — access-policy token with `logs:write`; the FireLens log router
 #                sends it as the Loki basic-auth password (modules/ecs-service).
+#   OTEL_EXPORTER_OTLP_HEADERS — merchant-api's trace export auth, the whole
+#                header in the OTLP env format:
+#                `Authorization=Basic%20<base64("<instance ID>:<token>")>`, with
+#                a separate `traces:write` token (envs/production/tracing.tf).
 #
 # Unlike the app shells above, Terraform seeds this one — every key, each with
 # an empty value — so the key names are in the secret from the start rather
@@ -34,7 +38,10 @@ resource "aws_secretsmanager_secret" "app" {
 #
 #   aws secretsmanager put-secret-value --region us-east-1 \
 #     --secret-id ordersail/production/grafana-cloud \
-#     --secret-string '{"LOKI_TOKEN":"glc_..."}'
+#     --secret-string '{"LOKI_TOKEN":"glc_...","OTEL_EXPORTER_OTLP_HEADERS":"Authorization=Basic%20..."}'
+#
+# put-secret-value replaces the whole JSON: read it first (get-secret-value)
+# and send every key back, or setting one empties the others.
 #
 # `npm run verify:contracts` refuses a deploy while a key a task definition
 # uses is still empty. Adding a key later: add it here for the record, and to
@@ -46,7 +53,7 @@ resource "aws_secretsmanager_secret" "grafana_cloud" {
 
 resource "aws_secretsmanager_secret_version" "grafana_cloud" {
   secret_id     = aws_secretsmanager_secret.grafana_cloud.id
-  secret_string = jsonencode({ LOKI_TOKEN = "" })
+  secret_string = jsonencode({ LOKI_TOKEN = "", OTEL_EXPORTER_OTLP_HEADERS = "" })
 
   lifecycle {
     ignore_changes = [secret_string]
