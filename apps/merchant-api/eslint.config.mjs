@@ -205,6 +205,9 @@ export default tseslint.config(
         sales: ['src/platform/dashboard/ports/**', 'src/platform/dashboard/dashboard.module.ts'],
         stock: ['src/platform/pos-devices/ports/**', 'src/platform/pos-devices/pos-devices.module.ts'],
       },
+      sales: {
+        payments: ['src/sales/orders/ports/**', 'src/sales/orders/orders.module.ts'],
+      },
     };
 
     const rule = (ctx, targets) => [
