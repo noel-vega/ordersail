@@ -87,7 +87,7 @@ one line per HTTP request when the response finishes:
 
 - `route` is the matched **template**, never the raw URL or query string (they can carry IDs
   and tokens); `null` when nothing matched. Every API runs Nest on Fastify, which reports it via
-  `setRequestRoute()` from an `onRequest` hook in `main.ts`.
+  `trackRouteTemplates()` (an `onRequest` hook) in `main.ts`.
 - Level: 5xx `error`, 4xx `warn`, otherwise `info`. A client disconnect before the response
   finishes logs `aborted: true` at `warn` with **no** `res.statusCode` (none was sent).
 - `/health` is never logged.
@@ -174,7 +174,7 @@ once, as structured JSON, wherever it happens:
 
 - **`LoggingExceptionFilter`** (`app.useGlobalFilters`) — every exception that escapes a
   controller or guard. The filter only logs: today the response still comes from Nest's
-  `BaseExceptionFilter`, so Express and Fastify behave the same, and clients never see a stack.
+  `BaseExceptionFilter`, and clients never see a stack.
   The log line:
 
   | Status | Level | Line |
@@ -315,9 +315,8 @@ tag the same in `docker-compose.yml` and the module.
 ## Traces
 
 `packages/tracing` sets up OpenTelemetry for a service. The three APIs load it —
-`apps/<api>/src/instrument.ts`, the first import in each `main.ts` — each naming its web
-framework, which is Fastify for all three. The worker isn't
-traced yet (OS-704).
+`apps/<api>/src/instrument.ts`, the first import in each `main.ts`. All three run Nest on
+Fastify, so one instrumentation list covers them. The worker isn't traced yet (OS-704).
 
 **Off unless configured.** Nothing is registered or patched unless `OTEL_EXPORTER_OTLP_ENDPOINT`
 is set, so tests and CI run exactly as before. Local dev sets it to the local Tempo

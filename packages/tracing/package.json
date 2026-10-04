@@ -20,9 +20,7 @@
   "license": "ISC",
   "type": "module",
   "devDependencies": {
-    "@types/express": "^5.0.6",
     "@types/node": "^26.6.4",
-    "express": "^5.2.1",
     "fastify": "^5.11.3",
     "typescript": "^5.9.3"
   },
@@ -31,7 +29,6 @@
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.222.0",
     "@opentelemetry/instrumentation": "^0.222.0",
-    "@opentelemetry/instrumentation-express": "^0.70.0",
     "@opentelemetry/instrumentation-http": "^0.222.0",
     "@opentelemetry/instrumentation-pg": "^0.74.0",
     "@opentelemetry/resources": "^2.11.0",

@@ -29,7 +29,7 @@ flowchart TB
         storeapi["storefront-api<br/>NestJS/Fastify · :3001<br/><i>cart, checkout, customers</i>"]
     end
 
-    worker["worker<br/>NestJS · :3003<br/><i>BullMQ consumer:<br/>orders + email queues</i>"]
+    worker["worker<br/>NestJS/Fastify · :3003<br/><i>BullMQ consumer:<br/>orders + email queues</i>"]
 
     subgraph PKG["Shared workspace packages"]
         db["db<br/><i>Drizzle schema</i>"]

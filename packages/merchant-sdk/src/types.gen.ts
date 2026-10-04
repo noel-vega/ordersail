@@ -836,6 +836,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/locations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["LocationsController_findAll"];
+        put?: never;
+        post: operations["LocationsController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/locations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["LocationsController_remove"];
+        options?: never;
+        head?: never;
+        patch: operations["LocationsController_update"];
+        trace?: never;
+    };
     "/brands": {
         parameters: {
             query?: never;
@@ -930,38 +962,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/locations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["LocationsController_findAll"];
-        put?: never;
-        post: operations["LocationsController_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/locations/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["LocationsController_remove"];
-        options?: never;
-        head?: never;
-        patch: operations["LocationsController_update"];
         trace?: never;
     };
     "/orders": {
@@ -1776,6 +1776,53 @@ export interface components {
         ReorderProductImagesDto: {
             imageIds: number[];
         };
+        CreateLocationDto: {
+            addressLine1?: string | null;
+            addressLine2?: string | null;
+            addressCity?: string | null;
+            addressState?: string | null;
+            addressPostalCode?: string | null;
+            /** @enum {string|null} */
+            addressCountry?: "US" | null;
+            /** @example +12015550123 */
+            phone?: string | null;
+            name: string;
+        };
+        Location: {
+            id: number;
+            accountId: number;
+            name: string;
+            addressLine1: string | null;
+            addressLine2: string | null;
+            addressCity: string | null;
+            addressState: string | null;
+            addressPostalCode: string | null;
+            /** @example US */
+            addressCountry: string;
+            /** @example +12015550123 */
+            phone: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PaginatedLocations: {
+            items: components["schemas"]["Location"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        UpdateLocationDto: {
+            addressLine1?: string | null;
+            addressLine2?: string | null;
+            addressCity?: string | null;
+            addressState?: string | null;
+            addressPostalCode?: string | null;
+            /** @enum {string|null} */
+            addressCountry?: "US" | null;
+            /** @example +12015550123 */
+            phone?: string | null;
+        };
         CreateBrandDto: {
             name: string;
         };
@@ -1868,53 +1915,6 @@ export interface components {
             total: number;
             limit: number;
             offset: number;
-        };
-        CreateLocationDto: {
-            addressLine1?: string | null;
-            addressLine2?: string | null;
-            addressCity?: string | null;
-            addressState?: string | null;
-            addressPostalCode?: string | null;
-            /** @enum {string|null} */
-            addressCountry?: "US" | null;
-            /** @example +12015550123 */
-            phone?: string | null;
-            name: string;
-        };
-        Location: {
-            id: number;
-            accountId: number;
-            name: string;
-            addressLine1: string | null;
-            addressLine2: string | null;
-            addressCity: string | null;
-            addressState: string | null;
-            addressPostalCode: string | null;
-            /** @example US */
-            addressCountry: string;
-            /** @example +12015550123 */
-            phone: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        PaginatedLocations: {
-            items: components["schemas"]["Location"][];
-            total: number;
-            limit: number;
-            offset: number;
-        };
-        UpdateLocationDto: {
-            addressLine1?: string | null;
-            addressLine2?: string | null;
-            addressCity?: string | null;
-            addressState?: string | null;
-            addressPostalCode?: string | null;
-            /** @enum {string|null} */
-            addressCountry?: "US" | null;
-            /** @example +12015550123 */
-            phone?: string | null;
         };
         OrderListItem: {
             id: number;
@@ -3944,6 +3944,99 @@ export interface operations {
             };
         };
     };
+    LocationsController_findAll: {
+        parameters: {
+            query: {
+                limit: number;
+                offset: number;
+                /** @description name match */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedLocations"];
+                };
+            };
+        };
+    };
+    LocationsController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLocationDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Location"];
+                };
+            };
+        };
+    };
+    LocationsController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Location"];
+                };
+            };
+        };
+    };
+    LocationsController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLocationDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Location"];
+                };
+            };
+        };
+    };
     BrandsController_findAll: {
         parameters: {
             query: {
@@ -4204,99 +4297,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InventoryMovementRecord"];
-                };
-            };
-        };
-    };
-    LocationsController_findAll: {
-        parameters: {
-            query: {
-                limit: number;
-                offset: number;
-                /** @description name match */
-                q?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedLocations"];
-                };
-            };
-        };
-    };
-    LocationsController_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateLocationDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Location"];
-                };
-            };
-        };
-    };
-    LocationsController_remove: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Location"];
-                };
-            };
-        };
-    };
-    LocationsController_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateLocationDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Location"];
                 };
             };
         };

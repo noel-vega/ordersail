@@ -2370,6 +2370,170 @@
         ]
       }
     },
+    "/locations": {
+      "post": {
+        "operationId": "LocationsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Location"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Locations"
+        ]
+      },
+      "get": {
+        "operationId": "LocationsController_findAll",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "name match",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedLocations"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Locations"
+        ]
+      }
+    },
+    "/locations/{id}": {
+      "patch": {
+        "operationId": "LocationsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLocationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Location"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Locations"
+        ]
+      },
+      "delete": {
+        "operationId": "LocationsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Location"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Locations"
+        ]
+      }
+    },
     "/brands": {
       "post": {
         "operationId": "BrandsController_create",
@@ -2889,170 +3053,6 @@
         ],
         "tags": [
           "Inventory"
-        ]
-      }
-    },
-    "/locations": {
-      "post": {
-        "operationId": "LocationsController_create",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateLocationDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Location"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Locations"
-        ]
-      },
-      "get": {
-        "operationId": "LocationsController_findAll",
-        "parameters": [
-          {
-            "name": "limit",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "offset",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "description": "name match",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaginatedLocations"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Locations"
-        ]
-      }
-    },
-    "/locations/{id}": {
-      "patch": {
-        "operationId": "LocationsController_update",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateLocationDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Location"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Locations"
-        ]
-      },
-      "delete": {
-        "operationId": "LocationsController_remove",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Location"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Locations"
         ]
       }
     },
@@ -5700,6 +5700,177 @@
           "imageIds"
         ]
       },
+      "CreateLocationDto": {
+        "type": "object",
+        "properties": {
+          "addressLine1": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressLine2": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCity": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressState": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressPostalCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCountry": {
+            "type": "string",
+            "enum": [
+              "US"
+            ],
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+12015550123"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "Location": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "accountId": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "addressLine1": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressLine2": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCity": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressState": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressPostalCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCountry": {
+            "type": "string",
+            "example": "US"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+12015550123"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "name",
+          "addressLine1",
+          "addressLine2",
+          "addressCity",
+          "addressState",
+          "addressPostalCode",
+          "addressCountry",
+          "phone",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PaginatedLocations": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Location"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "UpdateLocationDto": {
+        "type": "object",
+        "properties": {
+          "addressLine1": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressLine2": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCity": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressState": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressPostalCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "addressCountry": {
+            "type": "string",
+            "enum": [
+              "US"
+            ],
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+12015550123"
+          }
+        }
+      },
       "CreateBrandDto": {
         "type": "object",
         "properties": {
@@ -6053,177 +6224,6 @@
           "limit",
           "offset"
         ]
-      },
-      "CreateLocationDto": {
-        "type": "object",
-        "properties": {
-          "addressLine1": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressLine2": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCity": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressState": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressPostalCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCountry": {
-            "type": "string",
-            "enum": [
-              "US"
-            ],
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true,
-            "example": "+12015550123"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ]
-      },
-      "Location": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "accountId": {
-            "type": "number"
-          },
-          "name": {
-            "type": "string"
-          },
-          "addressLine1": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressLine2": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCity": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressState": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressPostalCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCountry": {
-            "type": "string",
-            "example": "US"
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true,
-            "example": "+12015550123"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "accountId",
-          "name",
-          "addressLine1",
-          "addressLine2",
-          "addressCity",
-          "addressState",
-          "addressPostalCode",
-          "addressCountry",
-          "phone",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "PaginatedLocations": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Location"
-            }
-          },
-          "total": {
-            "type": "number"
-          },
-          "limit": {
-            "type": "number"
-          },
-          "offset": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "limit",
-          "offset"
-        ]
-      },
-      "UpdateLocationDto": {
-        "type": "object",
-        "properties": {
-          "addressLine1": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressLine2": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCity": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressState": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressPostalCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "addressCountry": {
-            "type": "string",
-            "enum": [
-              "US"
-            ],
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true,
-            "example": "+12015550123"
-          }
-        }
       },
       "OrderListItem": {
         "type": "object",

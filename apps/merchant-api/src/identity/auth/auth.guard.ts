@@ -7,11 +7,11 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { setLogContext } from 'logging';
 import { AuthenticatedUser, IS_PUBLIC_KEY } from 'src/shared/auth/decorators';
 
-type RequestWithUser = Request & { user?: AuthenticatedUser };
+type RequestWithUser = FastifyRequest & { user?: AuthenticatedUser };
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -55,7 +55,7 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 
-  private extractTokenFromHeader(request: Request): string | undefined {
+  private extractTokenFromHeader(request: FastifyRequest): string | undefined {
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
     return type === 'Bearer' ? token : undefined;
   }

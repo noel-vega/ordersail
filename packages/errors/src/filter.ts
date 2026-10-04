@@ -4,8 +4,8 @@ import { toErrorEnvelope } from './envelope.ts';
 
 // The global HTTP exception filter (registered by useApiErrors). Logs the
 // exception exactly as LoggingExceptionFilter does — same events, same levels —
-// then answers with the error envelope through the HTTP adapter, so Express and
-// Fastify behave the same. It never hands off to Nest's BaseExceptionFilter:
+// then answers with the error envelope through the HTTP adapter. It never
+// hands off to Nest's BaseExceptionFilter:
 // that would send Nest's own body and log a second, unstructured line.
 export class ApiErrorFilter implements ExceptionFilter {
   readonly #httpAdapter: HttpServer;

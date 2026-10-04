@@ -1,5 +1,6 @@
+import type { IncomingMessage } from 'node:http';
 import type { ArgumentsHost } from '@nestjs/common';
-import { configureLogging, type LogLevel } from './index.ts';
+import { configureLogging, setRequestRoute, type LogLevel } from './index.ts';
 
 // Routes the shared root into memory and returns the parsed lines. Specs only;
 // exported as `logging/test-helpers` for other packages' specs (packages/tracing,
@@ -29,8 +30,15 @@ export function fakeAdapter(options: { headersSent?: boolean } = {}) {
   return { adapter: adapter as any, replies, ended: () => ended };
 }
 
-// An 'http' ArgumentsHost around a fake request (Express-shaped, or Fastify's
-// `{ raw }` wrapper).
+// What a filter gets from Nest's Fastify adapter: the Node request under `raw`,
+// its route template recorded the way trackRouteTemplates does.
+export function fastifyRequest(route: string): { raw: IncomingMessage } {
+  const raw = { method: 'GET' } as IncomingMessage;
+  setRequestRoute(raw, route);
+  return { raw };
+}
+
+// An 'http' ArgumentsHost around a fake request (see fastifyRequest).
 export function httpHost(request: unknown): ArgumentsHost {
   const response = {};
   return {

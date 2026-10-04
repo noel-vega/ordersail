@@ -28,10 +28,12 @@ import {
   runWithLogContext,
   setLogContext,
   setRequestRoute,
+  trackRouteTemplates,
 } from './index.ts';
-import { captureLogs, fakeAdapter, httpHost } from './test-helpers.ts';
+import { captureLogs, fakeAdapter, fastifyRequest, httpHost } from './test-helpers.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import Fastify from 'fastify';
 
 describe('normalizeLogArgs', () => {
   it('pino style: object first, message second', () => {
@@ -360,10 +362,10 @@ describe('maskEmail', () => {
 
 describe('requestLoggingMiddleware', () => {
   // a bare node:http server standing in for Nest: the middleware runs first,
-  // then the handler — which can fake Express's req.route or call
-  // setRequestRoute like the Fastify hook does
+  // then the handler — which can call setRequestRoute like main.ts's Fastify
+  // onRequest hook does
   async function withServer(
-    handler: (req: IncomingMessage & { route?: { path: string } }, res: ServerResponse) => void,
+    handler: (req: IncomingMessage, res: ServerResponse) => void,
     run: (url: string) => Promise<void>,
   ) {
     const middleware = requestLoggingMiddleware();
@@ -387,7 +389,7 @@ describe('requestLoggingMiddleware', () => {
     const lines = captureLogs();
     await withServer(
       (req, res) => {
-        req.route = { path: '/orders/:id' };
+        setRequestRoute(req, '/orders/:id');
         res.end('ok');
       },
       async (url) => {
@@ -412,21 +414,6 @@ describe('requestLoggingMiddleware', () => {
     );
   });
 
-  it('prefers an explicitly reported route (Fastify)', async () => {
-    const lines = captureLogs();
-    await withServer(
-      (req, res) => {
-        setRequestRoute(req, '/products/:productId');
-        res.end();
-      },
-      async (url) => {
-        await (await fetch(`${url}/products/9`)).text();
-        await settle();
-        assert.equal(lines[0].route, '/products/:productId');
-      },
-    );
-  });
-
   it('logs unmatched 4xx at warn with a null route, 5xx at error', async () => {
     const lines = captureLogs();
     await withServer(
@@ -442,22 +429,6 @@ describe('requestLoggingMiddleware', () => {
         assert.equal(lines[0].route, null);
         assert.equal(lines[0].msg, 'GET (unmatched) 404');
         assert.equal(lines[1].level, 'error');
-      },
-    );
-  });
-
-  it('ignores a concrete baseUrl from a mounted router', async () => {
-    const lines = captureLogs();
-    await withServer(
-      (req, res) => {
-        Object.assign(req, { baseUrl: '/callbacks/secret-token', route: { path: '/complete' } });
-        res.end();
-      },
-      async (url) => {
-        await (await fetch(`${url}/callbacks/secret-token/complete`)).text();
-        await settle();
-        assert.equal(lines[0].route, '/complete');
-        assert.ok(!JSON.stringify(lines[0]).includes('secret-token'));
       },
     );
   });
@@ -556,17 +527,17 @@ describe('LoggingExceptionFilter', () => {
     return lines;
   }
 
-  const expressRequest = { method: 'GET', route: { path: '/orders/:id' } };
+  const request = fastifyRequest('/orders/:id');
 
   // the body our filter sends must be exactly what Nest's own filter sends
-  function assertSameResponseAsNest(exception: unknown, request: unknown = expressRequest) {
+  function assertSameResponseAsNest(exception: unknown, req: unknown = request) {
     const ours = fakeAdapter();
     const nest = fakeAdapter();
-    new LoggingExceptionFilter(ours.adapter).catch(exception, httpHost(request));
+    new LoggingExceptionFilter(ours.adapter).catch(exception, httpHost(req));
     // Nest's filter logs unknown errors through its own static logger — keep
     // that out of the lines under test
     const silence = captureAll();
-    new BaseExceptionFilter(nest.adapter).catch(exception, httpHost(request));
+    new BaseExceptionFilter(nest.adapter).catch(exception, httpHost(req));
     silence.length = 0;
     assert.deepEqual(ours.replies, nest.replies);
     return ours.replies[0];
@@ -576,7 +547,7 @@ describe('LoggingExceptionFilter', () => {
     const lines = captureAll();
     const { adapter, replies } = fakeAdapter();
     await runWithLogContext({ correlationId: 'req-1', accountId: 42 }, async () => {
-      new LoggingExceptionFilter(adapter).catch(new Error('db exploded'), httpHost(expressRequest));
+      new LoggingExceptionFilter(adapter).catch(new Error('db exploded'), httpHost(request));
     });
     assert.equal(lines.length, 1, 'exactly one line — Nest\'s own ExceptionsHandler line is suppressed');
     const [line] = lines;
@@ -608,8 +579,8 @@ describe('LoggingExceptionFilter', () => {
   it('401/403/429 log at warn with the reason and no stack', () => {
     const lines = captureAll();
     const filter = new LoggingExceptionFilter(fakeAdapter().adapter);
-    filter.catch(new UnauthorizedException(), httpHost(expressRequest));
-    filter.catch(new ForbiddenException('Missing permission'), httpHost(expressRequest));
+    filter.catch(new UnauthorizedException(), httpHost(request));
+    filter.catch(new ForbiddenException('Missing permission'), httpHost(request));
     assert.deepEqual(
       lines.map((line) => [line.level, line.event, line.status, line.reason, line.err]),
       [
@@ -622,8 +593,8 @@ describe('LoggingExceptionFilter', () => {
   it('other 4xx (validation, not found, http-errors) log at debug', () => {
     const lines = captureAll();
     const filter = new LoggingExceptionFilter(fakeAdapter().adapter);
-    filter.catch(new NotFoundException(), httpHost(expressRequest));
-    filter.catch(Object.assign(new Error('too large'), { statusCode: 413 }), httpHost(expressRequest));
+    filter.catch(new NotFoundException(), httpHost(request));
+    filter.catch(Object.assign(new Error('too large'), { statusCode: 413 }), httpHost(request));
     assert.deepEqual(lines.map((line) => [line.level, line.status]), [['debug', 404], ['debug', 413]]);
   });
 
@@ -631,18 +602,29 @@ describe('LoggingExceptionFilter', () => {
     const lines = captureAll();
     new LoggingExceptionFilter(fakeAdapter().adapter).catch(
       new InternalServerErrorException(),
-      httpHost(expressRequest),
+      httpHost(request),
     );
     assert.equal(lines[0].level, 'error');
     assert.equal(lines[0].event, 'http.unhandled_error');
   });
 
-  it('reads the route template off a Fastify request\'s raw Node request', () => {
+  // the real wiring: the onRequest hook keys the template on the raw request,
+  // and the filter reads it back off the request Fastify hands a handler
+  it('reads the route trackRouteTemplates recorded on a real Fastify request', async () => {
     const lines = captureAll();
-    const raw = { method: 'POST' } as IncomingMessage;
-    setRequestRoute(raw, '/webhooks/stripe');
-    new LoggingExceptionFilter(fakeAdapter().adapter).catch(new Error('x'), httpHost({ raw }));
-    assert.equal(lines[0].route, '/webhooks/stripe');
+    const app = Fastify();
+    trackRouteTemplates(app);
+    app.get('/orders/:id', async (req) => {
+      new LoggingExceptionFilter(fakeAdapter().adapter).catch(new Error('x'), httpHost(req));
+      return 'ok';
+    });
+    try {
+      await app.inject({ method: 'GET', url: '/orders/ord_SECRET?token=secret' });
+    } finally {
+      await app.close();
+    }
+    assert.equal(lines[0].route, '/orders/:id');
+    assert.ok(!JSON.stringify(lines).includes('SECRET'));
   });
 });
 
