@@ -104,7 +104,7 @@ variable "loki_user" {
 }
 
 variable "otel_exporter_otlp_endpoint" {
-  description = "Grafana Cloud OTLP gateway for merchant-api's traces — the base URL ending in /otlp, e.g. \"https://otlp-gateway-prod-us-east-2.grafana.net/otlp\" (grafana.com → your stack → OpenTelemetry → Configure). The exporter appends /v1/traces. Null leaves trace export off. See tracing.tf."
+  description = "Grafana Cloud OTLP gateway for the APIs' traces (merchant-api, storefront-api, pos-api) — the base URL ending in /otlp, e.g. \"https://otlp-gateway-prod-us-east-2.grafana.net/otlp\" (grafana.com → your stack → OpenTelemetry → Configure). The exporter appends /v1/traces. Null leaves trace export off. See tracing.tf."
   type        = string
   default     = null
 

@@ -9,18 +9,38 @@ import { ALLOWED_ATTRIBUTES, ALLOWED_EVENT_ATTRIBUTES, createInstrumentations } 
 // added, removed or loosened — update it only as a deliberate decision
 // (docs/observability.md → Tracing).
 describe('pinned instrumentations', () => {
-  const instrumentations = createInstrumentations();
-  const byName = (name: string): any => {
-    const found = instrumentations.find((instrumentation) => instrumentation.instrumentationName === name);
+  const instrumentations = createInstrumentations('fastify');
+  const byName = (name: string, list = instrumentations): any => {
+    const found = list.find((instrumentation) => instrumentation.instrumentationName === name);
     assert.ok(found, `${name} is not in the list`);
     return found.getConfig();
   };
 
-  it('is exactly HTTP, Fastify and pg', () => {
+  it('fastify: exactly HTTP, Fastify and pg', () => {
     assert.deepEqual(
       instrumentations.map((instrumentation) => instrumentation.instrumentationName),
       ['@opentelemetry/instrumentation-http', '@fastify/otel', '@opentelemetry/instrumentation-pg'],
     );
+  });
+
+  it('express: exactly HTTP, Express and pg — the same HTTP and pg settings', () => {
+    const express = createInstrumentations('express');
+    assert.deepEqual(
+      express.map((instrumentation) => instrumentation.instrumentationName),
+      ['@opentelemetry/instrumentation-http', '@opentelemetry/instrumentation-express', '@opentelemetry/instrumentation-pg'],
+    );
+    for (const name of ['@opentelemetry/instrumentation-http', '@opentelemetry/instrumentation-pg']) {
+      assert.deepEqual(
+        JSON.stringify(byName(name, express)),
+        JSON.stringify(byName(name)),
+        `${name} is configured differently for Express`,
+      );
+    }
+  });
+
+  it('Express: no spans of its own — every layer type ignored, there only for the route', () => {
+    const config = byName('@opentelemetry/instrumentation-express', createInstrumentations('express'));
+    assert.deepEqual([...config.ignoreLayersType].sort(), ['middleware', 'request_handler', 'router']);
   });
 
   it('HTTP: skips /health and background outbound calls', () => {

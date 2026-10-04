@@ -19,7 +19,7 @@ describe('export over OTLP', () => {
     await new Promise<void>((resolve) => collector.listen(0, '127.0.0.1', resolve));
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = `http://127.0.0.1:${(collector.address() as AddressInfo).port}`;
 
-    assert.equal(startTracing({ service: 'spec' }), true);
+    assert.equal(startTracing({ service: 'spec', framework: 'fastify' }), true);
     trace.getTracer('spec').startSpan('still in the batch').end();
     assert.equal(received.length, 0, 'the batch processor has not exported yet');
 
@@ -46,7 +46,7 @@ describe('export over OTLP', () => {
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = `http://127.0.0.1:${(blackHole.address() as AddressInfo).port}`;
 
     // the first test shut tracing down; starting again must give a live provider
-    assert.equal(startTracing({ service: 'spec' }), true);
+    assert.equal(startTracing({ service: 'spec', framework: 'fastify' }), true);
     const span = trace.getTracer('spec').startSpan('never delivered');
     assert.equal(span.isRecording(), true);
     span.end();

@@ -9,7 +9,7 @@ describe('tracing off', () => {
       if (value === undefined) delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
       else process.env.OTEL_EXPORTER_OTLP_ENDPOINT = value;
 
-      assert.equal(startTracing({ service: 'spec' }), false);
+      assert.equal(startTracing({ service: 'spec', framework: 'fastify' }), false);
       // no provider registered: the API hands out spans that record nothing
       const span = trace.getTracer('spec').startSpan('not recorded');
       assert.equal(span.isRecording(), false);

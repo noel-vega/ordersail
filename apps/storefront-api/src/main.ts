@@ -1,3 +1,6 @@
+// Must stay the first import: tracing patches http, express and pg as they
+// are loaded, so it has to run before anything below requires them.
+import './instrument';
 import { env } from './env'; // validates process.env before anything else loads
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
@@ -12,6 +15,7 @@ import {
   installShutdownHandler,
   requestLoggingMiddleware,
 } from 'logging';
+import { shutdownTracing } from 'tracing';
 import { AppModule } from './app.module';
 import { createSwaggerConfig } from './swagger.config';
 
@@ -27,7 +31,8 @@ async function bootstrap() {
   });
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   app.useGlobalFilters(new LoggingExceptionFilter(app.getHttpAdapter()));
-  installShutdownHandler(app);
+  // spans still in the batch are sent before the process exits on a deploy
+  installShutdownHandler(app, { afterClose: shutdownTracing });
 
   // correlation ID (reused from a well-formed inbound x-request-id or minted)
   // + one access log line per request — see docs/observability.md
