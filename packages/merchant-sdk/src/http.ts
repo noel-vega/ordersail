@@ -1,3 +1,5 @@
+import type { components } from "./types.gen.js";
+
 export type DoRequest<T> = () => Promise<{
   data?: T;
   error?: unknown;
@@ -10,59 +12,61 @@ export type DoFn = <T>(
   request: DoRequest<T>,
 ) => Promise<{ data?: T; error?: unknown; response: Response }>;
 
-// A non-2xx response from the API. `message` is the server's message when it
-// sends one (NestJS `{ message }`, string or string[]), otherwise a fallback.
+// The error body every merchant-api error carries (docs/adr/0001-api-error-envelope.md).
+export type ErrorBody = components["schemas"]["ErrorResponse"]["error"];
+// The registry's codes; branch on these, never on `message`.
+export type ApiErrorCode = ErrorBody["code"];
+export type ApiErrorType = ErrorBody["type"];
+
+// A non-2xx response from the API. `message` is the server's message (written
+// for people; never parse it), or a fallback when the response carried no
+// envelope (a proxy's or the network's error page).
 //
-// `code` is a machine-readable discriminator the API attaches to the
-// exceptions a caller has to *branch* on rather than just display. A plain
-// message can't be branched on without string matching, which breaks the
-// moment the wording changes.
+// `code` is what a caller branches on: `mfa_factor_required` to offer setting
+// up a factor, `invalid_access_token` to refresh, and so on. It's undefined
+// only when there was no envelope. `requestId` is the request's
+// x-request-id, worth quoting in a bug report.
 export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
+  readonly status: number;
+  readonly type: ApiErrorType | undefined;
+  readonly code: ApiErrorCode | undefined;
+  readonly param: string | undefined;
+  readonly docUrl: string | undefined;
+  readonly requestId: string | undefined;
+  readonly details: Record<string, unknown> | undefined;
+
+  constructor(message: string, status: number, body?: ErrorBody) {
     super(message);
     this.name = "ApiError";
+    this.status = status;
+    this.type = body?.type;
+    this.code = body?.code;
+    this.param = body?.param;
+    this.docUrl = body?.doc_url;
+    this.requestId = body?.request_id ?? undefined;
+    this.details = body?.details;
   }
 }
 
-// NestJS error bodies are `{ message, ...}` where message is a string or, from
-// the validation pipe, an array of them. A handler can also throw an object
-// literal, which is how `code` arrives.
-export function readErrorBody(body: unknown): {
-  message: string | undefined;
-  code: string | undefined;
-} {
-  if (!body || typeof body !== "object")
-    return { message: undefined, code: undefined };
-  const raw = "message" in body ? (body as { message: unknown }).message : undefined;
-  const message = Array.isArray(raw)
-    ? raw.join(", ")
-    : typeof raw === "string" && raw
-      ? raw
-      : undefined;
-  const rawCode = "code" in body ? (body as { code: unknown }).code : undefined;
-  return { message, code: typeof rawCode === "string" ? rawCode : undefined };
+// The envelope's `error` object, or undefined when the body isn't one.
+export function readErrorBody(body: unknown): ErrorBody | undefined {
+  if (!body || typeof body !== "object" || !("error" in body)) return undefined;
+  const error = (body as { error: unknown }).error;
+  if (!error || typeof error !== "object") return undefined;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  return typeof code === "string" && typeof message === "string"
+    ? (error as ErrorBody)
+    : undefined;
 }
 
-// Whether a 401 is one that re-authenticating could actually fix.
-//
-// AuthGuard rejects a missing, expired or invalid token with a bare
-// `new UnauthorizedException()`, which NestJS serializes with the single-word
-// message "Unauthorized". A 401 carrying any other message came from a
-// handler that authenticated the caller perfectly well and is refusing for a
-// reason of its own — a wrong current password, say. Refreshing the token and
-// replaying that request can only ever fail again, while spending a second
-// attempt from whatever rate limit the route carries.
-//
-// Keyed on the absence of a handler message rather than on matching any
-// particular wording, so rephrasing a handler's message can't silently turn
-// its 401 back into a retried one.
+// Whether a 401 is one that re-authenticating could actually fix: the auth
+// guard's `invalid_access_token` (missing, expired or invalid token). Any
+// other 401 — a wrong current password, say — came from a handler that
+// authenticated the caller and refused for a reason of its own; refreshing
+// and replaying it can only fail again, while spending a second attempt from
+// the route's rate limit.
 export function isStaleTokenError(body: unknown): boolean {
-  const { message } = readErrorBody(body);
-  return message === undefined || message === "Unauthorized";
+  return readErrorBody(body)?.code === "invalid_access_token";
 }
 
 // openapi-fetch resolves non-2xx as { error } rather than throwing. Resource
@@ -79,10 +83,10 @@ export function unwrap<T>(result: {
   response: Response;
 }): T {
   if (result.response.ok) return result.data as T;
-  const { message, code } = readErrorBody(result.error);
+  const body = readErrorBody(result.error);
   throw new ApiError(
-    message ?? `Request failed (${result.response.status})`,
+    body?.message ?? `Request failed (${result.response.status})`,
     result.response.status,
-    code,
+    body,
   );
 }

@@ -7,7 +7,12 @@ import {
   unwrap,
   type DoFn,
 } from "./http.js";
-export { ApiError } from "./http.js";
+export {
+  ApiError,
+  type ApiErrorCode,
+  type ApiErrorType,
+  type ErrorBody,
+} from "./http.js";
 import { createProductsResource } from "./resources/products.js";
 import { createBrandsResource } from "./resources/brands.js";
 import { createCategoriesResource } from "./resources/categories.js";
@@ -287,7 +292,7 @@ export class AdminClient {
     const request = () =>
       this.client.POST("/auth/verify-email", { body: params });
     let response = await request();
-    if (response.response.status === 401) {
+    if (response.response.status === 401 && isStaleTokenError(response.error)) {
       await this.refreshAccessToken();
       response = await request();
     }
@@ -341,14 +346,12 @@ export class AdminClient {
   // adopted because it carries claims recomputed from the database.
   // 401 = current password wrong, 400 = new password rejected by policy.
   //
-  // Hand-rolls its 401 retry instead of going through do(), like verifyEmail()
-  // does for its own reason: do() refreshes and retries *any* 401, and this
-  // route has two that mean opposite things. An expired access token is the
-  // guard's, and a refresh fixes it. A wrong current password is the
-  // handler's, and no refresh ever will — retrying it only spends a second
-  // attempt from this route's 3-per-60s bucket, so a user's *second* mistype
-  // came back 429 "Too Many Requests" instead of the field-level message the
-  // API goes out of its way to distinguish.
+  // This route has two 401s that mean opposite things. An expired access
+  // token is the guard's (`invalid_access_token`), and a refresh fixes it. A
+  // wrong current password is the handler's, and no refresh ever will —
+  // retrying it only spends a second attempt from this route's 3-per-60s
+  // bucket, so a user's *second* mistype came back 429 instead of the
+  // field-level message. isStaleTokenError tells them apart by code.
   async changePassword(params: components["schemas"]["ChangePasswordDto"]) {
     const request = () =>
       this.client.POST("/auth/me/change-password", { body: params });
@@ -391,30 +394,28 @@ export class AdminClient {
     request: () => Promise<{ data?: T; error?: unknown; response: Response }>,
   ) {
     let result = await request();
-    if (result.response.status === 401) {
+    // only the auth guard's stale-token 401 is worth a refresh; a handler's
+    // own 401 (a wrong password) would just fail again
+    if (result.response.status === 401 && isStaleTokenError(result.error)) {
       await this.refreshAccessToken();
       result = await request();
     }
     // A 403 is never a "normal" empty result, so surface it as an ApiError
     // for reads too — they'd otherwise return undefined data silently.
     //
-    // Two kinds reach here now. PermissionsGuard denies a missing permission
-    // with a plain message, and that gets the friendly generic string, since
-    // the server's wording isn't written for merchants. MfaFactorGuard
-    // (OS-492) denies an action that needs a passkey or authenticator and
-    // attaches a `code`, which the UI has to branch on to offer setting one
-    // up — so when a code is present, the server's own message and code are
-    // passed through intact.
-    //
-    // Before this, every 403 was flattened to the generic string, so the two
-    // were indistinguishable and the factor-required prompt would have shown
-    // "You don't have permission to do this." instead.
+    // A plain permission denial (`forbidden`: PermissionsGuard, the
+    // email-verified and MFA-enrollment guards) gets the friendly generic
+    // string, since the server's wording isn't written for merchants. A 403
+    // with a specific code — `mfa_factor_required` (MfaFactorGuard, OS-492) —
+    // is one the UI branches on, so the server's message and code pass
+    // through intact.
     if (result.response.status === 403) {
-      const { message, code } = readErrorBody(result.error);
+      const body = readErrorBody(result.error);
+      const specific = body !== undefined && body.code !== "forbidden";
       throw new ApiError(
-        code && message ? message : "You don't have permission to do this.",
+        specific ? body.message : "You don't have permission to do this.",
         403,
-        code,
+        body,
       );
     }
     return result;
