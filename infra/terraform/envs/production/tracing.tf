@@ -1,0 +1,24 @@
+# Trace export to Grafana Cloud Tempo — merchant-api only for now (OS-97;
+# the other services are OS-703/OS-704).
+#
+# Direct from the app's OpenTelemetry SDK to Grafana Cloud's OTLP gateway: no
+# collector sidecar. packages/tracing reads two standard variables, which only
+# merchant-api's task definition gets (main.tf), and only while this is on:
+#
+#   OTEL_EXPORTER_OTLP_ENDPOINT  var.otel_exporter_otlp_endpoint (plain)
+#   OTEL_EXPORTER_OTLP_HEADERS   `ordersail/production/grafana-cloud` secret,
+#                                key OTEL_EXPORTER_OTLP_HEADERS, on the app
+#                                container (LOKI_TOKEN stays on the log router)
+#
+# Off until var.otel_exporter_otlp_endpoint is set (terraform.tfvars), so this
+# file changes nothing in production on its own. Before turning it on, put the
+# header in the secret (modules/secrets has the command): `npm run
+# verify:contracts` blocks the deploy while the key is empty.
+#
+# A rejected token or an unreachable gateway never fails a request: it shows up
+# as `tracing.export_failed` warn lines in merchant-api's own logs, at most one
+# per export batch. docs/observability.md → "Traces missing in production".
+
+locals {
+  trace_export_enabled = var.otel_exporter_otlp_endpoint != null
+}

@@ -85,11 +85,14 @@ locals {
   # conditional needs both arms to be the same type.
   log_driver = var.log_shipping == null ? "awslogs" : "firelens"
 
-  # the execution role resolves the log driver's secretOptions too
-  execution_secret_arns = concat(
+  # the execution role resolves the log driver's secretOptions too. distinct:
+  # a service can read the log router's secret for its own container as well
+  # (merchant-api's trace export header), and listing it twice would only
+  # churn the policy.
+  execution_secret_arns = distinct(concat(
     var.secrets_manager_secret_arns,
     var.log_shipping == null ? [] : [var.log_shipping.token_secret_arn],
-  )
+  ))
 
   app_log_configuration = {
     awslogs = {

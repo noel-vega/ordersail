@@ -4,7 +4,17 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { HttpException, type ArgumentsHost, type LoggerService } from '@nestjs/common';
-import { context, isSpanContextValid, trace, TraceFlags, type Span, type SpanContext } from '@opentelemetry/api';
+import {
+  context,
+  diag,
+  DiagLogLevel,
+  isSpanContextValid,
+  trace,
+  TraceFlags,
+  type DiagLogger,
+  type Span,
+  type SpanContext,
+} from '@opentelemetry/api';
 import { getRPCMetadata } from '@opentelemetry/core';
 import { BaseExceptionFilter } from '@nestjs/core';
 import { destination, multistream, pino, type DestinationStream, type Logger as PinoLogger } from 'pino';
@@ -304,6 +314,7 @@ function devLogFile(service: string): string | undefined {
 // writes the JSON to a file for the local Grafana. Field contract:
 // docs/observability.md.
 export function configureLogging(options: ConfigureLoggingOptions): PinoLogger {
+  diag.setLogger(otelDiagLogger, { logLevel: DiagLogLevel.WARN, suppressOverrideMessage: true });
   const isProduction = options.nodeEnv === 'production';
   const loggerOptions = {
     level: options.level ?? (isProduction ? 'info' : 'debug'),
@@ -460,6 +471,49 @@ export class Logger implements LoggerService {
     const [fields, msg] = normalizeLogArgs(this.context, message, rest);
     root[level](fields, msg);
   }
+}
+
+// ---------------------------------------------------------------------------
+// OpenTelemetry's own diagnostics → the log stream
+// ---------------------------------------------------------------------------
+
+// With no diag logger the SDK reports nothing, so a rejected token or an
+// unreachable backend would drop every trace without a word. Registered by
+// configureLogging, at WARN and up: the exporter's retry chatter is info.
+//
+// A failed export arrives here once per batch, never once per request: the
+// BatchSpanProcessor hands the error to OpenTelemetry's global error handler,
+// which flattens it to a JSON string and passes it to diag.error. That is the
+// only diag.error source in this setup, hence the event name. It logs at
+// `warn`, not `error`: the service is fine, only its traces are lost
+// (docs/observability.md → Levels), and error lines feed the error alarm.
+const otelLogger = new Logger('OpenTelemetry');
+
+const otelDiagLogger: DiagLogger = {
+  error: (message) =>
+    otelLogger.warn({ event: 'tracing.export_failed', err: errorFromDiag(message) }, 'Trace export failed'),
+  warn: (message, ...args) => otelLogger.warn({ event: 'tracing.sdk_warned' }, [message, ...args].join(' ')),
+  info: () => undefined,
+  debug: () => undefined,
+  verbose: () => undefined,
+};
+
+// Rebuilds the error the global error handler flattened ({ name, message,
+// stack, code, … } as strings), so `err` goes through the usual serializer:
+// type, message, stack and code (an HTTP status for a rejected export).
+function errorFromDiag(message: string): Error {
+  let flat: Record<string, string> | undefined;
+  try {
+    const parsed: unknown = JSON.parse(message);
+    if (isPlainObject(parsed) && typeof parsed.message === 'string') flat = parsed as Record<string, string>;
+  } catch {
+    // not the handler's JSON: a plain message
+  }
+  if (!flat) return new Error(message);
+  const err = Object.assign(new Error(flat.message), flat.code === undefined ? {} : { code: flat.code });
+  if (flat.name) err.name = flat.name;
+  if (flat.stack) err.stack = flat.stack;
+  return err;
 }
 
 // ---------------------------------------------------------------------------

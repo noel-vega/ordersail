@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
+import { diag } from '@opentelemetry/api';
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -298,6 +299,28 @@ describe('error serialization', () => {
     new Logger('Fulfillments').error('Shippo failed', err);
     assert.equal(lines[0].err.message, 'boom');
     assert.equal(lines[0].err.body, undefined);
+  });
+});
+
+// The export-failure path end to end (a real exporter against a 401) is
+// covered in packages/tracing's export-failure.spec.ts.
+describe("OpenTelemetry's diagnostics", () => {
+  it('a diag warning is a warn line; the exporter\'s info chatter is dropped', () => {
+    const lines = captureLogs();
+    diag.info('Export failed with non-retryable error: Unauthorized');
+    diag.warn('Dropped 3 spans because maxQueueSize reached');
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].level, 'warn');
+    assert.equal(lines[0].context, 'OpenTelemetry');
+    assert.equal(lines[0].event, 'tracing.sdk_warned');
+    assert.equal(lines[0].msg, 'Dropped 3 spans because maxQueueSize reached');
+  });
+
+  it('a diag error that is not the flattened exception still logs, as its message', () => {
+    const lines = captureLogs();
+    diag.error('something broke');
+    assert.equal(lines[0].event, 'tracing.export_failed');
+    assert.equal(lines[0].err.message, 'something broke');
   });
 });
 

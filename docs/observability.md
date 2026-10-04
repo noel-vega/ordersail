@@ -315,12 +315,12 @@ tag the same in `docker-compose.yml` and the module.
 (`apps/merchant-api/src/instrument.ts`, the first import in `main.ts`).
 
 **Off unless configured.** Nothing is registered or patched unless `OTEL_EXPORTER_OTLP_ENDPOINT`
-is set, so tests, CI and production (until OS-97) run exactly as before. Local dev sets it
-to the local Tempo ([Traces in local Grafana](#traces-in-local-grafana)). Set it to the base URL
-of any OTLP/HTTP receiver — the exporter appends `/v1/traces` — and, for a hosted backend,
-put its credentials in `OTEL_EXPORTER_OTLP_HEADERS`. The app only ever reads those two
-standard variables, so a local Tempo (OS-701), Grafana Cloud (OS-97) or a collector are all
-just configuration.
+is set, so tests and CI run exactly as before. Local dev sets it to the local Tempo
+([Traces in local Grafana](#traces-in-local-grafana)); production sets it from Terraform
+([Traces in production](#traces-in-production-grafana-cloud)). Set it to the base URL of any
+OTLP/HTTP receiver — the exporter appends `/v1/traces` — and, for a hosted backend, put its
+credentials in `OTEL_EXPORTER_OTLP_HEADERS`. The app only ever reads those two standard
+variables, so a local Tempo, Grafana Cloud or a collector are all just configuration.
 
 **What a request records.** One trace per request:
 
@@ -332,7 +332,14 @@ POST /auth/signin            HTTP server span — method, route template, status
 ```
 
 Every span carries `service.name` and `deployment.environment`, the same two values as the
-Loki labels. All traces are kept (no sampling) while volume is low.
+Loki labels.
+
+**Sampling: every trace is kept**, parent-based — OpenTelemetry's default sampler, which the
+code leaves in place. Pre-launch traffic is small enough that 100% fits the Grafana Cloud free
+allowance, and a sampled-out trace is exactly the one you'd want when a bug comes in. Revisit
+(OS-110) when daily span volume approaches the free allowance, or when launch traffic starts.
+"Parent-based" means an inbound `traceparent` header decides: a caller that sends one marked
+not-sampled gets no trace (and its log lines no `trace_id`). Today no client sends one.
 
 **The request's context is on the HTTP server span.** `packages/logging` records the log
 context on it as well as on the line: `ordersail.correlation_id` when the request opens, then
@@ -418,7 +425,59 @@ Traces and logs link both ways in the local Grafana (`docker/grafana/provisionin
   query for that service's lines carrying the trace ID — the access line plus every service
   line of the request.
 
-Grafana Cloud gets the same links with OS-97.
+Grafana Cloud has the same two links, set up by hand ([Traces in production](#traces-in-production-grafana-cloud)).
+
+### Traces in production (Grafana Cloud)
+
+merchant-api exports straight from its OpenTelemetry SDK to Grafana Cloud's OTLP gateway — no
+collector sidecar (OS-97). The other services aren't traced yet (OS-703, OS-704).
+
+- **Endpoint**: `otel_exporter_otlp_endpoint` in `infra/terraform/envs/production/terraform.tfvars`,
+  the gateway's base URL ending in `/otlp`. Unset, merchant-api's task definition has no
+  `OTEL_*` variables and tracing is off (`infra/terraform/envs/production/tracing.tf`).
+- **Credentials**: the `OTEL_EXPORTER_OTLP_HEADERS` key of the `ordersail/production/grafana-cloud`
+  secret, mapped onto the app container. The value is the whole header in the OTLP env
+  format, `Authorization=Basic%20<base64("<instance ID>:<token>")>` — the `%20` is the space,
+  and the token is its own access-policy token with `traces:write` only (Loki's has
+  `logs:write`). `npm run verify:contracts` refuses a deploy while the key is empty.
+- **Find a trace**: Grafana Cloud → Explore → the Tempo data source:
+
+  ```traceql
+  { resource.service.name = "merchant-api" && resource.deployment.environment = "production" }
+  { span.ordersail.correlation_id = "PASTE-CORRELATION-ID" }
+  ```
+
+  Or start from a log line: expand it and follow **View trace**.
+
+**The links, set up by hand** in Grafana Cloud → Connections → Data sources (the local
+`docker/grafana/provisioning/datasources/` files are the reference; in the UI it's a single `$`):
+
+- Loki data source → **Derived fields**: name `trace_id`, regex `"trace_id":"(\w+)"`, internal
+  link to the Tempo data source, query `${__value.raw}`, label **View trace**.
+- Tempo data source → **Trace to logs**: the Loki data source, tag `service.name` → `service_name`,
+  span start shift `-1m`, end shift `1m`, custom query
+  `{${__tags}} |= "${__trace.traceId}" | json | trace_id = "${__trace.traceId}"`.
+
+**A failing export never fails a request.** Spans are sent in the background, in batches
+(every 5s, or every 512 spans). A batch that can't be delivered — a rejected token, an
+unreachable gateway, after the exporter's own retries for the latter — is dropped, and
+merchant-api logs one `warn` line for it, `event: "tracing.export_failed"`, `context:
+"OpenTelemetry"`, with `err.code` the HTTP status when there was one. One per batch, never one
+per request, and `warn` rather than `error`: the service is fine, only its traces are lost, so
+it doesn't feed the error-lines alarm. Other OpenTelemetry warnings (spans dropped because the
+queue filled) log as `tracing.sdk_warned`. `packages/logging` registers this as OpenTelemetry's
+diag logger in `configureLogging()`.
+
+**Traces missing in production** — check in this order:
+
+1. Is `otel_exporter_otlp_endpoint` set, applied, and deployed? The running task definition
+   should list `OTEL_EXPORTER_OTLP_ENDPOINT` (ECS console → the task → Environment).
+2. `npm run verify:contracts` — an empty or missing `OTEL_EXPORTER_OTLP_HEADERS` key fails it.
+3. merchant-api's logs: `{service_name="merchant-api"} | json | event="tracing.export_failed"`.
+   `err.code` `401`/`403` is the token (wrong value, wrong scope, or the header not in
+   `Authorization=Basic%20…` form); a timeout or `ECONNREFUSED` is the network or the endpoint.
+4. Traces with an HTTP span but no `pg` spans: the loading order (above).
+5. A `/health` request: never traced, on purpose.
 
 ## Tracing a bug
 
@@ -449,7 +508,9 @@ finds the trace directly:
 { span.ordersail.account_id = 42 && duration > 500ms }               # one tenant's slow requests
 ```
 
-**Production** — Grafana Cloud → Explore, Loki data source:
+**Production** — Grafana Cloud → Explore, Loki data source. A merchant-api line carries
+`trace_id`, and **View trace** opens the request's spans in Tempo; with only a correlation ID,
+the TraceQL above works there too ([Traces in production](#traces-in-production-grafana-cloud)).
 
 ```logql
 {deployment_environment="production"} | json | correlationId="PASTE-CORRELATION-ID"   # one request, API → worker
