@@ -148,6 +148,28 @@ module "ecs_cluster" {
   vpc_id      = module.network.vpc_id
 }
 
+# One shared internet-facing ALB for all three public APIs, routed by Host
+# (OS-705). merchant-api has no DNS record of its own: merchant-web's CloudFront
+# forwards the viewer Host (merchant.${domain}) on /api/* to this ALB.
+module "alb" {
+  source                      = "../../modules/alb-shared"
+  name_prefix                 = var.name_prefix
+  vpc_id                      = module.network.vpc_id
+  public_subnet_ids           = module.network.public_subnet_ids
+  ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
+  acm_certificate_arn         = aws_acm_certificate_validation.frontends.certificate_arn
+  alarm_critical_topic_arns   = [aws_sns_topic.alerts_critical.arn]
+  alarm_warning_topic_arns    = [aws_sns_topic.alerts_warning.arn]
+
+  services = {
+    "merchant-api"   = { host = "merchant.${var.domain_name}", port = 3000, priority = 10 }
+    "storefront-api" = { host = "api.${var.domain_name}", port = 3001, priority = 20 }
+    "pos-api"        = { host = "pos.${var.domain_name}", port = 3004, priority = 30 }
+  }
+}
+
+# Legacy per-API ALBs — unreferenced, kept for one apply so the shared ALB can be
+# smoke-tested before these go (OS-705 cutover step 1). Removed in the next commit.
 module "alb_merchant_api" {
   source                      = "../../modules/alb"
   name_prefix                 = var.name_prefix
@@ -174,8 +196,6 @@ module "alb_storefront_api" {
   alarm_warning_topic_arns    = [aws_sns_topic.alerts_warning.arn]
 }
 
-# Dedicated ALB, mirroring the other two public APIs. OS-63 (M7 cost pass)
-# revisits collapsing all three into one shared ALB with host-based routing.
 module "alb_pos_api" {
   source                      = "../../modules/alb"
   name_prefix                 = var.name_prefix
@@ -254,7 +274,7 @@ module "ecs_service_merchant_api" {
   ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
   container_port              = 3000
   image                       = "${module.ecr.repository_urls["merchant-api"]}:${var.bootstrap_image_tag}"
-  target_group_arn            = module.alb_merchant_api.target_group_arn
+  target_group_arn            = module.alb.target_group_arns["merchant-api"]
   task_role_policy_json       = data.aws_iam_policy_document.merchant_api_task.json
   log_shipping                = local.log_shipping_enabled ? local.log_shipping : null
 
@@ -318,7 +338,7 @@ module "ecs_service_storefront_api" {
   ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
   container_port              = 3001
   image                       = "${module.ecr.repository_urls["storefront-api"]}:${var.bootstrap_image_tag}"
-  target_group_arn            = module.alb_storefront_api.target_group_arn
+  target_group_arn            = module.alb.target_group_arns["storefront-api"]
   log_shipping                = local.log_shipping_enabled ? local.log_shipping : null
 
   environment = [
@@ -401,11 +421,11 @@ module "ecs_service_pos_api" {
   container_port              = 3004
   image                       = "${module.ecr.repository_urls["pos-api"]}:${var.bootstrap_image_tag}"
 
-  # module.alb_pos_api.target_group_arn is sourced through the HTTPS listener,
-  # so wiring it here implicitly orders this service after the listener exists
-  # (ECS's CreateService/UpdateService rejects a target group not yet attached
-  # to a load balancer).
-  target_group_arn = module.alb_pos_api.target_group_arn
+  # module.alb.target_group_arns is sourced through each listener rule, so
+  # wiring it here implicitly orders this service after its rule exists (ECS's
+  # CreateService/UpdateService rejects a target group not yet attached to a
+  # load balancer).
+  target_group_arn = module.alb.target_group_arns["pos-api"]
   log_shipping     = local.log_shipping_enabled ? local.log_shipping : null
 
   environment = [
@@ -432,7 +452,7 @@ module "frontend_merchant_web" {
   aliases                = ["merchant.${var.domain_name}"]
   acm_certificate_arn    = aws_acm_certificate_validation.frontends.certificate_arn
   enable_api_routing     = true
-  api_origin_domain_name = module.alb_merchant_api.dns_name
+  api_origin_domain_name = module.alb.dns_name
 
   # pre-launch gate (OS-363) — /api/* stays ungated (see the module)
   basic_auth_credentials = local.frontend_basic_auth_credentials

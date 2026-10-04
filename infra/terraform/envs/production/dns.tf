@@ -70,7 +70,7 @@ resource "aws_route53_record" "merchant_web_alias" {
 }
 
 # pos-api's public endpoint — the native Expo POS app hits this directly, so it
-# needs a real *.${domain} host (the ALB serves the wildcard cert; a raw
+# needs a real *.${domain} host (the shared ALB serves the wildcard cert and routes on this Host; a raw
 # *.elb.amazonaws.com name would fail TLS SNI).
 resource "aws_route53_record" "pos_api_alias" {
   zone_id = data.aws_route53_zone.this.zone_id
@@ -78,14 +78,14 @@ resource "aws_route53_record" "pos_api_alias" {
   type    = "A"
 
   alias {
-    name                   = module.alb_pos_api.dns_name
-    zone_id                = module.alb_pos_api.zone_id
+    name                   = module.alb.dns_name
+    zone_id                = module.alb.zone_id
     evaluate_target_health = true
   }
 }
 
 # storefront-api's public endpoint. Unlike merchant-api — which needs no record,
-# because merchant-web's CloudFront proxies /api/* straight to its ALB
+# because merchant-web's CloudFront proxies /api/* straight to the shared ALB
 # (`enable_api_routing`) — storefront-api is called directly, over the open
 # internet, by third-party storefronts hosted on arbitrary merchant-owned
 # domains. There is no distribution of ours to hide it behind, so it needs a real
@@ -102,8 +102,8 @@ resource "aws_route53_record" "storefront_api_alias" {
   type    = "A"
 
   alias {
-    name                   = module.alb_storefront_api.dns_name
-    zone_id                = module.alb_storefront_api.zone_id
+    name                   = module.alb.dns_name
+    zone_id                = module.alb.zone_id
     evaluate_target_health = true
   }
 }
