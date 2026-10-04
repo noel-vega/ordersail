@@ -733,7 +733,7 @@ const SECURITY_STATUSES = new Set([401, 403, 429]);
 // http-errors thrown by body parsers (413 payload too large, …). Same truthy
 // test as @nestjs/core's BaseExceptionFilter.isHttpError, so the status we log
 // and the body we send agree with what Nest itself would do.
-function httpErrorOf(exception: unknown): { statusCode: number; message: string } | undefined {
+export function httpErrorOf(exception: unknown): { statusCode: number; message: string } | undefined {
   const candidate = exception as { statusCode?: number; message?: string } | null;
   return candidate?.statusCode && candidate?.message
     ? { statusCode: candidate.statusCode, message: candidate.message }
@@ -745,16 +745,48 @@ function statusOf(exception: unknown): number {
   return httpErrorOf(exception)?.statusCode ?? 500;
 }
 
+const exceptionLogger = new Logger('ExceptionFilter');
+
+// The one log line for an exception that escaped an HTTP handler. Shared by
+// LoggingExceptionFilter and packages/errors' ApiErrorFilter, so the events and
+// levels stay the same whichever filter answers: a 5xx is an error with its
+// stack; a rejected request is a reason, at warn for 401/403/429 and debug
+// otherwise. Call it only for an 'http' host.
+//
+// `status` is the status the response actually carries, when the caller
+// decided it (ApiErrorFilter answers an untrusted error as a 500 even if it
+// carries a statusCode); without it, the status is read off the exception.
+export function logHttpException(exception: unknown, host: ArgumentsHost, status = statusOf(exception)): void {
+  const request = host.switchToHttp().getRequest<IncomingMessage & { raw?: IncomingMessage }>();
+  // Fastify wraps the Node request; Express hands it over as is
+  const route = resolveRoute(request.raw ?? request);
+
+  if (status >= 500) {
+    exceptionLogger.error(
+      { err: exception, event: 'http.unhandled_error', route, status },
+      'Unhandled error',
+    );
+    return;
+  }
+  // a rejected request isn't an error in the code — no stack, just why
+  const fields = {
+    event: 'http.request_rejected',
+    route,
+    status,
+    reason: exception instanceof Error ? exception.message : String(exception),
+  };
+  if (SECURITY_STATUSES.has(status)) exceptionLogger.warn(fields, 'Request rejected');
+  else exceptionLogger.debug(fields, 'Request rejected');
+}
+
 // Global HTTP exception filter (register with app.useGlobalFilters in main.ts).
 // Logs every exception once, with the request's context and route template,
 // then hands the response to Nest's BaseExceptionFilter so bodies are
 // byte-for-byte what they were — on Express and Fastify alike, since the base
 // class answers through the HTTP adapter. Stack traces never reach clients.
 export class LoggingExceptionFilter extends BaseExceptionFilter {
-  private readonly logger = new Logger('ExceptionFilter');
-
   override catch(exception: unknown, host: ArgumentsHost): void {
-    if (host.getType() === 'http') this.log(exception, host);
+    if (host.getType() === 'http') logHttpException(exception, host);
     super.catch(exception, host);
   }
 
@@ -777,29 +809,5 @@ export class LoggingExceptionFilter extends BaseExceptionFilter {
     } else {
       applicationRef.end(response);
     }
-  }
-
-  private log(exception: unknown, host: ArgumentsHost): void {
-    const request = host.switchToHttp().getRequest<IncomingMessage & { raw?: IncomingMessage }>();
-    // Fastify wraps the Node request; Express hands it over as is
-    const route = resolveRoute(request.raw ?? request);
-    const status = statusOf(exception);
-
-    if (status >= 500) {
-      this.logger.error(
-        { err: exception, event: 'http.unhandled_error', route, status },
-        'Unhandled error',
-      );
-      return;
-    }
-    // a rejected request isn't an error in the code — no stack, just why
-    const fields = {
-      event: 'http.request_rejected',
-      route,
-      status,
-      reason: exception instanceof Error ? exception.message : String(exception),
-    };
-    if (SECURITY_STATUSES.has(status)) this.logger.warn(fields, 'Request rejected');
-    else this.logger.debug(fields, 'Request rejected');
   }
 }

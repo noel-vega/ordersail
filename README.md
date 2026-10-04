@@ -98,6 +98,7 @@ An Nx-managed npm workspace monorepo.
 | `packages/storage` | S3/MinIO client wrapper — presigned uploads, public-read bucket | AWS SDK v3 |
 | `packages/email` / `email-templates` | Nodemailer transport + React Email templates | nodemailer, react-email |
 | `packages/logging` | pino logger + correlation-ID context shared by the NestJS apps (see `docs/observability.md`) | pino |
+| `packages/errors` | The API error envelope ([ADR 0001](./docs/adr/0001-api-error-envelope.md)) — code registry, `ApiException`, global filter, OpenAPI `ErrorResponse`; not wired into the APIs yet | NestJS |
 | `packages/tracing` | OpenTelemetry setup — pinned instrumentations (HTTP, Fastify, pg), span-attribute allow-list, OTLP export; off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set (see `docs/observability.md`) | OpenTelemetry |
 | `packages/seed` | Local dev seed — demo "Sneaker Depot" catalog + images | tsx |
 | `packages/ui` | Shared component library used by both React apps | React, Tailwind |
