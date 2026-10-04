@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { APP_GUARD, Reflector } from "@nestjs/core";
-import type { Request } from "express";
+import type { FastifyRequest } from "fastify";
 import { and, eq, isNotNull, isNull, posDevicesTable, type db as Db } from "db";
 import { setLogContext } from "logging";
 import { DRIZZLE } from "../../database/database.constants";
@@ -34,7 +34,7 @@ export class PosDeviceGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context.switchToHttp().getRequest<FastifyRequest>();
     const token = request.headers[DEVICE_TOKEN_HEADER];
     if (!token || Array.isArray(token)) {
       throw new UnauthorizedException();
@@ -60,7 +60,7 @@ export class PosDeviceGuard implements CanActivate {
       accountId: device.accountId,
       locationId: device.locationId,
     };
-    (request as Request & { posDevice: PosDeviceContext }).posDevice =
+    (request as FastifyRequest & { posDevice: PosDeviceContext }).posDevice =
       posDevice;
     setLogContext({
       deviceId: posDevice.deviceId,
