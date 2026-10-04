@@ -52,3 +52,54 @@ moved {
   from = module.elasticache.aws_cloudwatch_metric_alarm.connections
   to   = module.elasticache[0].aws_cloudwatch_metric_alarm.connections
 }
+
+# OS-705: the per-API ALBs collapsed into one shared module.alb. These alarms
+# keep their names, so they move rather than destroy+create — CloudWatch upserts
+# alarms by name, so a destroy of the old address would delete the alarm the new
+# one just wrote. Also carries over their armed/disarmed state. Safe to delete
+# once applied everywhere.
+
+moved {
+  from = module.alb_merchant_api.aws_cloudwatch_metric_alarm.error_rate
+  to   = module.alb.aws_cloudwatch_metric_alarm.error_rate["merchant-api"]
+}
+
+moved {
+  from = module.alb_merchant_api.aws_cloudwatch_metric_alarm.p95_latency
+  to   = module.alb.aws_cloudwatch_metric_alarm.p95_latency["merchant-api"]
+}
+
+moved {
+  from = module.alb_merchant_api.aws_cloudwatch_metric_alarm.unhealthy_hosts
+  to   = module.alb.aws_cloudwatch_metric_alarm.unhealthy_hosts["merchant-api"]
+}
+
+moved {
+  from = module.alb_storefront_api.aws_cloudwatch_metric_alarm.error_rate
+  to   = module.alb.aws_cloudwatch_metric_alarm.error_rate["storefront-api"]
+}
+
+moved {
+  from = module.alb_storefront_api.aws_cloudwatch_metric_alarm.p95_latency
+  to   = module.alb.aws_cloudwatch_metric_alarm.p95_latency["storefront-api"]
+}
+
+moved {
+  from = module.alb_storefront_api.aws_cloudwatch_metric_alarm.unhealthy_hosts
+  to   = module.alb.aws_cloudwatch_metric_alarm.unhealthy_hosts["storefront-api"]
+}
+
+moved {
+  from = module.alb_pos_api.aws_cloudwatch_metric_alarm.error_rate
+  to   = module.alb.aws_cloudwatch_metric_alarm.error_rate["pos-api"]
+}
+
+moved {
+  from = module.alb_pos_api.aws_cloudwatch_metric_alarm.p95_latency
+  to   = module.alb.aws_cloudwatch_metric_alarm.p95_latency["pos-api"]
+}
+
+moved {
+  from = module.alb_pos_api.aws_cloudwatch_metric_alarm.unhealthy_hosts
+  to   = module.alb.aws_cloudwatch_metric_alarm.unhealthy_hosts["pos-api"]
+}

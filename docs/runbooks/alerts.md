@@ -84,10 +84,10 @@ Each row is added by its issue's PR. `→` is the topic the alarm notifies.
 |---|---|---|---|
 | _ECS RunningTaskCount_ | OS-76 `modules/ecs-service` | running < desired for N min (per service) | critical |
 | _ECS container-exit rate_ | OS-76 | ≥3 "Essential container … exited" in 15 min | critical |
-| _ALB 5xx rate_ | OS-77 `modules/alb` | target+ELB 5xx / requests > 5% for 5 min | critical |
-| _ALB 5xx absolute_ | OS-77 | ELB 5xx > 10 in 5 min | warning |
-| _ALB p95 latency_ | OS-77 | `TargetResponseTime` p95 > threshold for 5 min | warning |
-| _ALB unhealthy hosts_ | OS-77 | `UnHealthyHostCount` > 0 for 3 min | critical |
+| _ALB 5xx rate_ `<svc>-alb-error-rate` | OS-77 `modules/alb` | target 5xx / requests > 5% for 5 min (per target group) | critical |
+| _ALB ELB 5xx_ `api-alb-5xx` | OS-77, OS-705 | LB-generated 5xx ≥ 5 in 5 min — one alarm for the shared ALB (the metric has no target-group dimension) | critical |
+| _ALB p95 latency_ `<svc>-alb-p95-latency` | OS-77 | `TargetResponseTime` p95 > threshold for 10 min (per target group) | warning |
+| _ALB unhealthy hosts_ `<svc>-alb-unhealthy-hosts` | OS-77 | `UnHealthyHostCount` > 0 for 3 min (per target group) | critical |
 | _RDS free storage_ | OS-78 `modules/rds` | `FreeStorageSpace` < GB floor | critical |
 | _RDS CPU / memory / connections_ | OS-78 | sustained high | warning |
 | _ElastiCache memory %_ | OS-79 `modules/elasticache` | `DatabaseMemoryUsagePercentage` > 80% for 10 min | critical |

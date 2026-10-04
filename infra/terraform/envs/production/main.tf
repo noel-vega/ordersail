@@ -152,7 +152,7 @@ module "ecs_cluster" {
 # (OS-705). merchant-api has no DNS record of its own: merchant-web's CloudFront
 # forwards the viewer Host (merchant.${domain}) on /api/* to this ALB.
 module "alb" {
-  source                      = "../../modules/alb-shared"
+  source                      = "../../modules/alb"
   name_prefix                 = var.name_prefix
   vpc_id                      = module.network.vpc_id
   public_subnet_ids           = module.network.public_subnet_ids
@@ -166,47 +166,6 @@ module "alb" {
     "storefront-api" = { host = "api.${var.domain_name}", port = 3001, priority = 20 }
     "pos-api"        = { host = "pos.${var.domain_name}", port = 3004, priority = 30 }
   }
-}
-
-# Legacy per-API ALBs — unreferenced, kept for one apply so the shared ALB can be
-# smoke-tested before these go (OS-705 cutover step 1). Removed in the next commit.
-module "alb_merchant_api" {
-  source                      = "../../modules/alb"
-  name_prefix                 = var.name_prefix
-  name                        = "merchant-api"
-  vpc_id                      = module.network.vpc_id
-  public_subnet_ids           = module.network.public_subnet_ids
-  container_port              = 3000
-  ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
-  acm_certificate_arn         = aws_acm_certificate_validation.frontends.certificate_arn
-  alarm_critical_topic_arns   = [aws_sns_topic.alerts_critical.arn]
-  alarm_warning_topic_arns    = [aws_sns_topic.alerts_warning.arn]
-}
-
-module "alb_storefront_api" {
-  source                      = "../../modules/alb"
-  name_prefix                 = var.name_prefix
-  name                        = "storefront-api"
-  vpc_id                      = module.network.vpc_id
-  public_subnet_ids           = module.network.public_subnet_ids
-  container_port              = 3001
-  ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
-  acm_certificate_arn         = aws_acm_certificate_validation.frontends.certificate_arn
-  alarm_critical_topic_arns   = [aws_sns_topic.alerts_critical.arn]
-  alarm_warning_topic_arns    = [aws_sns_topic.alerts_warning.arn]
-}
-
-module "alb_pos_api" {
-  source                      = "../../modules/alb"
-  name_prefix                 = var.name_prefix
-  name                        = "pos-api"
-  vpc_id                      = module.network.vpc_id
-  public_subnet_ids           = module.network.public_subnet_ids
-  container_port              = 3004
-  ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
-  acm_certificate_arn         = aws_acm_certificate_validation.frontends.certificate_arn
-  alarm_critical_topic_arns   = [aws_sns_topic.alerts_critical.arn]
-  alarm_warning_topic_arns    = [aws_sns_topic.alerts_warning.arn]
 }
 
 # merchant-api's task role: direct S3 access to the product-images

@@ -1,12 +1,21 @@
-# Internet-facing ALB with an HTTPS listener (var.acm_certificate_arn — ALB certs must be
-# regional, and this ALB shares the wildcard cert already validated in this region for the
-# frontends). The HTTP listener exists only to 301-redirect to HTTPS, never to forward traffic
-# in the clear. Instantiated once per public API — deliberately two ALBs rather than one shared
-# ALB with path routing, to avoid adding a path prefix to every route in either NestJS app.
+# One internet-facing ALB shared by every public API, routed by Host header
+# (OS-705). It used to be one ALB per API, chosen to avoid adding a path prefix
+# to every route in each NestJS app — a cost only path-based routing has.
+# Host-based routing needs no app change, and two fewer ALBs saves ~$45–50/mo.
+#
+# HTTPS listener: the wildcard cert (var.acm_certificate_arn — ALB certs must be
+# regional, so this is the one already validated here for the frontends). Each
+# entry in var.services gets its own target group, a host-header listener rule,
+# and ingress into the shared ECS-tasks SG on its port. Anything else — the raw
+# *.elb.amazonaws.com name, an unknown Host — gets the default fixed 404. That
+# is hygiene, not a security boundary: any client can send any Host header.
+#
+# The HTTP listener exists only to 301-redirect to HTTPS, never to forward
+# traffic in the clear.
 
 resource "aws_security_group" "alb" {
-  name        = "${var.name_prefix}-${var.name}-alb"
-  description = "Public ALB for ${var.name}"
+  name        = "${var.name_prefix}-api-alb"
+  description = "Shared public ALB for the APIs"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -32,28 +41,11 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_lb" "this" {
-  name               = "${var.name_prefix}-${var.name}"
+  name               = "${var.name_prefix}-api"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = var.public_subnet_ids
-}
-
-resource "aws_lb_target_group" "this" {
-  name        = "${var.name_prefix}-${var.name}"
-  port        = var.container_port
-  protocol    = "HTTP"
-  vpc_id      = var.vpc_id
-  target_type = "ip"
-
-  health_check {
-    path                = "/health"
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    interval            = 15
-    timeout             = 5
-    matcher             = "200"
-  }
 }
 
 resource "aws_lb_listener" "https" {
@@ -64,8 +56,12 @@ resource "aws_lb_listener" "https" {
   certificate_arn   = var.acm_certificate_arn
 
   default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.this.arn
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Not Found"
+      status_code  = "404"
+    }
   }
 }
 
@@ -84,11 +80,52 @@ resource "aws_lb_listener" "http_redirect" {
   }
 }
 
+# `-tg` suffix: the per-API ALBs' target groups were named `${prefix}-${name}`,
+# and TG names are unique per region — the two sets coexisted during cutover.
+resource "aws_lb_target_group" "this" {
+  for_each = var.services
+
+  name        = "${var.name_prefix}-${each.key}-tg"
+  port        = each.value.port
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    path                = "/health"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    interval            = 15
+    timeout             = 5
+    matcher             = "200"
+  }
+}
+
+resource "aws_lb_listener_rule" "this" {
+  for_each = var.services
+
+  listener_arn = aws_lb_listener.https.arn
+  priority     = each.value.priority
+
+  condition {
+    host_header {
+      values = [each.value.host]
+    }
+  }
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this[each.key].arn
+  }
+}
+
 # lets the ecs-service module's own SG allow ingress from exactly this ALB
 resource "aws_security_group_rule" "ecs_tasks_ingress_from_alb" {
+  for_each = var.services
+
   type                     = "ingress"
-  from_port                = var.container_port
-  to_port                  = var.container_port
+  from_port                = each.value.port
+  to_port                  = each.value.port
   protocol                 = "tcp"
   security_group_id        = var.ecs_tasks_security_group_id
   source_security_group_id = aws_security_group.alb.id
