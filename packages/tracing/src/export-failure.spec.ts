@@ -60,7 +60,7 @@ describe('a failing export', () => {
     process.env.OTEL_EXPORTER_OTLP_HEADERS = `Authorization=Basic%20${SECRET}`;
 
     const lines = captureLogs();
-    assert.equal(startTracing({ service: 'spec', framework: 'fastify' }), true);
+    assert.equal(startTracing({ service: 'spec' }), true);
     const tracer = trace.getTracer('spec');
     for (let i = 0; i < 50; i++) tracer.startSpan(`request ${i}`).end();
 
@@ -95,7 +95,7 @@ describe('a failing export', () => {
     process.env.OTEL_EXPORTER_OTLP_TIMEOUT = '300';
 
     const lines = captureLogs();
-    assert.equal(startTracing({ service: 'spec', framework: 'fastify' }), true);
+    assert.equal(startTracing({ service: 'spec' }), true);
     const tracer = trace.getTracer('spec');
     for (let i = 0; i < 50; i++) tracer.startSpan(`request ${i}`).end();
 

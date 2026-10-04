@@ -86,7 +86,7 @@ An Nx-managed npm workspace monorepo.
 | `apps/storefront-api` | Public REST API consumed by storefronts — products, cart, checkout, customer accounts + orders | NestJS (Fastify), Drizzle, Stripe, Shippo |
 | `apps/pos-api` | REST API for the POS app — device pairing, catalog, in-person orders | NestJS (Fastify), Drizzle |
 | `apps/pos` | Point-of-sale app — pairs to the account, builds orders, cash/card checkout | Expo / React Native |
-| `apps/worker` | Background job consumer — order processing + transactional email; exposes `GET /health` only | NestJS, BullMQ |
+| `apps/worker` | Background job consumer — order processing + transactional email; exposes `GET /health` only | NestJS (Fastify), BullMQ |
 | `apps/website` | Marketing site | Astro |
 | `packages/db` | Shared Postgres schema & migrations (single source of truth for every API) | Drizzle ORM, Postgres 17 |
 | `packages/merchant-sdk` / `storefront-sdk` / `pos-sdk` | Typed clients generated from each API's OpenAPI spec | openapi-typescript |

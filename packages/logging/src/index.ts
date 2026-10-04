@@ -553,20 +553,14 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const routeTemplates = new WeakMap<IncomingMessage, string>();
 
-// Adapters that don't expose the matched route on the raw request (Fastify)
-// report it here; Express's req.route is read directly.
+// Fastify doesn't put the matched route on the raw Node request, so each app's
+// onRequest hook reports the template here (see main.ts).
 export function setRequestRoute(req: IncomingMessage, url: string | undefined): void {
   if (url) routeTemplates.set(req, url);
 }
 
 function resolveRoute(req: IncomingMessage): string | null {
-  const explicit = routeTemplates.get(req);
-  if (explicit) return explicit;
-  // Nest registers every route on the app itself, so req.route.path is already
-  // the full template. req.baseUrl is deliberately ignored: under a mounted
-  // router it holds the *concrete* matched mount path (e.g. a token value).
-  const express = req as IncomingMessage & { route?: { path?: unknown } };
-  return typeof express.route?.path === 'string' ? express.route.path : null;
+  return routeTemplates.get(req) ?? null;
 }
 
 export type RequestLoggingOptions = {
@@ -575,7 +569,7 @@ export type RequestLoggingOptions = {
 };
 
 // Replaces the per-service inline middleware. Registered with app.use() so it
-// runs on the raw Node req/res under both Express and Fastify: reuses a
+// runs on the raw Node req/res (Fastify's middleware layer hands it those): reuses a
 // well-formed inbound x-request-id (or mints one), echoes it, runs the rest of
 // the request inside the correlation scope, and writes one access line when the
 // response finishes. The line carries the route *template* only — never the raw
@@ -758,7 +752,7 @@ const exceptionLogger = new Logger('ExceptionFilter');
 // carries a statusCode); without it, the status is read off the exception.
 export function logHttpException(exception: unknown, host: ArgumentsHost, status = statusOf(exception)): void {
   const request = host.switchToHttp().getRequest<IncomingMessage & { raw?: IncomingMessage }>();
-  // Fastify wraps the Node request; Express hands it over as is
+  // Fastify wraps the Node request; the route was reported against the raw one
   const route = resolveRoute(request.raw ?? request);
 
   if (status >= 500) {
@@ -782,8 +776,8 @@ export function logHttpException(exception: unknown, host: ArgumentsHost, status
 // Global HTTP exception filter (register with app.useGlobalFilters in main.ts).
 // Logs every exception once, with the request's context and route template,
 // then hands the response to Nest's BaseExceptionFilter so bodies are
-// byte-for-byte what they were — on Express and Fastify alike, since the base
-// class answers through the HTTP adapter. Stack traces never reach clients.
+// byte-for-byte what they were, since the base class answers through the HTTP
+// adapter. Stack traces never reach clients.
 export class LoggingExceptionFilter extends BaseExceptionFilter {
   override catch(exception: unknown, host: ArgumentsHost): void {
     if (host.getType() === 'http') logHttpException(exception, host);

@@ -7,7 +7,7 @@ import { InMemorySpanExporter, type ReadableSpan } from '@opentelemetry/sdk-trac
 import { ALLOWED_ATTRIBUTES, flushTracing, ScrubbingSpanExporter, shutdownTracing, startTracing } from './index.ts';
 
 const exporter = new InMemorySpanExporter();
-assert.equal(startTracing({ service: 'spec', framework: 'fastify', exporter }), true);
+assert.equal(startTracing({ service: 'spec', exporter }), true);
 // required after startTracing, the way a service loads them after ./instrument
 const require = createRequire(import.meta.url);
 const http: typeof import('node:http') = require('node:http');
