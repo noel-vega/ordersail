@@ -1304,7 +1304,16 @@
     "contact": {}
   },
   "tags": [],
-  "servers": [],
+  "servers": [
+    {
+      "url": "https://storefront.ordersail.com",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:3001",
+      "description": "Local development"
+    }
+  ],
   "components": {
     "securitySchemes": {
       "AppKey-auth": {
