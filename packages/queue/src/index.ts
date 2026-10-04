@@ -113,18 +113,16 @@ export const ORDER_JOB_OPTIONS: JobsOptions = {
   removeOnComplete: { age: 24 * 60 * 60, count: 1000 },
 };
 
-// BullMQ builds and closes its own Redis clients from connection *options*,
-// through this factory. Its default path is a dynamic `require('ioredis')`,
-// which can't reliably resolve the package across this monorepo's workspace
-// symlinks under ESM — so hand it the statically imported constructor here
-// instead. Set on import: every app imports `queue` before BullModule
-// constructs a Queue or Worker.
+// BullMQ builds and closes its own Redis clients from connection *options*.
+// Its default path is a dynamic `require('ioredis')`, which can't reliably
+// resolve the package across this monorepo's workspace symlinks under ESM —
+// so it gets the statically imported constructor through this factory.
 //
 // Options rather than a pre-built client so the client's owner closes it:
 // BullMQ never closes a client it was handed, so a shared instance outlived
 // app.close() and kept every script and spec alive (OS-722). The cost is a
-// client per Queue/Worker instead of one shared one — a handful per app.
-RedisConnection.clientFactory = (options) => createIORedisClient(new Redis(options));
+// client per Queue/Worker instead of one shared one.
+const bullmqClientFactory = (options: RedisOptions) => createIORedisClient(new Redis(options));
 
 // `maxRetriesPerRequest: null` keeps a command from being rejected after a
 // fixed number of reconnect attempts — BullMQ requires it on a Worker's
@@ -136,7 +134,11 @@ RedisConnection.clientFactory = (options) => createIORedisClient(new Redis(optio
 // (merchant-api, storefront-api) pass it — apps/worker passes none, since
 // BullMQ's blocking job-wait reads are supposed to sit idle for a long time
 // and must not be cut off by a command timeout.
+//
+// Installs the client factory too: options are only usable with it, so they
+// come from one place. (Not at import time, where a bundler could drop it.)
 export function redisConnectionOptions(options?: { commandTimeout?: number }): RedisOptions {
+  RedisConnection.clientFactory = bullmqClientFactory;
   return {
     host: process.env.REDIS_HOST ?? "localhost",
     port: Number(process.env.REDIS_PORT ?? 6379),
@@ -145,9 +147,11 @@ export function redisConnectionOptions(options?: { commandTimeout?: number }): R
   };
 }
 
-// A client of the app's own, outside BullMQ (each API's health check) — its
-// owner closes it on shutdown.
-export function createRedisConnection(options?: { commandTimeout?: number }): Redis {
+// A client outside BullMQ (each API's health check) that the caller owns and
+// must close on shutdown, with disconnect() rather than quit(): quit() queues a
+// command that never completes while Redis is unreachable, so it would stall
+// app.close().
+export function createOwnedRedisClient(options?: { commandTimeout?: number }): Redis {
   return new Redis(redisConnectionOptions(options));
 }
 

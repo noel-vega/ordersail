@@ -31,7 +31,7 @@ import { THROTTLER_APP_GUARD } from './throttler.guard';
     // single 'default' bucket, 100 req/min/IP — merchant-api runs one ECS
     // task today (desired_count=1), so the built-in in-memory storage is
     // enough; revisit with a shared Redis store (ElastiCache is already
-    // provisioned, see packages/queue's createRedisConnection) if/when
+    // provisioned, see packages/queue's createOwnedRedisClient) if/when
     // replica count goes above 1.
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
   ],
