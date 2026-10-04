@@ -1,5 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 
 const CART_TOKEN_HEADER = 'x-cart-token';
 
@@ -8,7 +8,7 @@ const CART_TOKEN_HEADER = 'x-cart-token';
 // "create one"
 export const CurrentCartToken = createParamDecorator(
   (_: unknown, ctx: ExecutionContext): string | undefined => {
-    const request = ctx.switchToHttp().getRequest<Request>();
+    const request = ctx.switchToHttp().getRequest<FastifyRequest>();
     const token = request.headers[CART_TOKEN_HEADER];
     return typeof token === 'string' ? token : undefined;
   },

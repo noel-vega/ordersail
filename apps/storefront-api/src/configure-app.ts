@@ -1,5 +1,4 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import cookieParser from 'cookie-parser';
 
 // Every public route lives under /v1 (OS-714). @ordersail/storefront-sdk is on
 // public npm, so the version goes in from the start — adding it later would
@@ -17,5 +16,4 @@ export function configureApp(app: INestApplication): void {
   // container check and the deploy smoke tests, not for API consumers.
   app.setGlobalPrefix(API_PREFIX, { exclude: ['health'] });
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-  app.use(cookieParser());
 }

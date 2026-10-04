@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { DRIZZLE } from '../../database/database.constants';
 import { accountApiKeysTable, and, eq, isNull, type db as Db } from 'db';
 import { setLogContext } from 'logging';
@@ -31,7 +31,7 @@ export class AppKeyGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context.switchToHttp().getRequest<FastifyRequest>();
     const appKey = request.headers[APP_KEY_HEADER];
     if (!appKey || Array.isArray(appKey)) {
       throw new UnauthorizedException();
@@ -52,7 +52,8 @@ export class AppKeyGuard implements CanActivate {
     }
 
     // stashed for CurrentAccountId() and for services to scope queries by tenant
-    (request as Request & { accountId: number }).accountId = record.accountId;
+    (request as FastifyRequest & { accountId: number }).accountId =
+      record.accountId;
     setLogContext({ accountId: record.accountId, appKeyId: record.id });
     return true;
   }

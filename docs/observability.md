@@ -86,8 +86,8 @@ one line per HTTP request when the response finishes:
 ```
 
 - `route` is the matched **template**, never the raw URL or query string (they can carry IDs
-  and tokens); `null` when nothing matched. Express reads `req.route`; Fastify (merchant-api)
-  reports it via `setRequestRoute()` from an `onRequest` hook.
+  and tokens); `null` when nothing matched. Every API runs Nest on Fastify, which reports it via
+  `setRequestRoute()` from an `onRequest` hook in `main.ts`.
 - Level: 5xx `error`, 4xx `warn`, otherwise `info`. A client disconnect before the response
   finishes logs `aborted: true` at `warn` with **no** `res.statusCode` (none was sent).
 - `/health` is never logged.
@@ -316,7 +316,7 @@ tag the same in `docker-compose.yml` and the module.
 
 `packages/tracing` sets up OpenTelemetry for a service. The three APIs load it —
 `apps/<api>/src/instrument.ts`, the first import in each `main.ts` — each naming its web
-framework: Fastify for merchant-api, Express for storefront-api and pos-api. The worker isn't
+framework, which is Fastify for all three. The worker isn't
 traced yet (OS-704).
 
 **Off unless configured.** Nothing is registered or patched unless `OTEL_EXPORTER_OTLP_ENDPOINT`
@@ -331,14 +331,10 @@ variables, so a local Tempo, Grafana Cloud or a collector are all just configura
 
 ```text
 POST /auth/signin            HTTP server span — method, route template, status, ordersail.* IDs
-└─ request                   Fastify (merchant-api only)
+└─ request                   Fastify's request span
    ├─ pg-pool.connect        waiting for a pooled connection
    └─ pg.query:SELECT …      one per query, with the SQL text
 ```
-
-On the Express APIs the `pg` spans sit directly under the HTTP server span. The Express
-instrumentation is there only for the route template: it ignores every layer type, so a Nest
-app's middleware and router layers add no spans of their own.
 
 Every span carries `service.name` and `deployment.environment`, the same two values as the
 Loki labels.

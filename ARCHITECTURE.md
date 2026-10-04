@@ -26,7 +26,7 @@ flowchart TB
 
     subgraph API["APIs"]
         adminapi["merchant-api<br/>NestJS/Fastify · :3000<br/><i>products, inventory, orders,<br/>staff, Stripe Connect</i>"]
-        storeapi["storefront-api<br/>NestJS/Express · :3001<br/><i>cart, checkout, customers</i>"]
+        storeapi["storefront-api<br/>NestJS/Fastify · :3001<br/><i>cart, checkout, customers</i>"]
     end
 
     worker["worker<br/>NestJS · :3003<br/><i>BullMQ consumer:<br/>orders + email queues</i>"]

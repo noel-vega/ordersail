@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import type { Request } from 'express';
+import type { FastifyRequest } from 'fastify';
 import { setLogContext } from 'logging';
 import type { AuthenticatedCustomer } from './auth.decorators';
 
@@ -21,7 +21,7 @@ export class CustomerAuthGuard implements CanActivate {
     const request = context
       .switchToHttp()
       .getRequest<
-        Request & { accountId: number; customer?: AuthenticatedCustomer }
+        FastifyRequest & { accountId: number; customer?: AuthenticatedCustomer }
       >();
 
     const token = this.extractTokenFromHeader(request);
@@ -56,7 +56,7 @@ export class CustomerAuthGuard implements CanActivate {
     return true;
   }
 
-  private extractTokenFromHeader(request: Request): string | undefined {
+  private extractTokenFromHeader(request: FastifyRequest): string | undefined {
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
     return type === 'Bearer' ? token : undefined;
   }

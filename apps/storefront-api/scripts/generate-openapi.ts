@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { writeFileSync } from 'fs';
 import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from '../src/app.module';
@@ -6,7 +7,9 @@ import { configureApp } from '../src/configure-app';
 import { createSwaggerConfig } from '../src/swagger.config';
 
 async function generate() {
-  const app = await NestFactory.create(AppModule, { logger: false });
+  const app = await NestFactory.create(AppModule, new FastifyAdapter(), {
+    logger: false,
+  });
   // so the document's paths carry the /v1 prefix the running app serves
   configureApp(app);
 
