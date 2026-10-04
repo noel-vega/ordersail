@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { HttpException, type ArgumentsHost, type LoggerService } from '@nestjs/common';
+import type { FastifyInstance } from 'fastify';
 import {
   context,
   diag,
@@ -553,10 +554,21 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const routeTemplates = new WeakMap<IncomingMessage, string>();
 
-// Fastify doesn't put the matched route on the raw Node request, so each app's
-// onRequest hook reports the template here (see main.ts).
+// Records the matched route template against the raw Node request, which is
+// all requestLoggingMiddleware and the exception filters see. Exported for
+// specs; apps register it through trackRouteTemplates.
 export function setRequestRoute(req: IncomingMessage, url: string | undefined): void {
   if (url) routeTemplates.set(req, url);
+}
+
+// Fastify doesn't put the matched route on the raw Node request. Call once in
+// main.ts with app.getHttpAdapter().getInstance(), before the app listens, so
+// the access line and exception lines carry the template.
+export function trackRouteTemplates(fastify: FastifyInstance): void {
+  fastify.addHook('onRequest', (request, _reply, done) => {
+    setRequestRoute(request.raw, request.routeOptions.url);
+    done();
+  });
 }
 
 function resolveRoute(req: IncomingMessage): string | null {
@@ -724,8 +736,8 @@ export function installShutdownHandler(app: ClosableApp, options: ShutdownOption
 // access line already counts them.
 const SECURITY_STATUSES = new Set([401, 403, 429]);
 
-// http-errors thrown by body parsers (413 payload too large, …). Same truthy
-// test as @nestjs/core's BaseExceptionFilter.isHttpError, so the status we log
+// An error that carries its own HTTP status, like Fastify's FST_ERR_* body
+// errors (413 payload too large, …). Same truthy test as @nestjs/core's BaseExceptionFilter.isHttpError, so the status we log
 // and the body we send agree with what Nest itself would do.
 export function httpErrorOf(exception: unknown): { statusCode: number; message: string } | undefined {
   const candidate = exception as { statusCode?: number; message?: string } | null;
@@ -751,9 +763,9 @@ const exceptionLogger = new Logger('ExceptionFilter');
 // decided it (ApiErrorFilter answers an untrusted error as a 500 even if it
 // carries a statusCode); without it, the status is read off the exception.
 export function logHttpException(exception: unknown, host: ArgumentsHost, status = statusOf(exception)): void {
-  const request = host.switchToHttp().getRequest<IncomingMessage & { raw?: IncomingMessage }>();
-  // Fastify wraps the Node request; the route was reported against the raw one
-  const route = resolveRoute(request.raw ?? request);
+  // Fastify wraps the Node request; trackRouteTemplates keyed the raw one
+  const request = host.switchToHttp().getRequest<{ raw: IncomingMessage }>();
+  const route = resolveRoute(request.raw);
 
   if (status >= 500) {
     exceptionLogger.error(

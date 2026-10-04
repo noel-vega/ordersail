@@ -84,19 +84,16 @@ function resolve(exception: unknown): Resolved {
   return { status: 500, code: 'internal_error' };
 }
 
-// Errors the HTTP layer itself raises before a handler runs keep their status
-// and message: Express's body parser (http-errors, whose `expose` flag marks a
-// message as safe to show: malformed JSON 400, 413, 415) and Fastify's own
-// FST_ERR_* errors. Nothing else is trusted, even with a statusCode: a library
+// Errors Fastify itself raises before a handler runs (its FST_ERR_* codes:
+// malformed JSON 400, 413, 415) keep their status and message. Nothing else is
+// trusted, even with a statusCode or an http-errors `expose` flag: a library
 // error that escapes a handler (Stripe's carry statusCode 402/400) would
 // otherwise send its raw message to the client. Those are 500s.
 function trustedHttpErrorOf(exception: unknown): { statusCode: number; message: string } | undefined {
   const httpError = httpErrorOf(exception);
   if (!httpError || httpError.statusCode < 400 || httpError.statusCode > 599) return undefined;
-  const candidate = exception as { expose?: unknown; code?: unknown };
-  const fromBodyParser = candidate.expose === true;
-  const fromFastify = typeof candidate.code === 'string' && candidate.code.startsWith('FST_');
-  return fromBodyParser || fromFastify ? httpError : undefined;
+  const code = (exception as { code?: unknown }).code;
+  return typeof code === 'string' && code.startsWith('FST_') ? httpError : undefined;
 }
 
 function fromHttpException(exception: HttpException): Resolved {

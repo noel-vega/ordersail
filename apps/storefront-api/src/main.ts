@@ -16,7 +16,7 @@ import {
   installProcessHandlers,
   installShutdownHandler,
   requestLoggingMiddleware,
-  setRequestRoute,
+  trackRouteTemplates,
 } from 'logging';
 import { shutdownTracing } from 'tracing';
 import { AppModule } from './app.module';
@@ -39,16 +39,9 @@ async function bootstrap() {
   installShutdownHandler(app, { afterClose: shutdownTracing });
 
   // correlation ID (reused from a well-formed inbound x-request-id or minted)
-  // + one access log line per request — see docs/observability.md. Fastify
-  // doesn't put the matched route on the raw request, so report the template
-  // from its onRequest hook for the access line.
-  app
-    .getHttpAdapter()
-    .getInstance()
-    .addHook('onRequest', (request, _reply, done) => {
-      setRequestRoute(request.raw, request.routeOptions.url);
-      done();
-    });
+  // + one access log line per request — see docs/observability.md. The route
+  // template comes from Fastify's onRequest hook, so register that first.
+  trackRouteTemplates(app.getHttpAdapter().getInstance());
   app.use(requestLoggingMiddleware());
 
   // /v1 prefix and validation — shared with the OpenAPI generator and

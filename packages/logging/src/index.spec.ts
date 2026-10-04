@@ -28,10 +28,12 @@ import {
   runWithLogContext,
   setLogContext,
   setRequestRoute,
+  trackRouteTemplates,
 } from './index.ts';
 import { captureLogs, fakeAdapter, fastifyRequest, httpHost } from './test-helpers.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import Fastify from 'fastify';
 
 describe('normalizeLogArgs', () => {
   it('pino style: object first, message second', () => {
@@ -606,6 +608,24 @@ describe('LoggingExceptionFilter', () => {
     assert.equal(lines[0].event, 'http.unhandled_error');
   });
 
+  // the real wiring: the onRequest hook keys the template on the raw request,
+  // and the filter reads it back off the request Fastify hands a handler
+  it('reads the route trackRouteTemplates recorded on a real Fastify request', async () => {
+    const lines = captureAll();
+    const app = Fastify();
+    trackRouteTemplates(app);
+    app.get('/orders/:id', async (req) => {
+      new LoggingExceptionFilter(fakeAdapter().adapter).catch(new Error('x'), httpHost(req));
+      return 'ok';
+    });
+    try {
+      await app.inject({ method: 'GET', url: '/orders/ord_SECRET?token=secret' });
+    } finally {
+      await app.close();
+    }
+    assert.equal(lines[0].route, '/orders/:id');
+    assert.ok(!JSON.stringify(lines).includes('SECRET'));
+  });
 });
 
 // Process-level behaviour needs a real process: run a tiny script against this

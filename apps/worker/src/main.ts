@@ -13,6 +13,7 @@ import {
   exitOnFatal,
   installProcessHandlers,
   installShutdownHandler,
+  trackRouteTemplates,
 } from 'logging';
 import { AppModule } from './app.module';
 
@@ -32,6 +33,8 @@ async function bootstrap() {
     { logger: new Logger() },
   );
   app.useGlobalFilters(new LoggingExceptionFilter(app.getHttpAdapter()));
+  // so a failing /health logs its route, not null
+  trackRouteTemplates(app.getHttpAdapter().getInstance());
   // closing the app closes the BullMQ workers, which let an in-flight job
   // finish instead of leaving it to be picked up as stalled
   installShutdownHandler(app);

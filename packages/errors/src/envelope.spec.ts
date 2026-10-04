@@ -9,6 +9,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
+import Fastify, { type InjectOptions } from 'fastify';
 import { ApiException } from './api-exception.ts';
 import { toErrorEnvelope } from './envelope.ts';
 
@@ -78,40 +79,50 @@ describe('toErrorEnvelope', () => {
     assert.equal(body.error.message, 'email must be an email, name should not be empty');
   });
 
-  it('a malformed-JSON 400 from the body parser or Fastify keeps its status', () => {
-    // body-parser's http-errors shape: status, statusCode, expose, type
-    const expressParse = Object.assign(new SyntaxError('Unexpected token } in JSON at position 9'), {
-      status: 400,
-      statusCode: 400,
-      expose: true,
-      type: 'entity.parse.failed',
+  // The error Fastify itself raises for a request, before any handler runs —
+  // captured from a real instance rather than hand-built, so the fixture has
+  // the shape the filter will actually see.
+  async function fastifyErrorFor(request: InjectOptions, options: { bodyLimit?: number } = {}): Promise<unknown> {
+    const app = Fastify(options);
+    let captured: unknown;
+    app.setErrorHandler((error, _request, reply) => {
+      captured = error;
+      return reply.send();
     });
-    assert.equal(envelope(expressParse).status, 400);
-    assert.equal(envelope(expressParse).body.error.code, 'bad_request');
+    app.post('/', async () => 'ok');
+    try {
+      await app.inject({ method: 'POST', url: '/', ...request });
+    } finally {
+      await app.close();
+    }
+    assert.ok(captured, 'Fastify raised no error');
+    return captured;
+  }
 
-    const fastifyParse = Object.assign(new SyntaxError("Body is not valid JSON but content-type is set to 'application/json'"), {
-      statusCode: 400,
-      code: 'FST_ERR_CTP_INVALID_JSON_BODY',
-    });
-    assert.equal(envelope(fastifyParse).body.error.code, 'bad_request');
+  it("Fastify's malformed-JSON 400 keeps its status", async () => {
+    const parse = await fastifyErrorFor({ headers: { 'content-type': 'application/json' }, payload: '{"a":' });
+    assert.equal(envelope(parse).status, 400);
+    assert.equal(envelope(parse).body.error.code, 'bad_request');
   });
 
-  it('a body-parser or Fastify 413 / 415 gets its generic code', () => {
-    const tooLarge = Object.assign(new Error('request entity too large'), {
-      status: 413,
-      statusCode: 413,
-      expose: true,
-      type: 'entity.too.large',
-    });
+  it("Fastify's 413 / 415 get their generic codes and keep Fastify's message", async () => {
+    const tooLarge = await fastifyErrorFor(
+      { headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ name: 'x'.repeat(100) }) },
+      { bodyLimit: 10 },
+    );
     assert.deepEqual(
       [envelope(tooLarge).status, envelope(tooLarge).body.error.code, envelope(tooLarge).body.error.message],
-      [413, 'content_too_large', 'request entity too large'],
+      [413, 'content_too_large', (tooLarge as Error).message],
     );
-    const mediaType = Object.assign(new Error('Unsupported Media Type: text/xml'), {
-      statusCode: 415,
-      code: 'FST_ERR_CTP_INVALID_MEDIA_TYPE',
-    });
+    const mediaType = await fastifyErrorFor({ headers: { 'content-type': 'text/xml' }, payload: '<a/>' });
+    assert.equal(envelope(mediaType).status, 415);
     assert.equal(envelope(mediaType).body.error.code, 'unsupported_media_type');
+  });
+
+  it("an http-errors `expose` flag alone isn't trusted — no Express body parser left to raise one", () => {
+    const exposed = Object.assign(new Error('raw library message'), { statusCode: 400, expose: true });
+    assert.equal(envelope(exposed).status, 500);
+    assert.equal(envelope(exposed).body.error.code, 'internal_error');
   });
 
   it("a ThrottlerException is rate_limited, with the registry's message rather than the class name", () => {

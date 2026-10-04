@@ -31,9 +31,9 @@ export function fakeAdapter(options: { headersSent?: boolean } = {}) {
 }
 
 // What a filter gets from Nest's Fastify adapter: the Node request under `raw`,
-// its route template reported the way main.ts's onRequest hook does.
-export function fastifyRequest(route: string, method = 'GET'): { raw: IncomingMessage } {
-  const raw = { method } as IncomingMessage;
+// its route template recorded the way trackRouteTemplates does.
+export function fastifyRequest(route: string): { raw: IncomingMessage } {
+  const raw = { method: 'GET' } as IncomingMessage;
   setRequestRoute(raw, route);
   return { raw };
 }
