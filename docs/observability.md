@@ -440,7 +440,9 @@ collector sidecar (OS-97). The other services aren't traced yet (OS-703, OS-704)
   is: it's only in the log configuration, which the log router reads). The value is the whole
   header in the OTLP env format, `Authorization=Basic%20<base64("<instance ID>:<token>")>` — the
   `%20` is the space, and the token is its own access-policy token with `traces:write` only
-  (Loki's has `logs:write`). `npm run verify:contracts` refuses a deploy while the key is empty.
+  (Loki's has `logs:write`). The live secret predates the key, and Terraform never updates it
+  (`ignore_changes`), so the key has to be added by hand; `npm run verify:contracts` refuses a
+  deploy while it's missing or empty.
 - **Find a trace**: Grafana Cloud → Explore → the Tempo data source:
 
   ```traceql

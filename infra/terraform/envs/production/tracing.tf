@@ -13,9 +13,11 @@
 #                                secretOptions, which the log router reads.
 #
 # Off until var.otel_exporter_otlp_endpoint is set (terraform.tfvars), so this
-# file changes nothing in production on its own. Before turning it on, put the
-# header in the secret (modules/secrets has the command): `npm run
-# verify:contracts` blocks the deploy while the key is empty.
+# file changes nothing in production on its own. Before turning it on, add the
+# header to the secret by hand (modules/secrets has the command): the live
+# secret predates the key and ignore_changes keeps Terraform from adding it, so
+# until then the key is missing, not empty. `npm run verify:contracts` blocks
+# the deploy either way.
 #
 # A rejected token or an unreachable gateway never fails a request: it shows up
 # as `tracing.export_failed` warn lines in merchant-api's own logs, at most one

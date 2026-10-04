@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { describe, it, type TestContext } from 'node:test';
+import { after, describe, it, type TestContext } from 'node:test';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { trace } from '@opentelemetry/api';
@@ -10,6 +10,20 @@ import { shutdownTracing, startTracing } from './index.ts';
 // registers. Only the batch processor's timed flush reports through it (an
 // explicit flush rejects to its caller), so the delay is shortened rather than
 // flushing by hand.
+const ENV_KEYS = [
+  'OTEL_BSP_SCHEDULE_DELAY',
+  'OTEL_EXPORTER_OTLP_ENDPOINT',
+  'OTEL_EXPORTER_OTLP_HEADERS',
+  'OTEL_EXPORTER_OTLP_TIMEOUT',
+] as const;
+const savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+after(() => {
+  for (const key of ENV_KEYS) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+});
+
 process.env.OTEL_BSP_SCHEDULE_DELAY = '20';
 
 const SECRET = 'c2VjcmV0LXRva2Vu';

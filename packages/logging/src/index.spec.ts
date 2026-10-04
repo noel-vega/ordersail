@@ -331,6 +331,7 @@ describe("OpenTelemetry's diagnostics", () => {
   it('drops arguments that are neither text nor an Error — pg passes parameter values', () => {
     const lines = captureLogs();
     diag.error('failed to stringify ', ['jane@example.com', '4242'], new TypeError('circular'));
+    assert.equal(lines.length, 1);
     assert.equal(lines[0].event, 'tracing.sdk_errored');
     assert.equal(lines[0].err.message, 'circular');
     assert.equal(JSON.stringify(lines[0]).includes('jane@example.com'), false);
@@ -339,6 +340,7 @@ describe("OpenTelemetry's diagnostics", () => {
   it("the global error handler's flattened exception is an export failure", () => {
     const lines = captureLogs();
     diag.error(JSON.stringify({ name: 'OTLPExporterError', message: 'Unauthorized', code: '401', stack: 'OTLPExporterError: Unauthorized' }));
+    assert.equal(lines.length, 1);
     assert.equal(lines[0].event, 'tracing.export_failed');
     assert.equal(lines[0].msg, 'Trace export failed');
     assert.equal(lines[0].err.code, '401');
