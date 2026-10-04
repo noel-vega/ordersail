@@ -26,9 +26,9 @@ is the error contract those developers already know.
 
 The registry is the only definition of the codes. Each API's error handling, the `ErrorResponse`
 schema in its OpenAPI document, and therefore the `ErrorCode` union in the generated SDK types all
-come from it. The contract doesn't depend on the APIs' framework or language: an API rewritten
-outside Node reads the registry as data and never keeps its own copy. Clients branch on `code`
-and never on `message`.
+come from it. The contract doesn't depend on the APIs' framework or language, so the registry
+must stay readable as plain data: an API rewritten outside Node reads it rather than keeping its
+own copy. Clients branch on `code` and never on `message`.
 
 ## Context
 
@@ -80,9 +80,9 @@ deprecation cycle.
   | 500 | Internal Server Error | `internal_error` |
 
   The registry has a generic code for each status in a fixed set: 400, 401, 403, 404, 405, 406,
-  408, 409, 410, 412, 413, 415, 421, 422, 429, 500, 501, 502, 503, 504 and 505. No two of them
-  share a code, because sharing would force a breaking change the day a client needs to tell
-  them apart. A status outside the set is a bug in the thrower. It falls back to `bad_request`
+  408, 409, 410, 412, 413, 415, 421, 422, 429, 500, 501, 502, 503, 504 and 505. No two statuses
+  in the set share a code, because sharing would force a breaking change the day a client needs
+  to tell them apart. A status outside the set is a bug in the thrower. It falls back to `bad_request`
   (4xx) or `internal_error` (5xx), sharing that code with 400 or 500, so the body is never
   invalid. The fix for such a bug is to add the status to the set, with its own code.
 - **`message`** is for people, and it may change at any time. On a 5xx it's always generic: no
@@ -127,7 +127,8 @@ already have. One registry means a code means the same thing everywhere.
 - **Breaking for SDK readers, once.** merchant-sdk, storefront-sdk and merchant-web switch in the
   same change as the APIs. storefront-sdk ships it as 0.7.0, a minor bump pre-1.0. A storefront
   on 0.6.0 keeps working but shows `Request failed (N)` instead of the server's message until it
-  upgrades.
+  upgrades. pos-sdk doesn't read error bodies today, so nothing in POS breaks; it gains the
+  envelope fields in a follow-up.
 - **No mass migration.** Existing throws that only set a status keep working and get generic
   codes. Specific codes are added where a client needs to tell cases apart. New errors name a
   registry code, not just a status and a message string.
