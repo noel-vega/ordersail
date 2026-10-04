@@ -91,14 +91,16 @@ resource "aws_route53_record" "pos_api_alias" {
 # domains. There is no distribution of ours to hide it behind, so it needs a real
 # host for the same TLS-SNI reason as pos-api above.
 #
-# `api.${domain}` rather than `storefront.${domain}`: storefront-api is in
-# practice the only public, third-party-facing API here (merchant-api is proxied,
-# pos-api serves our own app), and this string ends up in every published code
-# sample, the OpenAPI `servers` array and the SDK README — so treat it as
-# permanent.
+# `storefront.${domain}`, not a generic `api.${domain}`: the host names which
+# API it is, so a second public API (e.g. an admin/integrations API) never makes
+# `api.` ambiguous. Hosted merchant stores, if they come, belong on a separate
+# registrable domain (cookie/phishing/reputation isolation, as myshopify.com is
+# to shopify.com), so they never compete for this name. This string ends up in
+# every published code sample, the OpenAPI `servers` array and the SDK README —
+# so treat it as permanent once the SDK docs publish it (OS-705).
 resource "aws_route53_record" "storefront_api_alias" {
   zone_id = data.aws_route53_zone.this.zone_id
-  name    = "api.${var.domain_name}"
+  name    = "storefront.${var.domain_name}"
   type    = "A"
 
   alias {

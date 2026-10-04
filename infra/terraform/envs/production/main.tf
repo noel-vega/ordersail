@@ -163,7 +163,7 @@ module "alb" {
 
   services = {
     "merchant-api"   = { host = "merchant.${var.domain_name}", port = 3000, priority = 10 }
-    "storefront-api" = { host = "api.${var.domain_name}", port = 3001, priority = 20 }
+    "storefront-api" = { host = "storefront.${var.domain_name}", port = 3001, priority = 20 }
     "pos-api"        = { host = "pos.${var.domain_name}", port = 3004, priority = 30 }
   }
 }

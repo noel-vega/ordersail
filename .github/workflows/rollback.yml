@@ -123,7 +123,7 @@ jobs:
           case "${{ matrix.app }}" in
             merchant-api)   URL="https://merchant.ordersail.com/api/health" ;;
             pos-api)        URL="https://pos.ordersail.com/health" ;;
-            storefront-api) URL="https://api.ordersail.com/health" ;;
+            storefront-api) URL="https://storefront.ordersail.com/health" ;;
           esac
           for i in $(seq 1 5); do
             code=$(curl -s -o /tmp/b -w '%{http_code}' --max-time 15 "$URL" || echo 000)
