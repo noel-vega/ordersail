@@ -175,6 +175,9 @@ once, as structured JSON, wherever it happens:
 - **`LoggingExceptionFilter`** (`app.useGlobalFilters`) — every exception that escapes a
   controller or guard. The response is unchanged (it answers through Nest's
   `BaseExceptionFilter`, so Express and Fastify behave the same, and clients never see a stack).
+  This is changing: [ADR 0001](./adr/0001-api-error-envelope.md) replaces the response body with
+  one error envelope whose `request_id` is the `correlationId` above. It lands in OS-708, which
+  rewrites this section.
   The log line:
 
   | Status | Level | Line |
