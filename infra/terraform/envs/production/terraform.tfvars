@@ -26,6 +26,7 @@ google_dkim_txt = "v=DKIM1;k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAk
 loki_host = "logs-prod-036.grafana.net"
 loki_user = "1808609"
 
-# Trace export to Grafana Cloud Tempo (tracing.tf) — merchant-api only. Unset =
-# off. Set the OTEL_EXPORTER_OTLP_HEADERS key in the grafana-cloud secret first.
-# otel_exporter_otlp_endpoint = "https://otlp-gateway-<region>.grafana.net/otlp"
+# Trace export to Grafana Cloud Tempo (tracing.tf) — merchant-api only. Comment
+# out to turn it off. The OTEL_EXPORTER_OTLP_HEADERS key of the grafana-cloud
+# secret must be set first. From grafana.com → your stack → OpenTelemetry → Configure.
+otel_exporter_otlp_endpoint = "https://otlp-gateway-prod-us-east-2.grafana.net/otlp"
