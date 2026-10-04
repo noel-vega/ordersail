@@ -1,0 +1,30 @@
+{
+  "name": "errors",
+  "version": "1.0.0",
+  "description": "The API error envelope (ADR 0001): code registry, ApiException, envelope builder, global filter, OpenAPI ErrorResponse",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.spec.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.1",
+    "class-validator": "^0.15.1",
+    "logging": "*"
+  }
+}
