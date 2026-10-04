@@ -216,7 +216,7 @@ merchant-api is one process — a fault in one context can take **all** contexts
 down. What keeps that bounded (OS-346 audit):
 
 - **Every external SDK client sets a timeout.** Redis: `commandTimeout: 5_000`
-  (`app.module.ts` via `redisConnectionOptions`). Stripe:
+  (`app.module.ts` via `bullmqConnectionOptions`). Stripe:
   `timeout: 20_000, maxNetworkRetries: 1` (the `STRIPE` provider in
   `payments/payments.module.ts`, via `packages/payments` — the SDK default is
   80 s). Shippo: `timeoutMs: 20_000` (the `SHIPPO` provider in

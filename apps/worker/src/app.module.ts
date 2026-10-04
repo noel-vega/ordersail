@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { redisConnectionOptions } from 'queue';
+import { bullmqConnectionOptions } from 'queue';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { DatabaseModule } from './database/database.module';
 import { EmailModule } from './modules/email/email.module';
@@ -9,7 +9,7 @@ import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
-    BullModule.forRoot({ connection: redisConnectionOptions() }),
+    BullModule.forRoot({ connection: bullmqConnectionOptions() }),
     AlertsModule,
     DatabaseModule,
     EmailModule,

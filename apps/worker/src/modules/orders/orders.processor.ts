@@ -1,9 +1,4 @@
-import {
-  InjectQueue,
-  OnWorkerEvent,
-  Processor,
-  WorkerHost,
-} from '@nestjs/bullmq';
+import { InjectQueue, OnWorkerEvent, Processor } from '@nestjs/bullmq';
 import { Inject } from '@nestjs/common';
 import type { Job, Queue } from 'bullmq';
 import { QUEUE_NAMES, type EmailJobData, type OrderJobData } from 'queue';
@@ -35,12 +30,13 @@ import {
 } from 'db';
 import { DRIZZLE } from '../../database/database.constants';
 import { AlertsService } from '../alerts/alerts.service';
+import { DrainingWorkerHost } from '../../draining-worker-host';
 
 // order creation, relocated verbatim from storefront-api's CheckoutService
 // (which used to run this inline inside the Stripe webhook request) — see
 // checkout.service.ts's handleWebhookEvent for the producer side
 @Processor(QUEUE_NAMES.ORDERS)
-export class OrdersProcessor extends WorkerHost {
+export class OrdersProcessor extends DrainingWorkerHost {
   private readonly logger = new Logger(OrdersProcessor.name);
   private lastActiveAt: Date | null = null;
 
