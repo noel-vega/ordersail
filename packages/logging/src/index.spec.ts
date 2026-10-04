@@ -12,7 +12,6 @@ import {
   InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
-  type ArgumentsHost,
 } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
 import {
@@ -30,7 +29,7 @@ import {
   setLogContext,
   setRequestRoute,
 } from './index.ts';
-import { captureLogs } from './test-helpers.ts';
+import { captureLogs, fakeAdapter, httpHost } from './test-helpers.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -555,26 +554,6 @@ describe('LoggingExceptionFilter', () => {
       destination: { write: (chunk: string) => void lines.push(JSON.parse(chunk)) },
     });
     return lines;
-  }
-
-  // the slice of Nest's HttpServer adapter the filters answer through
-  function fakeAdapter() {
-    const replies: { body: unknown; status: number }[] = [];
-    const adapter = {
-      reply: (_res: unknown, body: unknown, status: number) => void replies.push({ body, status }),
-      isHeadersSent: () => false,
-      end: () => undefined,
-    };
-    return { adapter: adapter as any, replies };
-  }
-
-  function httpHost(request: unknown): ArgumentsHost {
-    const response = {};
-    return {
-      getType: () => 'http',
-      getArgByIndex: (index: number) => [request, response][index],
-      switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
-    } as unknown as ArgumentsHost;
   }
 
   const expressRequest = { method: 'GET', route: { path: '/orders/:id' } };
