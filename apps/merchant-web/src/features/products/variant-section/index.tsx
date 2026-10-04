@@ -178,6 +178,12 @@ function variantStockAction(deps: {
   createLocation: () => void;
 }): VariantStockAction {
   const { stockLocations } = deps;
+  if (stockLocations.loadFailed) {
+    return {
+      label: "Locations didn't load — retry",
+      run: stockLocations.retry,
+    };
+  }
   if (!stockLocations.isLoaded) {
     return { label: "Adjust stock", run: () => {}, disabled: true };
   }

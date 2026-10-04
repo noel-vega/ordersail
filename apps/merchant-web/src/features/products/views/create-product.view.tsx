@@ -226,6 +226,18 @@ export function CreateProductView() {
                     first — stock needs somewhere to live.
                   </FieldDescription>
                 )}
+                {stockLocations.loadFailed && (
+                  <FieldDescription>
+                    Locations didn't load, so stock can't be set yet.{" "}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={stockLocations.retry}
+                    >
+                      Retry
+                    </button>
+                  </FieldDescription>
+                )}
               </Field>
             )}
           />

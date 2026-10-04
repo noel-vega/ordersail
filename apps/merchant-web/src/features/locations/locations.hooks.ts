@@ -39,12 +39,15 @@ export function useListLocationsQuery(search?: ListSearch) {
 // stock pickers. `locations` is the capped (100) picker list, for the merchant
 // to choose from, never to pick one from (OS-696). `noLocation` and
 // `multiLocation` come from the real `total`, so they hold past the cap, and
-// both stay false until the list has loaded.
+// both stay false until the list has loaded. A failed load is `loadFailed`
+// with a `retry`, so callers can say so instead of sitting disabled.
 export function useStockLocations() {
   const query = useQuery(getListLocationsQueryOptions())
   const total = query.data?.total ?? 0
   return {
     isLoaded: query.isSuccess,
+    loadFailed: query.isError,
+    retry: () => void query.refetch(),
     locations: query.data?.items ?? [],
     // nowhere for stock to go yet (OS-689)
     noLocation: query.isSuccess && total === 0,
