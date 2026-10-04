@@ -173,11 +173,8 @@ Every service's `main.ts` wires the same three things from `logging`, so an erro
 once, as structured JSON, wherever it happens:
 
 - **`LoggingExceptionFilter`** (`app.useGlobalFilters`) — every exception that escapes a
-  controller or guard. The response is unchanged (it answers through Nest's
-  `BaseExceptionFilter`, so Express and Fastify behave the same, and clients never see a stack).
-  This is changing: [ADR 0001](./adr/0001-api-error-envelope.md) replaces the response body with
-  one error envelope whose `request_id` is the `correlationId` above. It lands in OS-708, which
-  rewrites this section.
+  controller or guard. The filter only logs: today the response still comes from Nest's
+  `BaseExceptionFilter`, so Express and Fastify behave the same, and clients never see a stack.
   The log line:
 
   | Status | Level | Line |
@@ -189,6 +186,9 @@ once, as structured JSON, wherever it happens:
   Nest's own unstructured `ExceptionsHandler` line is suppressed so each error shows up once.
   The access line for the same request is still written separately. Don't catch-and-rethrow
   just to log: throw, and let the filter log it.
+
+  The response body is changing. [Root ADR 0001](./adr/0001-api-error-envelope.md) replaces it
+  with one error envelope whose `request_id` is the `correlationId` above.
 - **`installProcessHandlers()`** — an uncaught exception or unhandled rejection logs one
   `fatal` line (`process.uncaught_exception` / `process.unhandled_rejection`), flushes, then
   exits 1. The process still crashes, same as Node's default. The difference is that the last
