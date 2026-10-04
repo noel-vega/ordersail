@@ -11,7 +11,12 @@ export type AdjustStockTarget = {
   locations: StockLocationOption[];
 };
 
-// the location a target is pinned to, when there's only one to choose
+// the location a target is pinned to, when there's only one to choose.
+// Counting `locations` is right here, unlike the account-wide "one or several
+// locations?" question, which comes from the list's `total` (OS-696). This
+// asks how many choices this sheet offers. A target from an inventory row has
+// exactly one by design. The variant section passes the capped picker list,
+// whose length is 1 exactly when `total` is.
 export function fixedLocation(
   target: AdjustStockTarget,
 ): StockLocationOption | undefined {

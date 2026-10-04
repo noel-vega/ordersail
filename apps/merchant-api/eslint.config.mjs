@@ -128,7 +128,7 @@ export default tseslint.config(
               },
             },
             {
-              // catalog → stock: opening stock's location check, through
+              // catalog → stock: where opening stock goes, through
               // catalog/products/ports/ (LocationsPort + LocationsAdapter)
               from: { element: { type: 'context', captured: { context: 'catalog' } } },
               allow: {
