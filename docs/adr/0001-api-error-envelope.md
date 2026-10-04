@@ -4,7 +4,12 @@ status: accepted
 
 # API errors use one Stripe-style envelope, keyed by a code from a single registry
 
-Every error from `merchant-api`, `storefront-api` and `pos-api` has the same body:
+Nest's default error body has no stable identifier, so our clients match message strings, and
+because `@ordersail/storefront-sdk` is published publicly, whatever shape it exposes becomes a
+public contract. So every error from `merchant-api`, `storefront-api` and `pos-api` now has one
+Stripe-style body whose `code` comes from a single registry in `packages/errors`: developer
+experience for people building on the SDK is the deciding priority, and Stripe's is the error
+contract those developers already know.
 
 ```json
 {
@@ -20,13 +25,9 @@ Every error from `merchant-api`, `storefront-api` and `pos-api` has the same bod
 }
 ```
 
-The body is defined in one place: a registry of codes in `packages/errors`. The registry drives
-the exception class the APIs throw, the one global filter that writes the body, the
-`ErrorResponse` schema in each OpenAPI document, and therefore the `ErrorCode` union in the
-generated SDK types. Clients branch on `code` and never on `message`. Developer experience for
-people building on `@ordersail/storefront-sdk`, which is published publicly, is the deciding
-priority, and Stripe's error shape is the best-known example of an error contract developers
-already like.
+The registry drives the exception class the APIs throw, the one global filter that writes the
+body, the `ErrorResponse` schema in each OpenAPI document, and therefore the `ErrorCode` union in
+the generated SDK types. Clients branch on `code` and never on `message`.
 
 ## Context
 
@@ -51,21 +52,36 @@ deprecation cycle.
 ## The fields
 
 - **`type`** is a broad category from a fixed set, derived from the status. Clients use it for
-  coarse handling ("show the login screen", "back off and retry").
+  coarse handling ("send the user to sign in", "back off and retry"). A category is meant to be
+  coarse, so every status has one through the catch-all rows:
 
-  | `type` | Statuses |
+  | Status | `type` |
   |---|---|
-  | `invalid_request_error` | 400, 404, 409, 413, 415, 422 |
-  | `authentication_error` | 401 |
-  | `permission_error` | 403 |
-  | `rate_limit_error` | 429 |
-  | `api_error` | 5xx |
+  | 401 | `authentication_error` |
+  | 403 | `permission_error` |
+  | 429 | `rate_limit_error` |
+  | any other 4xx | `invalid_request_error` |
+  | any 5xx | `api_error` |
 
 - **`code`** is the specific reason. It's snake_case, stable once published, and **always
   present**. Stripe sometimes omits `code`; we don't, so a client never needs a fallback branch.
-  A throw that hasn't been given a specific code gets a generic one from its status:
-  `bad_request`, `unauthenticated`, `forbidden`, `not_found`, `conflict`, `rate_limited`,
-  `internal_error`, and so on.
+  A throw that hasn't been given a specific code gets a **generic code** by one rule: the
+  status's standard reason phrase in snake_case (405 → `method_not_allowed`, 503 →
+  `service_unavailable`), except for three statuses where the phrase reads badly:
+
+  | Status | Reason phrase | Generic `code` |
+  |---|---|---|
+  | 401 | Unauthorized | `unauthenticated` (it means "not signed in", not "not allowed") |
+  | 429 | Too Many Requests | `rate_limited` |
+  | 500 | Internal Server Error | `internal_error` |
+
+  Every status gets its own generic code, so no two statuses ever share one. Sharing would
+  force a breaking change the day a client needs to tell them apart. The registry generates
+  generic codes only for the statuses our stack can produce: the HTTP exceptions in
+  `@nestjs/common` (except 418), plus 429 from the throttler. That's 400, 401, 403, 404, 405,
+  406, 408, 409, 410, 412, 413, 415, 421, 422, 429, 500, 501, 502, 503, 504 and 505. A status
+  outside that set is a bug in the thrower; it still gets `bad_request` (4xx) or
+  `internal_error` (5xx), so the body is never invalid.
 - **`message`** is for people, and it may change at any time. On a 5xx it's always generic: no
   upstream error text, no stack, no `cause`.
 - **`param`** is the request field that caused the error, when there is one.
