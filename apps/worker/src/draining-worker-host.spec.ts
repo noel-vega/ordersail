@@ -75,4 +75,13 @@ describe('DrainingWorkerHost', () => {
     expect(outcome.error).toBeUndefined();
     expect(outcome.enqueued).toBe(true);
   });
+
+  it("doesn't throw when its Worker never started", async () => {
+    class NeverStarted extends DrainingWorkerHost {
+      async process() {}
+    }
+    await expect(
+      new NeverStarted().beforeApplicationShutdown(),
+    ).resolves.toBeUndefined();
+  });
 });

@@ -1,5 +1,6 @@
 import { WorkerHost } from '@nestjs/bullmq';
 import type { BeforeApplicationShutdown } from '@nestjs/common';
+import type { Worker } from 'bullmq';
 
 // Base class for every @Processor: closes its Worker, which waits for the
 // in-flight job, before any Queue client closes.
@@ -13,11 +14,21 @@ import type { BeforeApplicationShutdown } from '@nestjs/common';
 // beforeApplicationShutdown runs before every onApplicationShutdown, so the
 // job finishes with the queues still open. Worker.close() is idempotent, so
 // @nestjs/bullmq's own close later is a no-op.
+//
+// Every @Processor extends this, not WorkerHost — eslint.config.mjs enforces it.
 export abstract class DrainingWorkerHost
   extends WorkerHost
   implements BeforeApplicationShutdown
 {
   async beforeApplicationShutdown() {
-    await this.worker.close();
+    let worker: Worker;
+    try {
+      worker = this.worker;
+    } catch {
+      // never started (a shutdown during boot): nothing to drain. Throwing
+      // here would abort app.close() and skip the other processors' drains.
+      return;
+    }
+    await worker.close();
   }
 }
