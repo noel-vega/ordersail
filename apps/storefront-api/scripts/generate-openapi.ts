@@ -17,5 +17,11 @@ async function generate() {
   writeFileSync('./openapi.json', JSON.stringify(document, null, 2));
 
   await app.close();
+  // app.close() doesn't close the ioredis connections AppModule builds itself
+  // (BullModule's shared one and HealthService's), so the event loop stays
+  // alive after the file is already written. This is a one-shot script, not a
+  // long-running service — force-exit instead of waiting on a graceful
+  // shutdown nothing depends on.
+  process.exit(0);
 }
 generate();
