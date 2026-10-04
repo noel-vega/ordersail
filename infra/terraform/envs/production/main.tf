@@ -148,6 +148,16 @@ module "ecs_cluster" {
   vpc_id      = module.network.vpc_id
 }
 
+# Container port per public API — one source for the ALB target group, the ECS
+# service's container_port and the app's PORT env, so they can't drift apart.
+locals {
+  api_ports = {
+    "merchant-api"   = 3000
+    "storefront-api" = 3001
+    "pos-api"        = 3004
+  }
+}
+
 # One shared internet-facing ALB for all three public APIs, routed by Host
 # (OS-705). merchant-api has no DNS record of its own: merchant-web's CloudFront
 # forwards the viewer Host (merchant.${domain}) on /api/* to this ALB.
@@ -162,9 +172,9 @@ module "alb" {
   alarm_warning_topic_arns    = [aws_sns_topic.alerts_warning.arn]
 
   services = {
-    "merchant-api"   = { host = "merchant.${var.domain_name}", port = 3000, priority = 10 }
-    "storefront-api" = { host = "storefront.${var.domain_name}", port = 3001, priority = 20 }
-    "pos-api"        = { host = "pos.${var.domain_name}", port = 3004, priority = 30 }
+    "merchant-api"   = { host = "merchant.${var.domain_name}", port = local.api_ports["merchant-api"], priority = 10 }
+    "storefront-api" = { host = "storefront.${var.domain_name}", port = local.api_ports["storefront-api"], priority = 20 }
+    "pos-api"        = { host = "pos.${var.domain_name}", port = local.api_ports["pos-api"], priority = 30 }
   }
 }
 
@@ -231,7 +241,7 @@ module "ecs_service_merchant_api" {
   alarm_warning_topic_arns    = [aws_sns_topic.alerts_warning.arn]
   private_subnet_ids          = module.network.private_subnet_ids
   ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
-  container_port              = 3000
+  container_port              = local.api_ports["merchant-api"]
   image                       = "${module.ecr.repository_urls["merchant-api"]}:${var.bootstrap_image_tag}"
   target_group_arn            = module.alb.target_group_arns["merchant-api"]
   task_role_policy_json       = data.aws_iam_policy_document.merchant_api_task.json
@@ -239,7 +249,7 @@ module "ecs_service_merchant_api" {
 
   environment = [
     { name = "NODE_ENV", value = "production" },
-    { name = "PORT", value = "3000" },
+    { name = "PORT", value = tostring(local.api_ports["merchant-api"]) },
     { name = "REDIS_HOST", value = local.redis_host },
     { name = "REDIS_PORT", value = local.redis_port },
     # references the module directly, not local.frontends["merchant-web"] — that local
@@ -295,14 +305,14 @@ module "ecs_service_storefront_api" {
   alarm_warning_topic_arns    = [aws_sns_topic.alerts_warning.arn]
   private_subnet_ids          = module.network.private_subnet_ids
   ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
-  container_port              = 3001
+  container_port              = local.api_ports["storefront-api"]
   image                       = "${module.ecr.repository_urls["storefront-api"]}:${var.bootstrap_image_tag}"
   target_group_arn            = module.alb.target_group_arns["storefront-api"]
   log_shipping                = local.log_shipping_enabled ? local.log_shipping : null
 
   environment = [
     { name = "NODE_ENV", value = "production" },
-    { name = "PORT", value = "3001" },
+    { name = "PORT", value = tostring(local.api_ports["storefront-api"]) },
     { name = "REDIS_HOST", value = local.redis_host },
     { name = "REDIS_PORT", value = local.redis_port },
     # STOREFRONT_WEB_URL removed (OS-440) — CORS is a dynamic allowlist read
@@ -377,7 +387,7 @@ module "ecs_service_pos_api" {
   alarm_warning_topic_arns    = [aws_sns_topic.alerts_warning.arn]
   private_subnet_ids          = module.network.private_subnet_ids
   ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
-  container_port              = 3004
+  container_port              = local.api_ports["pos-api"]
   image                       = "${module.ecr.repository_urls["pos-api"]}:${var.bootstrap_image_tag}"
 
   # module.alb.target_group_arns is sourced through each listener rule, so
@@ -389,7 +399,7 @@ module "ecs_service_pos_api" {
 
   environment = [
     { name = "NODE_ENV", value = "production" },
-    { name = "PORT", value = "3004" },
+    { name = "PORT", value = tostring(local.api_ports["pos-api"]) },
     # POS is a native Expo app (no browser Origin), so POS_WEB_URL is left
     # unset and pos-api/src/main.ts falls back to CORS origin:true. Set it if a
     # POS web console ever ships.

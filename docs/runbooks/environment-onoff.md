@@ -19,9 +19,10 @@ linked to OS-63.
 | NAT gateway + its EIP | destroyed — `terraform apply` with `environment_on = false` (OS-380) | ~$36/mo |
 | ElastiCache Redis | destroyed — same apply | ~$11/mo |
 
-**Stays up:** the shared API ALB (no stop API; destroying it breaks the Route53
-aliases — that's OS-63. It was three per-API ALBs until OS-705), RDS (free tier, and a stopped instance auto-restarts
-after 7 days), Route53, CloudFront, all Secrets Manager / SSM / ECR.
+**Stays up:** the shared API ALB (no stop API, and destroying it breaks the
+Route53 aliases; three per-API ALBs were consolidated into it by OS-705), RDS
+(free tier, and a stopped instance auto-restarts after 7 days), Route53,
+CloudFront, all Secrets Manager / SSM / ECR.
 
 Off-state run-rate ≈ **$50/mo**.
 

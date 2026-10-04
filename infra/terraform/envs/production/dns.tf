@@ -70,8 +70,8 @@ resource "aws_route53_record" "merchant_web_alias" {
 }
 
 # pos-api's public endpoint — the native Expo POS app hits this directly, so it
-# needs a real *.${domain} host (the shared ALB serves the wildcard cert and routes on this Host; a raw
-# *.elb.amazonaws.com name would fail TLS SNI).
+# needs a real *.${domain} host (the shared ALB serves the wildcard cert and
+# routes on this Host; a raw *.elb.amazonaws.com name would fail TLS SNI).
 resource "aws_route53_record" "pos_api_alias" {
   zone_id = data.aws_route53_zone.this.zone_id
   name    = "pos.${var.domain_name}"

@@ -3,6 +3,10 @@
 
 locals {
   lb_suffix = aws_lb.this.arn_suffix
+  # per-service metric dimensions; ELB-generated metrics have no TargetGroup
+  tg_dimensions = {
+    for k, tg in aws_lb_target_group.this : k => { LoadBalancer = local.lb_suffix, TargetGroup = tg.arn_suffix }
+  }
 }
 
 # LB-generated 5xx (502 bad gateway / 503 no healthy targets / 504 timeout).
@@ -65,7 +69,7 @@ resource "aws_cloudwatch_metric_alarm" "error_rate" {
       namespace   = "AWS/ApplicationELB"
       period      = 300
       stat        = "Sum"
-      dimensions  = { LoadBalancer = local.lb_suffix, TargetGroup = aws_lb_target_group.this[each.key].arn_suffix }
+      dimensions  = local.tg_dimensions[each.key]
     }
   }
   metric_query {
@@ -75,7 +79,7 @@ resource "aws_cloudwatch_metric_alarm" "error_rate" {
       namespace   = "AWS/ApplicationELB"
       period      = 300
       stat        = "Sum"
-      dimensions  = { LoadBalancer = local.lb_suffix, TargetGroup = aws_lb_target_group.this[each.key].arn_suffix }
+      dimensions  = local.tg_dimensions[each.key]
     }
   }
 
@@ -96,7 +100,7 @@ resource "aws_cloudwatch_metric_alarm" "p95_latency" {
 
   namespace           = "AWS/ApplicationELB"
   metric_name         = "TargetResponseTime"
-  dimensions          = { LoadBalancer = local.lb_suffix, TargetGroup = aws_lb_target_group.this[each.key].arn_suffix }
+  dimensions          = local.tg_dimensions[each.key]
   extended_statistic  = "p95"
   period              = 300
   evaluation_periods  = 2
@@ -121,7 +125,7 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy_hosts" {
 
   namespace           = "AWS/ApplicationELB"
   metric_name         = "UnHealthyHostCount"
-  dimensions          = { LoadBalancer = local.lb_suffix, TargetGroup = aws_lb_target_group.this[each.key].arn_suffix }
+  dimensions          = local.tg_dimensions[each.key]
   statistic           = "Maximum"
   period              = 60
   evaluation_periods  = 3
