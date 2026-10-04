@@ -7,8 +7,10 @@
 #
 #   OTEL_EXPORTER_OTLP_ENDPOINT  var.otel_exporter_otlp_endpoint (plain)
 #   OTEL_EXPORTER_OTLP_HEADERS   `ordersail/production/grafana-cloud` secret,
-#                                key OTEL_EXPORTER_OTLP_HEADERS, on the app
-#                                container (LOKI_TOKEN stays on the log router)
+#                                key OTEL_EXPORTER_OTLP_HEADERS, in the app
+#                                container's environment. LOKI_TOKEN never is:
+#                                it's only in the log configuration's
+#                                secretOptions, which the log router reads.
 #
 # Off until var.otel_exporter_otlp_endpoint is set (terraform.tfvars), so this
 # file changes nothing in production on its own. Before turning it on, put the

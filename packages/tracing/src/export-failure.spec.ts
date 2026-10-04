@@ -3,7 +3,7 @@ import { describe, it, type TestContext } from 'node:test';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { trace } from '@opentelemetry/api';
-import { configureLogging } from 'logging';
+import { captureLogs } from 'logging/test-helpers';
 import { shutdownTracing, startTracing } from './index.ts';
 
 // Export failures reach the logs through the diag logger packages/logging
@@ -13,16 +13,6 @@ import { shutdownTracing, startTracing } from './index.ts';
 process.env.OTEL_BSP_SCHEDULE_DELAY = '20';
 
 const SECRET = 'c2VjcmV0LXRva2Vu';
-
-function captureLogs(): Record<string, any>[] {
-  const lines: Record<string, any>[] = [];
-  configureLogging({
-    service: 'test',
-    nodeEnv: 'production',
-    destination: { write: (chunk: string) => void lines.push(JSON.parse(chunk)) },
-  });
-  return lines;
-}
 
 async function waitFor(check: () => boolean, ms = 3000): Promise<void> {
   const deadline = Date.now() + ms;

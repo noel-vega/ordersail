@@ -13,6 +13,10 @@
       "types": "./dist/src/span-attributes.d.ts",
       "default": "./dist/src/span-attributes.js"
     },
+    "./test-helpers": {
+      "types": "./dist/src/test-helpers.d.ts",
+      "default": "./dist/src/test-helpers.js"
+    },
     "./eslint": "./eslint.mjs"
   },
   "scripts": {

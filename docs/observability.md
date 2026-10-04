@@ -436,10 +436,11 @@ collector sidecar (OS-97). The other services aren't traced yet (OS-703, OS-704)
   the gateway's base URL ending in `/otlp`. Unset, merchant-api's task definition has no
   `OTEL_*` variables and tracing is off (`infra/terraform/envs/production/tracing.tf`).
 - **Credentials**: the `OTEL_EXPORTER_OTLP_HEADERS` key of the `ordersail/production/grafana-cloud`
-  secret, mapped onto the app container. The value is the whole header in the OTLP env
-  format, `Authorization=Basic%20<base64("<instance ID>:<token>")>` — the `%20` is the space,
-  and the token is its own access-policy token with `traces:write` only (Loki's has
-  `logs:write`). `npm run verify:contracts` refuses a deploy while the key is empty.
+  secret, mapped into the app container's environment (the same secret's `LOKI_TOKEN` never
+  is: it's only in the log configuration, which the log router reads). The value is the whole
+  header in the OTLP env format, `Authorization=Basic%20<base64("<instance ID>:<token>")>` — the
+  `%20` is the space, and the token is its own access-policy token with `traces:write` only
+  (Loki's has `logs:write`). `npm run verify:contracts` refuses a deploy while the key is empty.
 - **Find a trace**: Grafana Cloud → Explore → the Tempo data source:
 
   ```traceql
@@ -465,8 +466,14 @@ merchant-api logs one `warn` line for it, `event: "tracing.export_failed"`, `con
 "OpenTelemetry"`, with `err.code` the HTTP status when there was one. One per batch, never one
 per request, and `warn` rather than `error`: the service is fine, only its traces are lost, so
 it doesn't feed the error-lines alarm. Other OpenTelemetry warnings (spans dropped because the
-queue filled) log as `tracing.sdk_warned`. `packages/logging` registers this as OpenTelemetry's
-diag logger in `configureLogging()`.
+queue filled) log as `tracing.sdk_warned`, and an instrumentation's own error (an HTTP or `pg`
+hook) as `tracing.sdk_errored` — neither means export is failing. `packages/logging` registers
+this as OpenTelemetry's diag logger in `configureLogging()`; only text and an `Error` reach the
+line, never other arguments (`pg` can pass query parameter values).
+
+**Usage** — grafana.com → your organization → **Usage** (or the stack's **Billing / Usage**
+dashboard in Grafana Cloud): traces are counted in GB ingested per month, against the free
+allowance. Check it after the first day with export on, and again before launch (OS-110).
 
 **Traces missing in production** — check in this order:
 

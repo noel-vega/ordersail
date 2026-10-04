@@ -316,11 +316,32 @@ describe("OpenTelemetry's diagnostics", () => {
     assert.equal(lines[0].msg, 'Dropped 3 spans because maxQueueSize reached');
   });
 
-  it('a diag error that is not the flattened exception still logs, as its message', () => {
+  it("an instrumentation's own error is sdk_errored, not an export failure", () => {
     const lines = captureLogs();
-    diag.error('something broke');
+    // the shape a component logger (instrumentation._diag) forwards: namespace first
+    const hookError = new Error('hook threw');
+    diag.createComponentLogger({ namespace: '@opentelemetry/instrumentation-pg' }).error('Error running query hook', hookError);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].level, 'warn');
+    assert.equal(lines[0].event, 'tracing.sdk_errored');
+    assert.equal(lines[0].msg, '@opentelemetry/instrumentation-pg Error running query hook');
+    assert.equal(lines[0].err.message, 'hook threw');
+  });
+
+  it('drops arguments that are neither text nor an Error — pg passes parameter values', () => {
+    const lines = captureLogs();
+    diag.error('failed to stringify ', ['jane@example.com', '4242'], new TypeError('circular'));
+    assert.equal(lines[0].event, 'tracing.sdk_errored');
+    assert.equal(lines[0].err.message, 'circular');
+    assert.equal(JSON.stringify(lines[0]).includes('jane@example.com'), false);
+  });
+
+  it("the global error handler's flattened exception is an export failure", () => {
+    const lines = captureLogs();
+    diag.error(JSON.stringify({ name: 'OTLPExporterError', message: 'Unauthorized', code: '401', stack: 'OTLPExporterError: Unauthorized' }));
     assert.equal(lines[0].event, 'tracing.export_failed');
-    assert.equal(lines[0].err.message, 'something broke');
+    assert.equal(lines[0].msg, 'Trace export failed');
+    assert.equal(lines[0].err.code, '401');
   });
 });
 

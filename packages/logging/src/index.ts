@@ -480,36 +480,63 @@ export class Logger implements LoggerService {
 // With no diag logger the SDK reports nothing, so a rejected token or an
 // unreachable backend would drop every trace without a word. Registered by
 // configureLogging, at WARN and up: the exporter's retry chatter is info.
+// configureLogging runs after startTracing (instrument.ts is first), so a
+// warning raised while the SDK starts — an unparseable endpoint URL — is lost;
+// the env schema's z.url() and the tfvars validation catch that one instead.
 //
-// A failed export arrives here once per batch, never once per request: the
-// BatchSpanProcessor hands the error to OpenTelemetry's global error handler,
-// which flattens it to a JSON string and passes it to diag.error. That is the
-// only diag.error source in this setup, hence the event name. It logs at
-// `warn`, not `error`: the service is fine, only its traces are lost
-// (docs/observability.md → Levels), and error lines feed the error alarm.
+// Everything logs at `warn`, not `error`: the service is fine, only its traces
+// are lost (docs/observability.md → Levels), and error lines feed the error alarm.
+//
+// - A failed export arrives once per batch, never once per request: the
+//   BatchSpanProcessor hands the error to OpenTelemetry's global error handler,
+//   which flattens it to a JSON string and passes it to diag.error. That shape
+//   is what marks it as `tracing.export_failed`.
+// - Any other diag.error — an instrumentation's own (HTTP, pg) — is
+//   `tracing.sdk_errored`, so it doesn't send anyone after the token.
+//
+// Only string arguments (a component logger's namespace, then the message) and
+// an Error reach the line. Other arguments are dropped: instrumentation-pg
+// passes the query's parameter values to diag.error when it can't stringify them.
 const otelLogger = new Logger('OpenTelemetry');
 
 const otelDiagLogger: DiagLogger = {
-  error: (message) =>
-    otelLogger.warn({ event: 'tracing.export_failed', err: errorFromDiag(message) }, 'Trace export failed'),
-  warn: (message, ...args) => otelLogger.warn({ event: 'tracing.sdk_warned' }, [message, ...args].join(' ')),
+  error: (message, ...args) => {
+    const exported = exportErrorFrom(message);
+    if (exported) {
+      otelLogger.warn({ event: 'tracing.export_failed', err: exported }, 'Trace export failed');
+      return;
+    }
+    const [fields, text] = diagLine(message, args);
+    otelLogger.warn({ event: 'tracing.sdk_errored', ...fields }, text);
+  },
+  warn: (message, ...args) => {
+    const [fields, text] = diagLine(message, args);
+    otelLogger.warn({ event: 'tracing.sdk_warned', ...fields }, text);
+  },
   info: () => undefined,
   debug: () => undefined,
   verbose: () => undefined,
 };
 
+function diagLine(message: string, args: unknown[]): [Fields, string] {
+  const text = [message, ...args].filter((arg): arg is string => typeof arg === 'string').join(' ');
+  const err = args.find((arg) => arg instanceof Error);
+  return [err ? { err } : {}, text];
+}
+
 // Rebuilds the error the global error handler flattened ({ name, message,
 // stack, code, … } as strings), so `err` goes through the usual serializer:
 // type, message, stack and code (an HTTP status for a rejected export).
-function errorFromDiag(message: string): Error {
+// Undefined when the message isn't that JSON.
+function exportErrorFrom(message: string): Error | undefined {
   let flat: Record<string, string> | undefined;
   try {
     const parsed: unknown = JSON.parse(message);
     if (isPlainObject(parsed) && typeof parsed.message === 'string') flat = parsed as Record<string, string>;
   } catch {
-    // not the handler's JSON: a plain message
+    // not the handler's JSON
   }
-  if (!flat) return new Error(message);
+  if (!flat) return undefined;
   const err = Object.assign(new Error(flat.message), flat.code === undefined ? {} : { code: flat.code });
   if (flat.name) err.name = flat.name;
   if (flat.stack) err.stack = flat.stack;
