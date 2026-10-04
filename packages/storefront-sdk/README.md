@@ -25,7 +25,7 @@ Inside this monorepo it's consumed via the npm workspace protocol instead
 import { StorefrontClient, ApiError } from "@ordersail/storefront-sdk";
 
 const storefront = new StorefrontClient(
-  "https://api.your-storefront-api-host.com",
+  "https://storefront.ordersail.com",
   "sfk_...", // your account's app key — see "Auth model" below
 );
 
@@ -38,6 +38,21 @@ try {
     console.error(`${error.status}: ${error.message}`);
   }
 }
+```
+
+`baseUrl` is the bare host. The API is versioned in its paths (every route
+lives under `/v1`), and the SDK adds that prefix itself, so a given SDK
+release always talks to the API version it was generated from.
+
+### Upgrading from 0.6.x
+
+**0.7.0 is a breaking change.** storefront-api now serves every route under
+`/v1`, so 0.6.x clients, which call unprefixed paths, get `404` on every
+request. Upgrading is just the package bump; `baseUrl` stays the bare host
+(don't append `/v1` yourself):
+
+```bash
+npm install @ordersail/storefront-sdk@^0.7.0
 ```
 
 ## Resources
@@ -113,7 +128,7 @@ reload, not `client.refreshToken` read once:
 
 ```ts
 const storefront = new StorefrontClient(
-  "https://api.your-storefront-api-host.com",
+  "https://storefront.ordersail.com",
   "sfk_...",
   undefined, // cartToken — restore the same way if you have one saved
   localStorage.getItem("refreshToken") ?? undefined,

@@ -4,23 +4,7 @@
  */
 
 export interface paths {
-    "/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["AppController_getHello"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/products": {
+    "/v1/products": {
         parameters: {
             query?: never;
             header?: never;
@@ -36,7 +20,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/products/{id}": {
+    "/v1/products/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -52,7 +36,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/categories": {
+    "/v1/categories": {
         parameters: {
             query?: never;
             header?: never;
@@ -68,7 +52,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/categories/{id}": {
+    "/v1/categories/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -84,7 +68,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/brands": {
+    "/v1/brands": {
         parameters: {
             query?: never;
             header?: never;
@@ -100,7 +84,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/brands/{id}": {
+    "/v1/brands/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -116,7 +100,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/cart/items": {
+    "/v1/cart/items": {
         parameters: {
             query?: never;
             header?: never;
@@ -132,7 +116,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/cart": {
+    "/v1/cart": {
         parameters: {
             query?: never;
             header?: never;
@@ -148,7 +132,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/cart/items/{variantId}": {
+    "/v1/cart/items/{variantId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -164,7 +148,7 @@ export interface paths {
         patch: operations["CartController_updateItem"];
         trace?: never;
     };
-    "/checkout/config": {
+    "/v1/checkout/config": {
         parameters: {
             query?: never;
             header?: never;
@@ -180,7 +164,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/checkout/session": {
+    "/v1/checkout/session": {
         parameters: {
             query?: never;
             header?: never;
@@ -196,7 +180,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/checkout/shipping-options": {
+    "/v1/checkout/shipping-options": {
         parameters: {
             query?: never;
             header?: never;
@@ -212,7 +196,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/checkout/session/{sessionId}": {
+    "/v1/checkout/session/{sessionId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -228,7 +212,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/customer": {
+    "/v1/customer": {
         parameters: {
             query?: never;
             header?: never;
@@ -244,7 +228,7 @@ export interface paths {
         patch: operations["CustomerController_update"];
         trace?: never;
     };
-    "/customer/orders": {
+    "/v1/customer/orders": {
         parameters: {
             query?: never;
             header?: never;
@@ -260,7 +244,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/customer/orders/{id}": {
+    "/v1/customer/orders/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -276,7 +260,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/signup": {
+    "/v1/auth/signup": {
         parameters: {
             query?: never;
             header?: never;
@@ -292,7 +276,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/signin": {
+    "/v1/auth/signin": {
         parameters: {
             query?: never;
             header?: never;
@@ -308,7 +292,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/token/refresh": {
+    "/v1/auth/token/refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -324,7 +308,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/logout": {
+    "/v1/auth/logout": {
         parameters: {
             query?: never;
             header?: never;
@@ -641,23 +625,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    AppController_getHello: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     ProductsController_findAll: {
         parameters: {
             query?: {

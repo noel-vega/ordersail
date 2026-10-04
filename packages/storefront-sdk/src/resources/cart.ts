@@ -28,7 +28,7 @@ export function createCartResource(
 
   return {
     addItem: async (body: components["schemas"]["AddCartItemDto"]) => {
-      const result = await client.POST("/cart/items", {
+      const result = await client.POST("/v1/cart/items", {
         body,
         headers: cartHeaders(),
       });
@@ -37,7 +37,7 @@ export function createCartResource(
 
     // 404 = no cart yet for this token — the everyday first-visit case
     get: async () => {
-      const result = await client.GET("/cart", { headers: cartHeaders() });
+      const result = await client.GET("/v1/cart", { headers: cartHeaders() });
       return unwrapOrUndefinedOn(result, 404);
     },
 
@@ -45,9 +45,9 @@ export function createCartResource(
       variantId: number,
       body: components["schemas"]["UpdateCartItemDto"],
     ) => {
-      const path: paths["/cart/items/{variantId}"]["patch"]["parameters"]["path"] =
+      const path: paths["/v1/cart/items/{variantId}"]["patch"]["parameters"]["path"] =
         { variantId: String(variantId) };
-      const result = await client.PATCH("/cart/items/{variantId}", {
+      const result = await client.PATCH("/v1/cart/items/{variantId}", {
         params: { path },
         body,
         headers: cartHeaders(),
@@ -56,9 +56,9 @@ export function createCartResource(
     },
 
     removeItem: async (variantId: number) => {
-      const path: paths["/cart/items/{variantId}"]["delete"]["parameters"]["path"] =
+      const path: paths["/v1/cart/items/{variantId}"]["delete"]["parameters"]["path"] =
         { variantId: String(variantId) };
-      const result = await client.DELETE("/cart/items/{variantId}", {
+      const result = await client.DELETE("/v1/cart/items/{variantId}", {
         params: { path },
         headers: cartHeaders(),
       });
@@ -66,7 +66,7 @@ export function createCartResource(
     },
 
     clear: async () => {
-      const result = await client.DELETE("/cart", { headers: cartHeaders() });
+      const result = await client.DELETE("/v1/cart", { headers: cartHeaders() });
       return unwrap(result);
     },
   };

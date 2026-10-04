@@ -380,7 +380,7 @@ jobs:
           # call. Full TLS verification: no -k, unlike before the record existed.
           hit      "storefront-api GET /health"      200 https://storefront.ordersail.com/health
           body_has "storefront-api GET /health"      '"status":"ok"' https://storefront.ordersail.com/health
-          hit      "storefront-api GET /products"    401 https://storefront.ordersail.com/products
+          hit      "storefront-api GET /v1/products" 401 https://storefront.ordersail.com/v1/products
 
           hit      "pos-api        GET /health"      200 https://pos.ordersail.com/health
           body_has "pos-api        GET /health"      '"status":"ok"' https://pos.ordersail.com/health

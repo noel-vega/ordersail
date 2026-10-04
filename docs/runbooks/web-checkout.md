@@ -12,9 +12,9 @@ it separately alongside this monorepo to follow the steps below.
 
 ```
 storefront-web /checkout                         [storefront-api :3001]
-  → GET  /checkout/config              gate on stripe_accounts.charges_enabled
-  → POST /checkout/session             stripe.checkout.sessions.create({ ui_mode: 'embedded_page' }, { stripeAccount })
-  → POST /checkout/shipping-options    (per address change) Shippo rates → sessions.update
+  → GET  /v1/checkout/config           gate on stripe_accounts.charges_enabled
+  → POST /v1/checkout/session          stripe.checkout.sessions.create({ ui_mode: 'embedded_page' }, { stripeAccount })
+  → POST /v1/checkout/shipping-options (per address change) Shippo rates → sessions.update
   → pay (embedded Stripe form)
 
   → checkout.session.completed         [merchant-api :3000]
@@ -27,7 +27,7 @@ storefront-web /checkout                         [storefront-api :3001]
                                        inventory decrement + inventory_movements, delete carts row,
                                        enqueue order-confirmation email
 
-  → GET /checkout/session/:id          [storefront-api] return page shows "Thanks for your order!"
+  → GET /v1/checkout/session/:id       [storefront-api] return page shows "Thanks for your order!"
 ```
 
 ## Prerequisites (one time)
@@ -82,7 +82,7 @@ insert into stripe_accounts ("accountId", stripe_account_id, charges_enabled, de
 values (1, 'acct_XXXX', true, true);
 ```
 
-`curl -s localhost:3001/checkout/config -H "x-app-key: sfk_…"` should now return
+`curl -s localhost:3001/v1/checkout/config -H "x-app-key: sfk_…"` should now return
 `{"ready":true,"stripeAccountId":"acct_…"}`.
 
 ## Run the purchase
@@ -92,7 +92,7 @@ product → **Add to cart** → **Cart** → **Checkout** → in the embedded St
 
 - Email: anything
 - Shipping address: any real US address (click "Enter address manually" if the
-  autocomplete is fiddly) — this fires `POST /checkout/shipping-options`; you should see
+  autocomplete is fiddly) — this fires `POST /v1/checkout/shipping-options`; you should see
   3 real carrier rates appear
 - Card **`4242 4242 4242 4242`**, exp `12/34`, CVC `123`, ZIP matching the address
 - **Pay** → redirect to `/checkout/return` → "Thanks for your order!"
