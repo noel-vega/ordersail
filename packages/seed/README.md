@@ -2,7 +2,15 @@
 
 Seeds local dev with a demo sneaker-store catalog ("Sneaker Depot") — brands, categories,
 13 real shoe products, and a real matching photo for each — so `merchant-web` never
-starts from an empty catalog. It also seeds 40 registered storefront customers.
+starts from an empty catalog. It also seeds 40 registered storefront customers and about
+90 days of paid web order history (~400 orders): line items, a `stripe` payment with fake
+`cs_test_seed_*` ids, ship-to addresses, `sold` stock movements, and fulfillments with fake
+tracking. Everything older than 3 days is shipped; newer orders are left to fulfill.
+
+Order dates are relative to when the seed runs, so the dashboard always shows "the last 90
+days". Run `npm run reset` to move the window forward. Order history is written only once:
+it's skipped when the account already has orders. Refunding or canceling a seeded order
+through Stripe will fail, because the Stripe ids are fake.
 
 ## Demo logins
 
@@ -21,7 +29,7 @@ Email:    ava.thompson@example.com
 Password: password123
 ```
 
-Generated data (customers' signup dates, and so on) comes from the fixed-seed PRNG in
+Generated data (customers, orders, dates, fulfillments) comes from the fixed-seed PRNG in
 `scripts/seed-random.ts`, so every `npm run reset` produces the same store.
 
 ## Usage
