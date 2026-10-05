@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { createRedisConnection } from 'queue';
+import { bullmqConnectionOptions } from 'queue';
 import { DatabaseModule } from './database/database.module';
 import { AppKeyModule } from './modules/app-key/app-key.module';
 import { ProductsModule } from './modules/products/products.module';
@@ -15,9 +15,9 @@ import { HealthModule } from './modules/health/health.module';
   imports: [
     // 5s command timeout — this app only ever enqueues, never blocks
     // waiting on jobs, so a bounded timeout lets a Redis outage fail fast
-    // instead of hanging the request indefinitely (see createRedisConnection)
+    // instead of hanging the request indefinitely (see bullmqConnectionOptions)
     BullModule.forRoot({
-      connection: createRedisConnection({ commandTimeout: 5000 }),
+      connection: bullmqConnectionOptions({ commandTimeout: 5000 }),
     }),
     DatabaseModule,
     AppKeyModule,

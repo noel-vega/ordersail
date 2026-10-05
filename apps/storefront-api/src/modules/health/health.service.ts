@@ -1,20 +1,25 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { HealthIndicatorService } from '@nestjs/terminus';
-import { createRedisConnection } from 'queue';
+import { createOwnedRedisClient } from 'queue';
 import { sql, type db as Db } from 'db';
 import { DRIZZLE } from '../../database/database.constants';
 
 @Injectable()
-export class HealthService {
+export class HealthService implements OnModuleDestroy {
   // its own connection, deliberately decoupled from BullMQ's — the
   // simplest way to test raw Redis reachability without reaching into
   // @nestjs/bullmq internals to reuse its connection
-  private readonly redis = createRedisConnection({ commandTimeout: 2000 });
+  private readonly redis = createOwnedRedisClient({ commandTimeout: 2000 });
 
   constructor(
     @Inject(DRIZZLE) private readonly db: typeof Db,
     private readonly healthIndicatorService: HealthIndicatorService,
   ) {}
+
+  // ours, not BullMQ's — see createOwnedRedisClient
+  onModuleDestroy() {
+    this.redis.disconnect();
+  }
 
   checkDatabase = async () => {
     const indicator = this.healthIndicatorService.check('database');

@@ -36,7 +36,8 @@ async function bootstrap() {
   // so a failing /health logs its route, not null
   trackRouteTemplates(app.getHttpAdapter().getInstance());
   // closing the app closes the BullMQ workers, which let an in-flight job
-  // finish instead of leaving it to be picked up as stalled
+  // finish instead of leaving it to be picked up as stalled — before the
+  // queues close, so the job can still enqueue (see DrainingWorkerHost)
   installShutdownHandler(app);
   // Fastify binds loopback only when no host is given. Nothing outside the
   // container calls the worker today (no ALB; the Docker HEALTHCHECK hits

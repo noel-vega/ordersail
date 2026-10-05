@@ -12,8 +12,6 @@ import {
 } from '@nestjs/platform-fastify';
 import { Test, TestingModule } from '@nestjs/testing';
 import { db as sharedDb } from 'db';
-import type { Redis } from 'ioredis';
-import type * as QueueModule from 'queue';
 import {
   insertAccount,
   insertApiKey,
@@ -31,33 +29,6 @@ import {
 } from '@ordersail/storefront-sdk';
 import { configureApp } from '../configure-app';
 import { SHIPPO, STRIPE } from '../modules/checkout/checkout.constants';
-
-// Two independent real ioredis connections get created as a side effect of
-// importing AppModule: BullModule.forRoot's shared connection (app.module.ts)
-// and HealthService's own dedicated one (deliberately separate, per its own
-// comment). Both are created eagerly — a class-field initializer and a
-// decorator argument both run before any Nest testing override can apply —
-// and retried forever (maxRetriesPerRequest: null) if unreachable, e.g. in
-// CI where no Redis service container exists. Nothing in this app ever
-// closes either, since both are provided pre-built rather than something
-// Nest constructed itself. Wrapping (not replacing) createRedisConnection
-// here just stashes every real instance so afterAll can disconnect them —
-// real connection behavior is unchanged. jest.mock calls are hoisted above
-// the AppModule import below regardless of source order.
-const capturedRedisConnections: Redis[] = [];
-jest.mock('queue', () => {
-  const actual = jest.requireActual<typeof QueueModule>('queue');
-  return {
-    ...actual,
-    createRedisConnection: (
-      ...args: Parameters<typeof actual.createRedisConnection>
-    ) => {
-      const connection = actual.createRedisConnection(...args);
-      capturedRedisConnections.push(connection);
-      return connection;
-    },
-  };
-});
 
 import { AppModule } from '../app.module';
 
@@ -109,7 +80,6 @@ describe('storefront-sdk contract', () => {
     // unhandled termination error that crashes the whole Jest worker even
     // though every test already passed.
     await sharedDb.$client.end();
-    capturedRedisConnections.forEach((connection) => connection.disconnect());
   });
 
   it('exercises every StorefrontClient resource against a real storefront-api', async () => {

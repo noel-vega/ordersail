@@ -1,4 +1,4 @@
-import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import { QUEUE_NAMES, type EmailJobData } from 'queue';
 import { Logger, logContextOf, runWithLogContext } from 'logging';
@@ -10,6 +10,7 @@ import {
   renderVerifyEmailEmail,
 } from 'email-templates';
 import { MailerService } from './mailer.service';
+import { DrainingWorkerHost } from '../../draining-worker-host';
 
 // this is the only place email HTML gets built now — moved here verbatim
 // from merchant-api's/storefront-api's EmailService. The HTML itself is
@@ -17,7 +18,7 @@ import { MailerService } from './mailer.service';
 // string via react-email) — this file just maps a job's data onto template
 // props and sends the result
 @Processor(QUEUE_NAMES.EMAIL)
-export class EmailProcessor extends WorkerHost {
+export class EmailProcessor extends DrainingWorkerHost {
   private readonly logger = new Logger(EmailProcessor.name);
   private lastActiveAt: Date | null = null;
 
