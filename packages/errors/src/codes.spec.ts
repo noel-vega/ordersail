@@ -1,6 +1,17 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { codes, docUrl, genericCodeForStatus, genericCodes, isErrorCode, typeForStatus, type ErrorCode } from './codes.ts';
+import {
+  codes,
+  docUrl,
+  genericCodeForStatus,
+  genericCodes,
+  isErrorCode,
+  typeForStatus,
+  detailsSchemas,
+  type DetailsByCode,
+  type ErrorCode,
+} from './codes.ts';
+import type { FromSchema } from 'json-schema-to-ts';
 
 const STATUSES = [400, 401, 403, 404, 405, 406, 408, 409, 410, 412, 413, 415, 421, 422, 429, 500, 501, 502, 503, 504, 505];
 
@@ -60,3 +71,26 @@ describe('the code registry', () => {
     assert.ok(!isErrorCode('toString'));
   });
 });
+
+// Compile-time drift check: each detailsSchemas schema (what the OpenAPI
+// document publishes, and so what the SDKs type `details` as) must describe
+// exactly its DetailsByCode type (what the throwers check against). A mismatch
+// fails typecheck here and names the drifting code.
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Schemas = typeof detailsSchemas;
+// `true` only when A and B are exactly the same type; the value is never read.
+function same<A, B>(): Equal<A, B> {
+  return true as never;
+}
+// one entry per code (the `satisfies` makes a new code add one); an entry that
+// isn't `true` is the code whose schema and type have drifted apart
+void ({
+  validation_failed: same<
+    FromSchema<Schemas['validation_failed']['schema']>,
+    DetailsByCode['validation_failed']
+  >(),
+  service_unavailable: same<
+    FromSchema<Schemas['service_unavailable']['schema']>,
+    Exclude<DetailsByCode['service_unavailable'], undefined>
+  >(),
+} satisfies Record<keyof Schemas, true>);

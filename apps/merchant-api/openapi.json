@@ -9238,6 +9238,7 @@
             "properties": {
               "fields": {
                 "type": "array",
+                "description": "Every failing field; nested properties as dotted paths.",
                 "items": {
                   "type": "object",
                   "required": [
@@ -9251,13 +9252,16 @@
                     "message": {
                       "type": "string"
                     }
-                  }
+                  },
+                  "additionalProperties": false
                 }
               }
-            }
+            },
+            "additionalProperties": false
           },
           "service_unavailable": {
             "type": "object",
+            "description": "up or down per health check.",
             "additionalProperties": {
               "type": "string",
               "enum": [

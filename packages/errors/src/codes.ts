@@ -153,7 +153,8 @@ export interface DetailsByCode {
 // always come with that code. The OpenAPI document publishes these as
 // ErrorDetailsByCode and the SDKs derive their typed `details` from it, so no
 // client keeps its own copy. `satisfies` holds the keys and their `required`
-// in step with DetailsByCode; keep each schema in step with the type above.
+// in step with DetailsByCode, and codes.spec.ts fails typecheck unless each
+// schema describes exactly its DetailsByCode type.
 export const detailsSchemas = {
   validation_failed: {
     required: true,
@@ -163,18 +164,25 @@ export const detailsSchemas = {
       properties: {
         fields: {
           type: 'array',
+          description: 'Every failing field; nested properties as dotted paths.',
           items: {
             type: 'object',
             required: ['param', 'message'],
             properties: { param: { type: 'string' }, message: { type: 'string' } },
+            additionalProperties: false,
           },
         },
       },
+      additionalProperties: false,
     },
   },
   service_unavailable: {
     required: false,
-    schema: { type: 'object', additionalProperties: { type: 'string', enum: ['up', 'down'] } },
+    schema: {
+      type: 'object',
+      description: 'up or down per health check.',
+      additionalProperties: { type: 'string', enum: ['up', 'down'] },
+    },
   },
 } as const satisfies {
   [C in keyof DetailsByCode]-?: { required: undefined extends DetailsByCode[C] ? false : true; schema: object };

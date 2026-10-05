@@ -259,11 +259,13 @@ export interface components {
         /** @description Each error code's `details` shape, keyed by code. A code that isn't listed has no fixed shape. */
         ErrorDetailsByCode: {
             validation_failed: {
+                /** @description Every failing field; nested properties as dotted paths. */
                 fields: {
                     param: string;
                     message: string;
                 }[];
             };
+            /** @description up or down per health check. */
             service_unavailable?: {
                 [key: string]: "up" | "down";
             };
