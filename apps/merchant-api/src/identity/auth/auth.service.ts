@@ -368,11 +368,8 @@ export class AuthService {
     if (!user) {
       throw new ApiException('invalid_access_token');
     }
-    if (!user.password) {
-      throw new UnauthorizedException();
-    }
-    if (!(await bcrypt.compare(password, user.password))) {
-      throw new UnauthorizedException();
+    if (!user.password || !(await bcrypt.compare(password, user.password))) {
+      throw new ApiException('unauthenticated');
     }
   }
 
@@ -815,7 +812,7 @@ export class AuthService {
       // enumerates nothing — and without it the dashboard can't tell this
       // apart from an expired access token, which it would answer by
       // silently refreshing instead of reporting the mistake.
-      if (err instanceof UnauthorizedException) {
+      if (err instanceof ApiException && err.code === 'unauthenticated') {
         throw new UnauthorizedException('Current password is incorrect');
       }
       throw err;

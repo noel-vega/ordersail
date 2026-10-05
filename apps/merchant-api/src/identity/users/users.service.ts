@@ -250,10 +250,7 @@ export class UsersService {
       return toUser(user, roles.get(user.id) ?? []);
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new ApiException('email_taken', {
-          message: 'Email already in use',
-          param: 'email',
-        });
+        throw new ApiException('email_taken', { param: 'email' });
       }
       if (isForeignKeyViolation(err)) {
         throw new BadRequestException('One or more roles no longer exist');

@@ -76,10 +76,7 @@ export class CustomerService {
       return customer;
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new ApiException('email_taken', {
-          message: 'Email already in use',
-          param: 'email',
-        });
+        throw new ApiException('email_taken', { param: 'email' });
       }
       throw err;
     }
@@ -112,10 +109,7 @@ export class CustomerService {
       return toCustomer(row);
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new ApiException('email_taken', {
-          message: 'Email already in use',
-          param: 'email',
-        });
+        throw new ApiException('email_taken', { param: 'email' });
       }
       throw err;
     }

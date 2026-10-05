@@ -65,10 +65,7 @@ export class AccountService {
       return await this.provisionTenant(input, hashedPassword);
     } catch (err) {
       if (isUniqueViolation(err, USERS_EMAIL_UNIQUE_CONSTRAINT)) {
-        throw new ApiException('email_taken', {
-          message: 'Email already in use',
-          param: 'email',
-        });
+        throw new ApiException('email_taken', { param: 'email' });
       }
       throw err;
     }

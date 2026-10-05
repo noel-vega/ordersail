@@ -514,7 +514,7 @@ describe('AuthService.resetPassword — a new password ends every Session', () =
     ).rejects.toThrow(new UnauthorizedException('Invalid or expired token'));
     await expect(
       service.verifyPassword(user.id, 'brand-new-password'),
-    ).rejects.toThrow(UnauthorizedException);
+    ).rejects.toMatchObject({ code: 'unauthenticated' });
   });
 });
 
@@ -544,7 +544,7 @@ describe("AuthService.changePassword — ends every other Session, rotates the c
 
     await expect(
       service.verifyPassword(user.id, CURRENT_PASSWORD),
-    ).rejects.toThrow(UnauthorizedException);
+    ).rejects.toMatchObject({ code: 'unauthenticated' });
     await expect(
       service.verifyPassword(user.id, NEW_PASSWORD),
     ).resolves.toBeUndefined();
@@ -1585,7 +1585,7 @@ describe('AuthService — TOTP MFA (OS-316)', () => {
 
         await expect(
           service.disableMfa(user.id, 'wrong-password', caller.refresh_token),
-        ).rejects.toThrow(UnauthorizedException);
+        ).rejects.toMatchObject({ code: 'unauthenticated' });
 
         await expectWorkingSession(sessions, caller, user.id);
         await expectWorkingSession(sessions, otherBrowser, user.id);

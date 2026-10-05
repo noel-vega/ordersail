@@ -575,7 +575,7 @@ describe('PasskeysService — management (OS-485)', () => {
 
     await expect(
       service.remove(user.id, passkey.id, 'wrong', undefined),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    ).rejects.toMatchObject({ code: 'unauthenticated' });
     expect(await db.select().from(userPasskeysTable)).toHaveLength(1);
   });
 
@@ -754,7 +754,7 @@ describe('PasskeysService — management (OS-485)', () => {
 
       await expect(
         service.remove(user.id, mine.id, 'wrong', caller.refresh_token),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      ).rejects.toMatchObject({ code: 'unauthenticated' });
       await expect(
         service.remove(user.id, theirs.id, password, caller.refresh_token),
       ).rejects.toBeInstanceOf(NotFoundException);

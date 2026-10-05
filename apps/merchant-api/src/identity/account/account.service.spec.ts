@@ -110,7 +110,7 @@ describe('AccountService.provision — first-run seed (OS-173)', () => {
     expect(refusal).toMatchObject({
       code: 'email_taken',
       param: 'email',
-      message: 'Email already in use',
+      message: 'An account with this email already exists.',
     });
 
     const accounts = await db.select().from(accountsTable);
