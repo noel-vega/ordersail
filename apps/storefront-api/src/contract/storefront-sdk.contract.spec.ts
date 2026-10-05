@@ -24,6 +24,7 @@ import {
 } from 'test-support';
 import {
   ApiError,
+  isApiError,
   StorefrontClient,
   type StorefrontClientOptions,
 } from '@ordersail/storefront-sdk';
@@ -673,9 +674,12 @@ describe('storefront-sdk contract', () => {
       code: 'validation_failed',
       param: 'quantity',
     });
-    const fields = (error as ApiError).details?.fields as
-      { param: string; message: string }[] | undefined;
-    expect(fields?.map((field) => field.param)).toEqual(['quantity']);
+    if (!isApiError(error, 'validation_failed')) {
+      throw new Error('expected a validation_failed ApiError');
+    }
+    expect(error.details.fields.map((field) => field.param)).toEqual([
+      'quantity',
+    ]);
   });
 
   it('returns undefined only for the one expected outcome, not any failure', async () => {

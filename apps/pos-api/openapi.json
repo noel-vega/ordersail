@@ -932,8 +932,54 @@
               },
               "details": {
                 "type": "object",
-                "additionalProperties": true
+                "additionalProperties": true,
+                "description": "Extra data for the code; its shape per code is in ErrorDetailsByCode."
               }
+            }
+          }
+        }
+      },
+      "ErrorDetailsByCode": {
+        "type": "object",
+        "description": "Each error code's `details` shape, keyed by code. A code that isn't listed has no fixed shape.",
+        "required": [
+          "validation_failed"
+        ],
+        "properties": {
+          "validation_failed": {
+            "type": "object",
+            "required": [
+              "fields"
+            ],
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "param",
+                    "message"
+                  ],
+                  "properties": {
+                    "param": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "service_unavailable": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "up",
+                "down"
+              ]
             }
           }
         }

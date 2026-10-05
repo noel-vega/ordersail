@@ -55,30 +55,31 @@ export class ApiError extends Error {
   }
 }
 
-// The `details` shape for each code that has one. The API's OpenAPI document
-// types `details` only as an object so far, so these mirror the server's
-// registry (packages/errors DetailsByCode) by hand until per-code schemas
-// reach the document.
-export interface ApiErrorDetails {
-  validation_failed: { fields: { param: string; message: string }[] };
-}
+// The `details` shape for each code that has one, from the API's OpenAPI
+// document. An optional key means that code's details may be absent.
+export type ApiErrorDetails = components["schemas"]["ErrorDetailsByCode"];
 
 type DetailsFor<C extends ApiErrorCode> = C extends keyof ApiErrorDetails
   ? ApiErrorDetails[C]
   : Record<string, unknown> | undefined;
 
-// Narrows an unknown caught value to an ApiError, optionally with a given
-// code, and narrows `details` to that code's shape:
+// Narrows an unknown caught value to an ApiError. Given a code, it also
+// narrows `code` and `details` to that code's shape:
 //
 //   catch (err) {
 //     if (isApiError(err, "validation_failed")) {
 //       for (const { param, message } of err.details.fields) showFieldError(param, message);
 //     }
 //   }
+//
+// Without a code, `code` stays possibly undefined: a response with no error
+// body (a proxy's error page) has none.
+export function isApiError(err: unknown): err is ApiError;
 export function isApiError<C extends ApiErrorCode>(
   err: unknown,
-  code?: C,
-): err is ApiError & { code: C; details: DetailsFor<C> } {
+  code: C,
+): err is ApiError & { code: C; details: DetailsFor<C> };
+export function isApiError(err: unknown, code?: ApiErrorCode): boolean {
   return err instanceof ApiError && (code === undefined || err.code === code);
 }
 

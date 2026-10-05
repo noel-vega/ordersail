@@ -139,9 +139,8 @@ export const genericCodes: Readonly<Record<number, ErrorCode>> = {
 
 export type FieldError = { param: string; message: string };
 
-// The shape of `details` for each code that has one. Plain TS types for now; a
-// JSON Schema per code comes later, when a client needs a typed `details` or a
-// non-Node API needs it as data. An optional key means the details are optional.
+// The shape of `details` for each code that has one, as the throwers in this
+// package type it. An optional key means the details are optional.
 export interface DetailsByCode {
   // every failing field; nested properties as dotted paths
   validation_failed: { fields: FieldError[] };
@@ -149,6 +148,37 @@ export interface DetailsByCode {
   // carries internals; the text is in the logs)
   service_unavailable?: Record<string, 'up' | 'down'>;
 }
+
+// The same shapes as data: a JSON Schema per code, `required` when the details
+// always come with that code. The OpenAPI document publishes these as
+// ErrorDetailsByCode and the SDKs derive their typed `details` from it, so no
+// client keeps its own copy. `satisfies` holds the keys and their `required`
+// in step with DetailsByCode; keep each schema in step with the type above.
+export const detailsSchemas = {
+  validation_failed: {
+    required: true,
+    schema: {
+      type: 'object',
+      required: ['fields'],
+      properties: {
+        fields: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['param', 'message'],
+            properties: { param: { type: 'string' }, message: { type: 'string' } },
+          },
+        },
+      },
+    },
+  },
+  service_unavailable: {
+    required: false,
+    schema: { type: 'object', additionalProperties: { type: 'string', enum: ['up', 'down'] } },
+  },
+} as const satisfies {
+  [C in keyof DetailsByCode]-?: { required: undefined extends DetailsByCode[C] ? false : true; schema: object };
+};
 
 export function isErrorCode(value: string): value is ErrorCode {
   return Object.hasOwn(codes, value);

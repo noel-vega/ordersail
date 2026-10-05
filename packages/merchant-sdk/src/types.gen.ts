@@ -2372,9 +2372,22 @@ export interface components {
                 doc_url: string;
                 /** @description The x-request-id of the request; quote it when reporting a problem. */
                 request_id: string | null;
+                /** @description Extra data for the code; its shape per code is in ErrorDetailsByCode. */
                 details?: {
                     [key: string]: unknown;
                 };
+            };
+        };
+        /** @description Each error code's `details` shape, keyed by code. A code that isn't listed has no fixed shape. */
+        ErrorDetailsByCode: {
+            validation_failed: {
+                fields: {
+                    param: string;
+                    message: string;
+                }[];
+            };
+            service_unavailable?: {
+                [key: string]: "up" | "down";
             };
         };
     };
@@ -5086,6 +5099,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedVariantStock"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

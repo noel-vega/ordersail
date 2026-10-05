@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { codes } from './codes.ts';
+import { codes, detailsSchemas } from './codes.ts';
 import { withErrorResponses } from './openapi.ts';
 
 const healthContent = { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string' } } } } };
@@ -32,6 +32,13 @@ describe('withErrorResponses', () => {
   it("generates the code enum from the registry", () => {
     const schema = (withErrorResponses(document()) as any).components.schemas.ErrorResponse;
     assert.deepEqual(schema.properties.error.properties.code.enum, Object.keys(codes));
+  });
+
+  it("publishes each code's details schema from the registry, required where the registry says", () => {
+    const schema = (withErrorResponses(document()) as any).components.schemas.ErrorDetailsByCode;
+    assert.deepEqual(Object.keys(schema.properties), Object.keys(detailsSchemas));
+    assert.deepEqual(schema.properties.validation_failed, detailsSchemas.validation_failed.schema);
+    assert.deepEqual(schema.required, ['validation_failed']);
   });
 
   it('gives every error response the ErrorResponse body, and leaves success responses alone', () => {
