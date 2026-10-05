@@ -38,6 +38,7 @@ import {
   isUniqueViolation,
 } from 'db';
 import { CUSTOMER_PASSWORD, ensureCustomers } from './seed-customers.js';
+import { ensureOrderHistory } from './seed-orders.js';
 
 const OWNER_EMAIL = 'owner@sneakerdepot.test';
 const OWNER_PASSWORD = 'password123';
@@ -586,6 +587,18 @@ async function main() {
   const { customers, created: customersCreated } = await ensureCustomers(account.id);
   console.log(
     `${customersCreated} customer(s) created, ${customers.length - customersCreated} already existed.`,
+  );
+
+  const orders = await ensureOrderHistory({
+    accountId: account.id,
+    locationId: location.id,
+    customers,
+    restockAt: OPENING_STOCK_AT,
+  });
+  console.log(
+    orders.skipped
+      ? 'Order history already exists — skipped.'
+      : `${orders.created} order(s) created across the last 90 days.`,
   );
   console.log(`Sign in at merchant-web with ${OWNER_EMAIL} / ${OWNER_PASSWORD}`);
   console.log(`Sign in at storefront-web with ${customers[0].email} / ${CUSTOMER_PASSWORD}`);
