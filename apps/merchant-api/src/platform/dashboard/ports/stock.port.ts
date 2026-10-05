@@ -3,10 +3,10 @@
 // the dashboard's counts and Low stock card agree with GET /inventory/variants
 // (OS-693). `dashboard.service` depends on this interface, never on stock's
 // concrete services. See apps/merchant-api/ARCHITECTURE.md.
-import type { VariantStockCounts } from 'src/stock';
+import { VariantStockRecord, type VariantStockCounts } from 'src/stock';
 import type { DashboardLowStock } from '../entities/dashboard-low-stock.entity';
 
-export type { VariantStockCounts };
+export { VariantStockRecord, type VariantStockCounts };
 
 export const STOCK_PORT = Symbol('DASHBOARD_STOCK_PORT');
 

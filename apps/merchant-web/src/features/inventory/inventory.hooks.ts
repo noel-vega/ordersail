@@ -19,10 +19,13 @@ export const MOVEMENT_REASONS: InventoryMovementRecord["reason"][] = [
   "adjustment",
 ]
 
+// the Inventory list's `view` for a row per variant with its stock summed
+// across locations — the dashboard's view (OS-693); absent, a row per
+// variant × location
+export const BY_VARIANT = "variant"
+
 export const inventorySearchSchema = listSearchSchema.extend({
-  // a row per variant × location (the default), or per variant with its
-  // stock summed across locations — the dashboard's view (OS-693)
-  view: z.enum(["variant"]).optional().catch(undefined),
+  view: z.enum([BY_VARIANT]).optional().catch(undefined),
   // location rows only
   locationId: z.number().int().optional().catch(undefined),
   lowStock: z.boolean().optional().catch(undefined),

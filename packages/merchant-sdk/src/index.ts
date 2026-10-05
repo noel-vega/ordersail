@@ -106,7 +106,6 @@ export type DashboardSummary = components["schemas"]["DashboardSummary"];
 export type DashboardSales = components["schemas"]["DashboardSales"];
 export type SalesTotals = components["schemas"]["SalesTotals"];
 export type DashboardLowStock = components["schemas"]["DashboardLowStock"];
-export type LowStockItem = components["schemas"]["LowStockItem"];
 export type DashboardSalesTimeseries =
   components["schemas"]["DashboardSalesTimeseries"];
 export type SalesTimeseriesPoint =

@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { ListInventoryView } from '../../../features/inventory/views/list-inventory.view'
 import {
+  BY_VARIANT,
   getInventoryPageQueryOptions,
   getVariantStockPageQueryOptions,
   inventorySearchSchema,
@@ -14,7 +15,7 @@ export const Route = createFileRoute('/app/inventory/')({
   beforeLoad: async ({ search, context }) => {
     requirePermission(context, 'inventory:read')
     // only the active view's page — By variant is the dashboard's (OS-693)
-    if (search.view === "variant") {
+    if (search.view === BY_VARIANT) {
       await queryClient.ensureQueryData(getVariantStockPageQueryOptions(search))
     } else {
       await queryClient.ensureQueryData(getInventoryPageQueryOptions(search))

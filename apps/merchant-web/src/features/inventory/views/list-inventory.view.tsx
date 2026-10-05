@@ -20,6 +20,7 @@ import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
 import { useStockLocations } from "../../locations/locations.hooks";
 import {
+  BY_VARIANT,
   useInventoryPageQuery,
   useVariantStockPageQuery,
 } from "../inventory.hooks";
@@ -34,15 +35,15 @@ import { usePermissions } from "../../auth/permission-context";
 
 const route = getRouteApi("/app/inventory/");
 const ALL_LOCATIONS = "all";
+// the By location tab's value; By location is the absence of `view`
 const BY_LOCATION = "location";
-const BY_VARIANT = "variant";
 
 export function ListInventoryView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   // By variant sums each variant's stock across locations, and judges
   // low/out on that total — exactly as the dashboard does (OS-693)
-  const byVariant = search.view === "variant";
+  const byVariant = search.view === BY_VARIANT;
   const inventory = useInventoryPageQuery(search, !byVariant);
   const variants = useVariantStockPageQuery(search, byVariant);
   const stockLocations = useStockLocations();
@@ -157,7 +158,7 @@ export function ListInventoryView() {
               navigate({
                 search: (prev) => ({
                   ...prev,
-                  view: value === BY_VARIANT ? "variant" : undefined,
+                  view: value === BY_VARIANT ? BY_VARIANT : undefined,
                   // a variant's total spans every location
                   locationId: undefined,
                   page: 1,

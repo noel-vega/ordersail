@@ -22,10 +22,6 @@ export class StockAdapter implements StockPort {
       accountId,
       { lowStock: true },
     );
-    return {
-      // the card doesn't show the per-location breakdown
-      items: items.map(({ locations: _locations, ...item }) => item),
-      lowStockThreshold,
-    };
+    return { items, lowStockThreshold };
   }
 }

@@ -7,6 +7,7 @@ import { Skeleton } from "ui/skeleton"
 import { Can } from "../../../components/can"
 import { usePermissions } from "../../auth/permission-context"
 import { StockLevel } from "../../inventory/components/stock-level"
+import { BY_VARIANT } from "../../inventory/inventory.hooks"
 
 // The variants most in need of restocking (OS-195): stock summed across
 // every location, at or below the account's threshold, lowest first. Each
@@ -35,7 +36,7 @@ export function LowStockCard(props: {
           <CardAction>
             <Link
               to="/app/inventory"
-              search={{ view: "variant", lowStock: true }}
+              search={{ view: BY_VARIANT, lowStock: true }}
               className="text-sm font-medium hover:underline"
             >
               View all

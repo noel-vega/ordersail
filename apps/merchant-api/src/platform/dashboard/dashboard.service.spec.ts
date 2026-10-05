@@ -68,8 +68,16 @@ describe('DashboardService stock alerts (OS-195)', () => {
   async function setup(lowStockThreshold = 5) {
     const account = await insertAccount(db, { lowStockThreshold });
     const [a, b] = await Promise.all([
-      insertLocation(db, { accountId: account.id, withAddress: false }),
-      insertLocation(db, { accountId: account.id, withAddress: false }),
+      insertLocation(db, {
+        accountId: account.id,
+        name: 'A',
+        withAddress: false,
+      }),
+      insertLocation(db, {
+        accountId: account.id,
+        name: 'B',
+        withAddress: false,
+      }),
     ]);
     return { account, a: a.id, b: b.id };
   }
@@ -216,6 +224,7 @@ describe('DashboardService stock alerts (OS-195)', () => {
         sku: 'MUG',
         optionsLabel: null,
         stock: 0,
+        locations: [{ locationId: a, locationName: 'A', stock: 0 }],
       },
       // both at 3: Apron before Shirt by name
       {
@@ -225,6 +234,7 @@ describe('DashboardService stock alerts (OS-195)', () => {
         sku: null,
         optionsLabel: null,
         stock: 3,
+        locations: [{ locationId: a, locationName: 'A', stock: 3 }],
       },
       {
         variantId: shirtLarge.id,
@@ -233,6 +243,10 @@ describe('DashboardService stock alerts (OS-195)', () => {
         sku: 'SH-L',
         optionsLabel: 'Large',
         stock: 3,
+        locations: [
+          { locationId: a, locationName: 'A', stock: 1 },
+          { locationId: b, locationName: 'B', stock: 2 },
+        ],
       },
     ]);
     expect(items.map((i) => i.variantId)).not.toContain(shirtSmall.id);

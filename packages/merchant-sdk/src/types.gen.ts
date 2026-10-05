@@ -2316,21 +2316,8 @@ export interface components {
             timezone: string;
             points: components["schemas"]["SalesTimeseriesPoint"][];
         };
-        LowStockItem: {
-            variantId: number;
-            productId: number;
-            productName: string;
-            sku: string | null;
-            /**
-             * @description the variant's option values in option order; null with no options
-             * @example Blue / Large
-             */
-            optionsLabel: string | null;
-            /** @description on hand across all locations; can be negative */
-            stock: number;
-        };
         DashboardLowStock: {
-            items: components["schemas"]["LowStockItem"][];
+            items: components["schemas"]["VariantStockRecord"][];
             lowStockThreshold: number;
         };
         OnboardingStatus: {

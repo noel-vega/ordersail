@@ -7760,49 +7760,13 @@
           "points"
         ]
       },
-      "LowStockItem": {
-        "type": "object",
-        "properties": {
-          "variantId": {
-            "type": "number"
-          },
-          "productId": {
-            "type": "number"
-          },
-          "productName": {
-            "type": "string"
-          },
-          "sku": {
-            "type": "string",
-            "nullable": true
-          },
-          "optionsLabel": {
-            "type": "string",
-            "nullable": true,
-            "example": "Blue / Large",
-            "description": "the variant's option values in option order; null with no options"
-          },
-          "stock": {
-            "type": "number",
-            "description": "on hand across all locations; can be negative"
-          }
-        },
-        "required": [
-          "variantId",
-          "productId",
-          "productName",
-          "sku",
-          "optionsLabel",
-          "stock"
-        ]
-      },
       "DashboardLowStock": {
         "type": "object",
         "properties": {
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/LowStockItem"
+              "$ref": "#/components/schemas/VariantStockRecord"
             }
           },
           "lowStockThreshold": {
