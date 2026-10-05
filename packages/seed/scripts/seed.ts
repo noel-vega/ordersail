@@ -37,6 +37,7 @@ import {
   PERMISSIONS_CATALOG,
   isUniqueViolation,
 } from 'db';
+import { CUSTOMER_PASSWORD, ensureCustomers } from './seed-customers.js';
 
 const OWNER_EMAIL = 'owner@sneakerdepot.test';
 const OWNER_PASSWORD = 'password123';
@@ -581,7 +582,13 @@ async function main() {
 
   console.log(`Done. ${created} product(s) created, ${skipped} already existed.`);
   console.log(`${imagesAdded} product image(s) added.`);
+
+  const { customers, created: customersCreated } = await ensureCustomers(account.id);
+  console.log(
+    `${customersCreated} customer(s) created, ${customers.length - customersCreated} already existed.`,
+  );
   console.log(`Sign in at merchant-web with ${OWNER_EMAIL} / ${OWNER_PASSWORD}`);
+  console.log(`Sign in at storefront-web with ${customers[0].email} / ${CUSTOMER_PASSWORD}`);
   process.exit(0);
 }
 
