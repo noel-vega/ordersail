@@ -133,8 +133,9 @@ Two rule sets are enforced by ESLint and will fail `lint:ci`:
 Calling another context's services goes through an **adapter behind a local port**: the consumer
 defines the port interface, an adapter in the consumer's `ports/` folder delegates to the producer's
 barrel, and the consumer's domain code depends only on the port. Live edges are
-`platform/dashboard → sales`, `sales → payments` (refunds), `catalog → stock` (opening-stock location)
-and `platform → stock` (location ownership check).
+`platform/dashboard → sales`, `sales → payments` (refunds), `catalog → stock` (opening-stock location),
+`platform → stock` (location ownership check) and `platform/dashboard → stock` (variant stock — `stock`
+owns the out/low-stock rule the dashboard and `GET /inventory/variants` share).
 
 Adding a cross-context edge means updating **both** the table in `apps/merchant-api/ARCHITECTURE.md`
 and the policies in `apps/merchant-api/eslint.config.mjs` (the boundary rules and the `portOnly` map)

@@ -2,15 +2,19 @@ import type { UseQueryResult } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import type { DashboardLowStock } from "merchant-sdk"
 import { Button } from "ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "ui/card"
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "ui/card"
 import { Skeleton } from "ui/skeleton"
+import { Can } from "../../../components/can"
 import { usePermissions } from "../../auth/permission-context"
 import { StockLevel } from "../../inventory/components/stock-level"
+import { BY_VARIANT } from "../../inventory/inventory.hooks"
 
 // The variants most in need of restocking (OS-195): stock summed across
 // every location, at or below the account's threshold, lowest first. Each
 // row links to its product for a viewer who can open it. The badges use the
-// threshold from the same response, so they always match the list.
+// threshold from the same response, so they always match the list. "View all"
+// opens the inventory list's By variant low-stock view, which applies the
+// same rule, so it lists exactly the variants counted here (OS-693).
 export function LowStockCard(props: {
   query: UseQueryResult<DashboardLowStock>
 }) {
@@ -28,6 +32,17 @@ export function LowStockCard(props: {
             <span className="font-normal"> · at or below {threshold}</span>
           )}
         </CardTitle>
+        <Can permission="inventory:read">
+          <CardAction>
+            <Link
+              to="/app/inventory"
+              search={{ view: BY_VARIANT, lowStock: true }}
+              className="text-sm font-medium hover:underline"
+            >
+              View all
+            </Link>
+          </CardAction>
+        </Can>
       </CardHeader>
       <CardContent>
         {query.isError && !query.data ? (

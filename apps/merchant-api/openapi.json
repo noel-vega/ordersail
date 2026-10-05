@@ -2948,6 +2948,75 @@
         ]
       }
     },
+    "/inventory/variants": {
+      "get": {
+        "operationId": "InventoryController_findVariants",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "SKU or product name match",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "lowStock",
+            "required": false,
+            "in": "query",
+            "description": "only variants whose summed stock is at or below the account's low-stock threshold (low or out), most urgent first",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedVariantStock"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Inventory"
+        ]
+      }
+    },
     "/inventory/movements": {
       "post": {
         "operationId": "InventoryController_createMovement",
@@ -6099,6 +6168,100 @@
           "lowStockThreshold"
         ]
       },
+      "VariantLocationStock": {
+        "type": "object",
+        "properties": {
+          "locationId": {
+            "type": "number"
+          },
+          "locationName": {
+            "type": "string"
+          },
+          "stock": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "locationId",
+          "locationName",
+          "stock"
+        ]
+      },
+      "VariantStockRecord": {
+        "type": "object",
+        "properties": {
+          "variantId": {
+            "type": "number"
+          },
+          "productId": {
+            "type": "number"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "optionsLabel": {
+            "type": "string",
+            "nullable": true,
+            "example": "Blue / Large",
+            "description": "the variant's option values in option order; null with no options"
+          },
+          "stock": {
+            "type": "number",
+            "description": "on hand across all locations; 0 with no inventory rows; can be negative"
+          },
+          "locations": {
+            "description": "the inventory rows `stock` sums, by location name; a location with no row isn't listed",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VariantLocationStock"
+            }
+          }
+        },
+        "required": [
+          "variantId",
+          "productId",
+          "productName",
+          "sku",
+          "optionsLabel",
+          "stock",
+          "locations"
+        ]
+      },
+      "PaginatedVariantStock": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VariantStockRecord"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "lowStockThreshold": {
+            "type": "number",
+            "description": "the account's low-stock threshold — the one lowStock filtered by"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "lowStockThreshold"
+        ]
+      },
       "CreateInventoryMovementDto": {
         "type": "object",
         "properties": {
@@ -7597,49 +7760,13 @@
           "points"
         ]
       },
-      "LowStockItem": {
-        "type": "object",
-        "properties": {
-          "variantId": {
-            "type": "number"
-          },
-          "productId": {
-            "type": "number"
-          },
-          "productName": {
-            "type": "string"
-          },
-          "sku": {
-            "type": "string",
-            "nullable": true
-          },
-          "optionsLabel": {
-            "type": "string",
-            "nullable": true,
-            "example": "Blue / Large",
-            "description": "the variant's option values in option order; null with no options"
-          },
-          "stock": {
-            "type": "number",
-            "description": "on hand across all locations; can be negative"
-          }
-        },
-        "required": [
-          "variantId",
-          "productId",
-          "productName",
-          "sku",
-          "optionsLabel",
-          "stock"
-        ]
-      },
       "DashboardLowStock": {
         "type": "object",
         "properties": {
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/LowStockItem"
+              "$ref": "#/components/schemas/VariantStockRecord"
             }
           },
           "lowStockThreshold": {

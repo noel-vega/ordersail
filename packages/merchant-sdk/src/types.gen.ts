@@ -948,6 +948,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/inventory/variants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["InventoryController_findVariants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/inventory/movements": {
         parameters: {
             query?: never;
@@ -1886,6 +1902,34 @@ export interface components {
             /** @description the account's low-stock threshold — the one lowStock filtered by */
             lowStockThreshold: number;
         };
+        VariantLocationStock: {
+            locationId: number;
+            locationName: string;
+            stock: number;
+        };
+        VariantStockRecord: {
+            variantId: number;
+            productId: number;
+            productName: string;
+            sku: string | null;
+            /**
+             * @description the variant's option values in option order; null with no options
+             * @example Blue / Large
+             */
+            optionsLabel: string | null;
+            /** @description on hand across all locations; 0 with no inventory rows; can be negative */
+            stock: number;
+            /** @description the inventory rows `stock` sums, by location name; a location with no row isn't listed */
+            locations: components["schemas"]["VariantLocationStock"][];
+        };
+        PaginatedVariantStock: {
+            items: components["schemas"]["VariantStockRecord"][];
+            total: number;
+            limit: number;
+            offset: number;
+            /** @description the account's low-stock threshold — the one lowStock filtered by */
+            lowStockThreshold: number;
+        };
         CreateInventoryMovementDto: {
             variantId: number;
             locationId: number;
@@ -2272,21 +2316,8 @@ export interface components {
             timezone: string;
             points: components["schemas"]["SalesTimeseriesPoint"][];
         };
-        LowStockItem: {
-            variantId: number;
-            productId: number;
-            productName: string;
-            sku: string | null;
-            /**
-             * @description the variant's option values in option order; null with no options
-             * @example Blue / Large
-             */
-            optionsLabel: string | null;
-            /** @description on hand across all locations; can be negative */
-            stock: number;
-        };
         DashboardLowStock: {
-            items: components["schemas"]["LowStockItem"][];
+            items: components["schemas"]["VariantStockRecord"][];
             lowStockThreshold: number;
         };
         OnboardingStatus: {
@@ -4249,6 +4280,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedInventory"];
+                };
+            };
+        };
+    };
+    InventoryController_findVariants: {
+        parameters: {
+            query: {
+                limit: number;
+                offset: number;
+                /** @description SKU or product name match */
+                q?: string;
+                productId?: number;
+                /** @description only variants whose summed stock is at or below the account's low-stock threshold (low or out), most urgent first */
+                lowStock?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedVariantStock"];
                 };
             };
         };

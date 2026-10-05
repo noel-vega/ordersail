@@ -9,7 +9,10 @@ import {
 } from 'test-support';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { DashboardService } from './dashboard.service';
+import { VariantStockService } from 'src/stock';
 import { SALES_PORT } from './ports/sales.port';
+import { STOCK_PORT } from './ports/stock.port';
+import { StockAdapter } from './ports/stock.adapter';
 
 const db = useTestDb();
 
@@ -17,7 +20,9 @@ async function build() {
   const ref = await Test.createTestingModule({
     providers: [
       DashboardService,
+      VariantStockService,
       { provide: DRIZZLE, useValue: db },
+      { provide: STOCK_PORT, useClass: StockAdapter },
       {
         provide: SALES_PORT,
         useValue: {
@@ -63,8 +68,16 @@ describe('DashboardService stock alerts (OS-195)', () => {
   async function setup(lowStockThreshold = 5) {
     const account = await insertAccount(db, { lowStockThreshold });
     const [a, b] = await Promise.all([
-      insertLocation(db, { accountId: account.id, withAddress: false }),
-      insertLocation(db, { accountId: account.id, withAddress: false }),
+      insertLocation(db, {
+        accountId: account.id,
+        name: 'A',
+        withAddress: false,
+      }),
+      insertLocation(db, {
+        accountId: account.id,
+        name: 'B',
+        withAddress: false,
+      }),
     ]);
     return { account, a: a.id, b: b.id };
   }
@@ -211,6 +224,7 @@ describe('DashboardService stock alerts (OS-195)', () => {
         sku: 'MUG',
         optionsLabel: null,
         stock: 0,
+        locations: [{ locationId: a, locationName: 'A', stock: 0 }],
       },
       // both at 3: Apron before Shirt by name
       {
@@ -220,6 +234,7 @@ describe('DashboardService stock alerts (OS-195)', () => {
         sku: null,
         optionsLabel: null,
         stock: 3,
+        locations: [{ locationId: a, locationName: 'A', stock: 3 }],
       },
       {
         variantId: shirtLarge.id,
@@ -228,6 +243,10 @@ describe('DashboardService stock alerts (OS-195)', () => {
         sku: 'SH-L',
         optionsLabel: 'Large',
         stock: 3,
+        locations: [
+          { locationId: a, locationName: 'A', stock: 1 },
+          { locationId: b, locationName: 'B', stock: 2 },
+        ],
       },
     ]);
     expect(items.map((i) => i.variantId)).not.toContain(shirtSmall.id);

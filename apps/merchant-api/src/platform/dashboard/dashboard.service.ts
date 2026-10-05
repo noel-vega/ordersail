@@ -3,27 +3,19 @@ import { DRIZZLE } from 'src/shared/database/database.constants';
 import {
   accountsTable,
   and,
-  asc,
   eq,
   inArray,
-  inventoryTable,
   lt,
-  lte,
-  ne,
   orderPaymentsTable,
   ordersTable,
-  productOptionsTable,
-  productOptionValuesTable,
-  productsTable,
-  productVariantsTable,
   sql,
   type db as Db,
-  variantOptionValuesTable,
   type SQL,
 } from 'db';
 import { DashboardSummary } from './entities/dashboard-summary.entity';
 import { DashboardLowStock } from './entities/dashboard-low-stock.entity';
 import { SALES_PORT, type SalesPort } from './ports/sales.port';
+import { STOCK_PORT, type StockPort } from './ports/stock.port';
 import { DashboardSales, SalesTotals } from './entities/dashboard-sales.entity';
 import {
   DashboardSalesTimeseries,
@@ -80,6 +72,7 @@ export class DashboardService {
   constructor(
     @Inject(DRIZZLE) private readonly db: typeof Db,
     @Inject(SALES_PORT) private readonly sales: SalesPort,
+    @Inject(STOCK_PORT) private readonly stock: StockPort,
   ) {}
 
   // point-in-time only — money figures are range-scoped, see getSales
@@ -87,7 +80,7 @@ export class DashboardService {
     const [recentOrders, recentCustomers, stockCounts] = await Promise.all([
       this.sales.recentOrders(accountId, RECENT_LIMIT),
       this.sales.recentCustomers(accountId, RECENT_LIMIT),
-      this.getStockCounts(accountId),
+      this.stock.counts(accountId),
     ]);
 
     return { ...stockCounts, recentOrders, recentCustomers };
@@ -285,99 +278,13 @@ export class DashboardService {
     };
   }
 
+  // variants at or below the threshold, judged on stock summed across every
+  // location — stock owns that rule (OS-195, OS-693)
   async getLowStock(
     accountId: number,
     limit: number,
   ): Promise<DashboardLowStock> {
     const take = Math.min(Math.max(limit, 1), LOW_STOCK_MAX_LIMIT);
-    const lowStockThreshold = await this.getLowStockThreshold(accountId);
-    const stock = this.variantStock(accountId);
-    const items = await this.db
-      .select({
-        variantId: stock.variantId,
-        productId: productsTable.id,
-        productName: productsTable.name,
-        sku: productVariantsTable.sku,
-        // "Blue / Large", in option order; null for a variant with no options
-        optionsLabel: sql<string | null>`(
-          select string_agg(${productOptionValuesTable.value}, ' / ' order by ${productOptionsTable.id})
-          from ${variantOptionValuesTable}
-          inner join ${productOptionValuesTable} on ${productOptionValuesTable.id} = ${variantOptionValuesTable.optionValueId}
-          inner join ${productOptionsTable} on ${productOptionsTable.id} = ${productOptionValuesTable.optionId}
-          where ${variantOptionValuesTable.variantId} = ${stock.variantId}
-        )`,
-        stock: stock.total,
-      })
-      .from(stock)
-      .innerJoin(
-        productVariantsTable,
-        eq(productVariantsTable.id, stock.variantId),
-      )
-      .innerJoin(
-        productsTable,
-        eq(productsTable.id, productVariantsTable.productId),
-      )
-      .where(lte(stock.total, lowStockThreshold))
-      // most urgent first: out of stock (<= 0) sorts ahead of merely low
-      .orderBy(asc(stock.total), asc(productsTable.name), asc(stock.variantId))
-      .limit(take);
-
-    return { items, lowStockThreshold };
-  }
-
-  // Out-of-stock and low-stock variant counts in one aggregate (OS-195).
-  // Judged on each variant's stock summed across every location — a variant
-  // is out when it can't be sold anywhere, not when one store runs dry.
-  private async getStockCounts(accountId: number) {
-    const lowStockThreshold = await this.getLowStockThreshold(accountId);
-    const stock = this.variantStock(accountId);
-    const [counts] = await this.db
-      .select({
-        outOfStockCount: sql<number>`count(*) filter (where ${stock.total} <= 0)::int`,
-        lowStockCount: sql<number>`count(*) filter (where ${stock.total} > 0 and ${stock.total} <= ${lowStockThreshold})::int`,
-      })
-      .from(stock);
-    return { ...counts, lowStockThreshold };
-  }
-
-  // the account's lowStockThreshold (OS-668), read once and applied as a
-  // value, so the counts or items and the threshold returned beside them
-  // always agree
-  private async getLowStockThreshold(accountId: number) {
-    const [{ lowStockThreshold }] = await this.db
-      .select({ lowStockThreshold: accountsTable.lowStockThreshold })
-      .from(accountsTable)
-      .where(eq(accountsTable.id, accountId));
-    return lowStockThreshold;
-  }
-
-  // Each of the account's variants with its stock summed across locations,
-  // 0 for a variant with no inventory rows yet. Archived products are left
-  // out — they're off sale, so their stock isn't a problem to act on.
-  private variantStock(accountId: number) {
-    return this.db
-      .select({
-        variantId: sql<number>`${productVariantsTable.id}`.as('variant_id'),
-        total: sql<number>`coalesce(sum(${inventoryTable.stock}), 0)::int`.as(
-          'total',
-        ),
-      })
-      .from(productVariantsTable)
-      .innerJoin(
-        productsTable,
-        eq(productsTable.id, productVariantsTable.productId),
-      )
-      .leftJoin(
-        inventoryTable,
-        eq(inventoryTable.variantId, productVariantsTable.id),
-      )
-      .where(
-        and(
-          eq(productsTable.accountId, accountId),
-          ne(productsTable.status, 'archived'),
-        ),
-      )
-      .groupBy(productVariantsTable.id)
-      .as('variant_stock');
+    return this.stock.lowStock(accountId, take);
   }
 }
