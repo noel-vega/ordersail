@@ -29,6 +29,7 @@ import {
   variantOptionValuesTable,
   productImagesTable,
   inventoryTable,
+  inventoryMovementsTable,
   permissionsTable,
   rolesTable,
   rolePermissionsTable,
@@ -39,6 +40,12 @@ import {
 
 const OWNER_EMAIL = 'owner@sneakerdepot.test';
 const OWNER_PASSWORD = 'password123';
+
+const LOCATION_NAME = 'SF Warehouse';
+
+// opening stock is back-dated past the 90-day order history window so the
+// ledger never shows a sale before the stock it came from
+const OPENING_STOCK_AT = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000);
 
 const BRANDS = ['Nike', 'Jordan', 'Adidas', 'Puma'] as const;
 
@@ -58,6 +65,8 @@ interface SeedProduct {
   brand: (typeof BRANDS)[number];
   categories: (typeof CATEGORIES)[number][];
   imageFile: string;
+  // each variant's SKU is `${skuPrefix}-${optionValue}` (e.g. NIKE-AF1-10)
+  skuPrefix: string;
   optionName?: string;
   variants: SeedVariant[];
 }
@@ -75,6 +84,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Nike',
     categories: ['Lifestyle'],
     imageFile: 'nike-air-force-1.jpg',
+    skuPrefix: 'NIKE-AF1',
     optionName: 'Size',
     variants: shoeVariants(11500, [12, 18, 20, 9]),
   },
@@ -84,6 +94,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Nike',
     categories: ['Lifestyle', 'Retro'],
     imageFile: 'nike-air-max-90.jpg',
+    skuPrefix: 'NIKE-AM90',
     optionName: 'Size',
     variants: shoeVariants(13000, [10, 14, 16, 8]),
   },
@@ -93,6 +104,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Nike',
     categories: ['Lifestyle', 'Retro'],
     imageFile: 'nike-dunk-low-retro.jpg',
+    skuPrefix: 'NIKE-DUNK-VG',
     optionName: 'Size',
     variants: shoeVariants(11000, [8, 12, 10, 6]),
   },
@@ -102,6 +114,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Nike',
     categories: ['Running'],
     imageFile: 'nike-react-infinity-run.jpg',
+    skuPrefix: 'NIKE-REACT-INF2',
     optionName: 'Size',
     variants: shoeVariants(16000, [15, 20, 18, 10]),
   },
@@ -111,6 +124,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Jordan',
     categories: ['Basketball', 'Retro'],
     imageFile: 'air-jordan-1.jpg',
+    skuPrefix: 'JORDAN-AJ1',
     optionName: 'Size',
     variants: shoeVariants(18000, [6, 10, 8, 4]),
   },
@@ -120,6 +134,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Jordan',
     categories: ['Basketball', 'Retro'],
     imageFile: 'air-jordan-4.jpg',
+    skuPrefix: 'JORDAN-AJ4',
     optionName: 'Size',
     variants: shoeVariants(21000, [5, 9, 7, 3]),
   },
@@ -129,6 +144,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Jordan',
     categories: ['Basketball', 'Retro'],
     imageFile: 'air-jordan-11.jpg',
+    skuPrefix: 'JORDAN-AJ11',
     optionName: 'Size',
     variants: shoeVariants(22500, [4, 7, 6, 2]),
   },
@@ -138,6 +154,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Adidas',
     categories: ['Running'],
     imageFile: 'adidas-ultraboost.jpg',
+    skuPrefix: 'ADIDAS-UB',
     optionName: 'Size',
     variants: shoeVariants(19000, [12, 16, 14, 8]),
   },
@@ -147,6 +164,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Adidas',
     categories: ['Lifestyle'],
     imageFile: 'adidas-stan-smith.jpg',
+    skuPrefix: 'ADIDAS-STAN',
     optionName: 'Size',
     variants: shoeVariants(10000, [14, 20, 18, 10]),
   },
@@ -156,6 +174,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Adidas',
     categories: ['Lifestyle', 'Retro'],
     imageFile: 'adidas-samba-og.jpg',
+    skuPrefix: 'ADIDAS-SAMBA',
     optionName: 'Size',
     variants: shoeVariants(10000, [13, 17, 15, 9]),
   },
@@ -165,6 +184,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Adidas',
     categories: ['Lifestyle', 'Retro'],
     imageFile: 'adidas-gazelle.jpg',
+    skuPrefix: 'ADIDAS-GAZELLE',
     optionName: 'Size',
     variants: shoeVariants(10000, [11, 15, 13, 7]),
   },
@@ -174,6 +194,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Puma',
     categories: ['Lifestyle', 'Retro'],
     imageFile: 'puma-suede-classic.jpg',
+    skuPrefix: 'PUMA-SUEDE',
     optionName: 'Size',
     variants: shoeVariants(7500, [16, 22, 20, 12]),
   },
@@ -183,6 +204,7 @@ const PRODUCTS: SeedProduct[] = [
     brand: 'Puma',
     categories: ['Basketball', 'Retro'],
     imageFile: 'puma-clyde.jpg',
+    skuPrefix: 'PUMA-CLYDE',
     optionName: 'Size',
     variants: shoeVariants(10000, [9, 13, 11, 5]),
   },
@@ -210,7 +232,9 @@ async function ensureAccount() {
   return await db.transaction(async (tx) => {
     const [account] = await tx
       .insert(accountsTable)
-      .values({ name: 'Sneaker Depot', email: OWNER_EMAIL })
+      // matches the SF location, so the dashboard's local-midnight day
+      // boundaries are actually exercised instead of falling on UTC
+      .values({ name: 'Sneaker Depot', email: OWNER_EMAIL, timezone: 'America/Los_Angeles' })
       .returning();
 
     await tx.insert(usersTable).values({
@@ -290,18 +314,27 @@ async function ensureOwnerRole(accountId: number, userId: number) {
   }
 }
 
-async function ensureDefaultLocation(accountId: number) {
+async function ensureLocation(accountId: number) {
   const [existing] = await db
     .select()
     .from(locationsTable)
-    .where(and(eq(locationsTable.accountId, accountId), eq(locationsTable.name, 'Default')));
+    .where(and(eq(locationsTable.accountId, accountId), eq(locationsTable.name, LOCATION_NAME)));
   if (existing) return existing;
+
+  // databases seeded before OS-725 have this same location named "Default" —
+  // rename it in place rather than adding a second, stockless location
+  const [legacy] = await db
+    .update(locationsTable)
+    .set({ name: LOCATION_NAME })
+    .where(and(eq(locationsTable.accountId, accountId), eq(locationsTable.name, 'Default')))
+    .returning();
+  if (legacy) return legacy;
 
   const [location] = await db
     .insert(locationsTable)
     .values({
       accountId,
-      name: 'Default',
+      name: LOCATION_NAME,
       // a real ship-from origin so web checkout can fetch Shippo rates without
       // a manual Locations step (see docs/runbooks/web-checkout.md)
       addressLine1: '2261 Market Street',
@@ -426,7 +459,14 @@ async function ensureProduct(
         .insert(productVariantsTable)
         // a shoe + box is ~2 lb — gives Shippo something realistic to quote
         // instead of the 16 oz per-unit fallback
-        .values({ productId: row.id, priceCents: variant.priceCents, weightOz: 32 })
+        .values({
+          productId: row.id,
+          sku: variant.optionValue
+            ? `${product.skuPrefix}-${variant.optionValue}`
+            : product.skuPrefix,
+          priceCents: variant.priceCents,
+          weightOz: 32,
+        })
         .returning();
 
       const optionValueId = variant.optionValue
@@ -438,9 +478,19 @@ async function ensureProduct(
           .values({ variantId: variantRow.id, optionValueId });
       }
 
+      // the balance and the ledger entry it materialises go in together, so
+      // inventory.stock = SUM(inventory_movements.delta) from the first row
       await tx
         .insert(inventoryTable)
         .values({ variantId: variantRow.id, locationId, stock: variant.stock });
+      await tx.insert(inventoryMovementsTable).values({
+        variantId: variantRow.id,
+        locationId,
+        delta: variant.stock,
+        reason: 'received',
+        note: 'Seed: opening stock',
+        createdAt: OPENING_STOCK_AT,
+      });
     }
 
     return row.id;
@@ -506,7 +556,7 @@ async function main() {
     .where(eq(usersTable.email, OWNER_EMAIL));
   await ensureOwnerRole(account.id, owner.id);
 
-  const location = await ensureDefaultLocation(account.id);
+  const location = await ensureLocation(account.id);
   await ensureApiKey(account.id);
 
   const brandsByName = await ensureBrands(account.id);
