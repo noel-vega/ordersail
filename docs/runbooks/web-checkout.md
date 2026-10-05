@@ -63,7 +63,7 @@ npm run dev         # defaults to :3000 — pick a free port (e.g. `-- -p 3010`)
 npm run stripe:listen -w merchant-api   # account.updated + checkout.session.* + charge.refunded/dispute.* → :3000/webhooks/stripe
 ```
 
-The seed's "Default" location ships from a real address and every variant has a weight,
+The seed's "SF Warehouse" location ships from a real address and every variant has a weight,
 so Shippo can quote right away — no manual Locations step.
 
 ## Connect a Stripe account to the store
