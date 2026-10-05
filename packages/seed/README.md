@@ -2,14 +2,27 @@
 
 Seeds local dev with a demo sneaker-store catalog ("Sneaker Depot") — brands, categories,
 13 real shoe products, and a real matching photo for each — so `merchant-web` never
-starts from an empty catalog.
+starts from an empty catalog. It also seeds 40 registered storefront customers.
 
-## Demo login
+## Demo logins
+
+merchant-web (store owner):
 
 ```
 Email:    owner@sneakerdepot.test
 Password: password123
 ```
+
+storefront-web (any seeded customer; all 40 share the password, emails are
+`first.last@example.com` and the seed prints one at the end):
+
+```
+Email:    ava.thompson@example.com
+Password: password123
+```
+
+Generated data (customers' signup dates, and so on) comes from the fixed-seed PRNG in
+`scripts/seed-random.ts`, so every `npm run reset` produces the same store.
 
 ## Usage
 
