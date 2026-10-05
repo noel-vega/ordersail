@@ -54,7 +54,10 @@ export function getInventoryPageQueryOptions(search: InventorySearch) {
   })
 }
 
-export function useInventoryPageQuery(search: InventorySearch, enabled = true) {
+export function useInventoryPageQuery(
+  search: InventorySearch,
+  enabled: boolean,
+) {
   return useQuery({ ...getInventoryPageQueryOptions(search), enabled })
 }
 

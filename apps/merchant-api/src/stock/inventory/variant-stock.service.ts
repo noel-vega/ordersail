@@ -1,7 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { resolvePageParams } from 'src/shared/pagination';
-import { accountsTable } from 'db/identity';
 import {
   productOptionsTable,
   productOptionValuesTable,
@@ -23,6 +22,7 @@ import {
   type SQL,
   sql,
 } from 'db/stock';
+import { readLowStockThreshold } from './low-stock-threshold';
 import {
   PaginatedVariantStock,
   VariantLocationStock,
@@ -60,7 +60,7 @@ export class VariantStockService {
     filter: VariantStockFilter = {},
   ): Promise<PaginatedVariantStock> {
     const { limit: take, offset: skip } = resolvePageParams(limit, offset);
-    const lowStockThreshold = await this.getLowStockThreshold(accountId);
+    const lowStockThreshold = await readLowStockThreshold(this.db, accountId);
     const stock = this.variantStock(accountId);
 
     const clauses: SQL[] = [];
@@ -145,7 +145,7 @@ export class VariantStockService {
   // out-of-stock and low-stock variant counts in one aggregate; low excludes
   // out, so together they're exactly findAll's lowStock total
   async counts(accountId: number): Promise<VariantStockCounts> {
-    const lowStockThreshold = await this.getLowStockThreshold(accountId);
+    const lowStockThreshold = await readLowStockThreshold(this.db, accountId);
     const stock = this.variantStock(accountId);
     const [counts] = await this.db
       .select({
@@ -154,17 +154,6 @@ export class VariantStockService {
       })
       .from(stock);
     return { ...counts, lowStockThreshold };
-  }
-
-  // the account's lowStockThreshold (OS-668), read once and applied as a
-  // value, so the rows or counts and the threshold returned beside them
-  // always agree — and callers without account:read still get it
-  private async getLowStockThreshold(accountId: number) {
-    const [{ lowStockThreshold }] = await this.db
-      .select({ lowStockThreshold: accountsTable.lowStockThreshold })
-      .from(accountsTable)
-      .where(eq(accountsTable.id, accountId));
-    return lowStockThreshold;
   }
 
   // Each of the account's variants with its stock summed across locations,

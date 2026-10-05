@@ -70,7 +70,7 @@ export function ListInventoryView() {
     };
   }
 
-  const rowColumns: ColumnDef<InventoryRecord>[] = [
+  const locationColumns: ColumnDef<InventoryRecord>[] = [
     { accessorKey: "productName", header: "Product" },
     {
       accessorKey: "sku",
@@ -246,7 +246,7 @@ export function ListInventoryView() {
       ) : (
         <DataTable
           data={inventory.data?.items ?? []}
-          columns={rowColumns}
+          columns={locationColumns}
           emptyMessage={
             filtered || search.locationId
               ? undefined

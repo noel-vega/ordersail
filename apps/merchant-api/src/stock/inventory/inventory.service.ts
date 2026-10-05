@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { resolvePageParams } from 'src/shared/pagination';
-import { accountsTable, usersTable } from 'db/identity';
+import { usersTable } from 'db/identity';
 import { productsTable, productVariantsTable } from 'db/catalog';
 import {
   and,
@@ -26,6 +26,7 @@ import {
 } from './entities/paginated-inventory.entity';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
 import { LocationsService } from '../locations/locations.service';
+import { readLowStockThreshold } from './low-stock-threshold';
 
 type InventoryMovementReason =
   (typeof inventoryMovementReasonEnum.enumValues)[number];
@@ -59,13 +60,9 @@ export class InventoryService {
     filter: InventoryFilter = {},
   ): Promise<PaginatedInventory> {
     const { limit: take, offset: skip } = resolvePageParams(limit, offset);
-    // read once and returned with the page, so the client's Low badges use
-    // the exact threshold the lowStock filter applied — callers without
-    // account:read can't fetch it from GET /account (OS-668)
-    const [{ lowStockThreshold }] = await this.db
-      .select({ lowStockThreshold: accountsTable.lowStockThreshold })
-      .from(accountsTable)
-      .where(eq(accountsTable.id, accountId));
+    // returned with the page, so the client's Low badges use the exact
+    // threshold the lowStock filter applied (OS-668)
+    const lowStockThreshold = await readLowStockThreshold(this.db, accountId);
     const where = this.inventoryWhere(accountId, lowStockThreshold, filter);
 
     const [items, [{ total }]] = await Promise.all([

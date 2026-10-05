@@ -42,7 +42,7 @@ export function targetFromInventoryRecord(
 // location missing from it holds 0
 export function targetFromVariantStockRecord(
   record: VariantStockRecord,
-  locations: { id: number; name: string }[],
+  locations: StockLocationOption[],
 ): AdjustStockTarget {
   return {
     variantId: record.variantId,
