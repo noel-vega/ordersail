@@ -2763,8 +2763,58 @@
               },
               "details": {
                 "type": "object",
-                "additionalProperties": true
+                "additionalProperties": true,
+                "description": "Extra data for the code; its shape per code is in ErrorDetailsByCode."
               }
+            }
+          }
+        }
+      },
+      "ErrorDetailsByCode": {
+        "type": "object",
+        "description": "Each error code's `details` shape, keyed by code. A code that isn't listed has no fixed shape.",
+        "required": [
+          "validation_failed"
+        ],
+        "properties": {
+          "validation_failed": {
+            "type": "object",
+            "required": [
+              "fields"
+            ],
+            "properties": {
+              "fields": {
+                "type": "array",
+                "description": "Every failing field; nested properties as dotted paths.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "param",
+                    "message"
+                  ],
+                  "properties": {
+                    "param": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "service_unavailable": {
+            "type": "object",
+            "description": "up or down per health check.",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "up",
+                "down"
+              ]
             }
           }
         }

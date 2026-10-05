@@ -250,9 +250,24 @@ export interface components {
                 doc_url: string;
                 /** @description The x-request-id of the request; quote it when reporting a problem. */
                 request_id: string | null;
+                /** @description Extra data for the code; its shape per code is in ErrorDetailsByCode. */
                 details?: {
                     [key: string]: unknown;
                 };
+            };
+        };
+        /** @description Each error code's `details` shape, keyed by code. A code that isn't listed has no fixed shape. */
+        ErrorDetailsByCode: {
+            validation_failed: {
+                /** @description Every failing field; nested properties as dotted paths. */
+                fields: {
+                    param: string;
+                    message: string;
+                }[];
+            };
+            /** @description up or down per health check. */
+            service_unavailable?: {
+                [key: string]: "up" | "down";
             };
         };
     };

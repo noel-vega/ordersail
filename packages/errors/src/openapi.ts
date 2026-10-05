@@ -1,4 +1,4 @@
-import { codes, ERROR_TYPES } from './codes.ts';
+import { codes, detailsSchemas, ERROR_TYPES } from './codes.ts';
 
 // Any OpenAPI 3.0 document: @nestjs/swagger's OpenAPIObject or another
 // generator's. Kept structural and loose (OpenAPIObject's path items have no
@@ -21,8 +21,22 @@ function errorContent() {
   return { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } };
 }
 
+// The `details` shape of each code that has one, keyed by code. No operation
+// references it: one schema per code can't hang off a single `details`
+// property in OpenAPI 3.0 without a oneOf variant per code, so clients look a
+// code's shape up here instead.
+export function errorDetailsByCodeSchema() {
+  const entries = Object.entries(detailsSchemas);
+  return {
+    type: 'object',
+    description: "Each error code's `details` shape, keyed by code. A code that isn't listed has no fixed shape.",
+    required: entries.filter(([, entry]) => entry.required).map(([code]) => code),
+    properties: Object.fromEntries(entries.map(([code, entry]) => [code, structuredClone(entry.schema)])),
+  };
+}
+
 // The ErrorResponse schema, its enums generated from the registry. `details`
-// is any object for now; per-code schemas come with the registry's JSON Schemas.
+// is any object here; its shape per code is ErrorDetailsByCode.
 export function errorResponseSchema() {
   return {
     type: 'object',
@@ -42,7 +56,11 @@ export function errorResponseSchema() {
             nullable: true,
             description: 'The x-request-id of the request; quote it when reporting a problem.',
           },
-          details: { type: 'object', additionalProperties: true },
+          details: {
+            type: 'object',
+            additionalProperties: true,
+            description: 'Extra data for the code; its shape per code is in ErrorDetailsByCode.',
+          },
         },
       },
     },
@@ -51,7 +69,7 @@ export function errorResponseSchema() {
 
 // Post-processes a generated document (run on SwaggerModule.createDocument's
 // output) so every error response is described:
-// - adds components.schemas.ErrorResponse;
+// - adds components.schemas.ErrorResponse and ErrorDetailsByCode;
 // - gives every 4xx/5xx response the ErrorResponse body, replacing whatever a
 //   decorator declared: ApiErrorFilter writes the envelope for every error, so
 //   any other error schema (Terminus's /health 503) would describe a body the
@@ -63,7 +81,11 @@ export function withErrorResponses<T extends OpenApiDocument>(document: T): T {
   const result = copy as unknown as DocumentSlice;
   result.components = {
     ...result.components,
-    schemas: { ...result.components?.schemas, ErrorResponse: errorResponseSchema() },
+    schemas: {
+      ...result.components?.schemas,
+      ErrorResponse: errorResponseSchema(),
+      ErrorDetailsByCode: errorDetailsByCodeSchema(),
+    },
   };
 
   for (const pathItem of Object.values(result.paths)) {

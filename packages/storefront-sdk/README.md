@@ -44,6 +44,23 @@ try {
 lives under `/v1`), and the SDK adds that prefix itself, so a given SDK
 release always talks to the API version it was generated from.
 
+### Upgrading from 0.8.x
+
+**0.9.0 changes types only; runtime behaviour is the same.**
+
+- `ApiErrorDetails` is now generated from the API's OpenAPI document instead
+  of written by hand. It also lists `service_unavailable`, whose details are
+  optional.
+- `isApiError(err)` called **without** a code now narrows only to `ApiError`,
+  so `err.code` is `ApiErrorCode | undefined`. It is undefined when the
+  response carried no error body. 0.8.0 typed it as always defined, which was
+  wrong. If your code stops compiling, pass the code you're checking for,
+  `isApiError(err, "some_code")`, or handle `undefined`.
+
+```bash
+npm install @ordersail/storefront-sdk@^0.9.0
+```
+
 ### Upgrading from 0.7.x
 
 **0.8.0 changes how errors arrive.** Every API error now has one body, and
@@ -118,7 +135,10 @@ export class ApiError extends Error {
 
 **Branch on `code`, never on `message`.** Codes are part of the SDK's
 contract; messages can be reworded at any time. `ApiErrorCode` is the union of
-every code the API returns, and `isApiError` narrows a caught value:
+every code the API returns. `isApiError(err, code)` narrows a caught value to
+that code, and narrows `details` to the code's shape in `ApiErrorDetails`.
+Called without a code, `isApiError(err)` only checks that `err` is an
+`ApiError`:
 
 ```ts
 import { isApiError } from "@ordersail/storefront-sdk";
