@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { ListInventoryView } from '../../../features/inventory/views/list-inventory.view'
 import {
   getInventoryPageQueryOptions,
+  getVariantStockPageQueryOptions,
   inventorySearchSchema,
 } from '../../../features/inventory/inventory.hooks'
 import { queryClient } from '../../../lib/react-query-client'
@@ -12,7 +13,12 @@ export const Route = createFileRoute('/app/inventory/')({
   validateSearch: inventorySearchSchema,
   beforeLoad: async ({ search, context }) => {
     requirePermission(context, 'inventory:read')
-    await queryClient.ensureQueryData(getInventoryPageQueryOptions(search))
+    // only the active view's page — By variant is the dashboard's (OS-693)
+    if (search.view === "variant") {
+      await queryClient.ensureQueryData(getVariantStockPageQueryOptions(search))
+    } else {
+      await queryClient.ensureQueryData(getInventoryPageQueryOptions(search))
+    }
     // the location filter is loaded by the view, so a slow locations list
     // never holds up the page
   },

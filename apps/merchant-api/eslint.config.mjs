@@ -203,7 +203,12 @@ export default tseslint.config(
       },
       platform: {
         sales: ['src/platform/dashboard/ports/**', 'src/platform/dashboard/dashboard.module.ts'],
-        stock: ['src/platform/pos-devices/ports/**', 'src/platform/pos-devices/pos-devices.module.ts'],
+        stock: [
+          'src/platform/pos-devices/ports/**',
+          'src/platform/pos-devices/pos-devices.module.ts',
+          'src/platform/dashboard/ports/**',
+          'src/platform/dashboard/dashboard.module.ts',
+        ],
       },
       sales: {
         payments: ['src/sales/orders/ports/**', 'src/sales/orders/orders.module.ts'],
@@ -233,13 +238,16 @@ export default tseslint.config(
           ignores: ['src/**/*.spec.ts'],
           rules: { 'no-restricted-imports': rule(ctx, targets) },
         },
-        ...targets.map((target) => ({
-          files: edges[target],
+        // one override per allowed glob, banning only the targets that glob
+        // isn't listed under — a ports/ folder may reach several contexts
+        // (platform/dashboard → sales + stock)
+        ...[...new Set(Object.values(edges).flat())].map((glob) => ({
+          files: [glob],
           ignores: ['src/**/*.spec.ts'],
           rules: {
             'no-restricted-imports': rule(
               ctx,
-              targets.filter((t) => t !== target),
+              targets.filter((t) => !edges[t].includes(glob)),
             ),
           },
         })),

@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
+import { VariantStockService } from './variant-stock.service';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -22,6 +23,7 @@ import {
   PaginatedInventory,
   PaginatedInventoryMovements,
 } from './entities/paginated-inventory.entity';
+import { PaginatedVariantStock } from './entities/variant-stock.entity';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
 import {
   CurrentUser,
@@ -35,7 +37,10 @@ type MovementReason = (typeof inventoryMovementReasonEnum.enumValues)[number];
 @Controller('inventory')
 @NoMfaFactorRequired()
 export class InventoryController {
-  constructor(private readonly inventoryService: InventoryService) {}
+  constructor(
+    private readonly inventoryService: InventoryService,
+    private readonly variantStockService: VariantStockService,
+  ) {}
 
   @Get()
   @RequirePermissions('inventory:read')
@@ -79,6 +84,42 @@ export class InventoryController {
       productId,
       locationId,
       stockLte,
+      lowStock,
+    });
+  }
+
+  // one row per variant, stock summed across locations — the dashboard's
+  // definition of out/low stock (OS-693)
+  @Get('variants')
+  @RequirePermissions('inventory:read')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOkResponse({ type: PaginatedVariantStock })
+  @ApiQuery({
+    name: 'q',
+    required: false,
+    description: 'SKU or product name match',
+  })
+  @ApiQuery({ name: 'productId', required: false, type: Number })
+  @ApiQuery({
+    name: 'lowStock',
+    required: false,
+    type: Boolean,
+    description:
+      "only variants whose summed stock is at or below the account's low-stock threshold (low or out), most urgent first",
+  })
+  findVariants(
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('q') q?: string,
+    @Query('productId', new ParseIntPipe({ optional: true }))
+    productId?: number,
+    @Query('lowStock', new ParseBoolPipe({ optional: true }))
+    lowStock?: boolean,
+  ) {
+    return this.variantStockService.findAll(limit, offset, user.accountId, {
+      q,
+      productId,
       lowStock,
     });
   }

@@ -1,4 +1,4 @@
-import type { InventoryRecord } from "merchant-sdk";
+import type { InventoryRecord, VariantStockRecord } from "merchant-sdk";
 import type { StockLocationOption } from "../../locations/components/stock-location-select";
 
 // what's being adjusted: one variant, at one fixed location or — with more
@@ -34,5 +34,26 @@ export function targetFromInventoryRecord(
     locations: [
       { id: record.locationId, name: record.locationName, stock: record.stock },
     ],
+  };
+}
+
+// a By variant row can be adjusted at any of the account's locations (the
+// picker list). Its breakdown lists every inventory row the variant has, so a
+// location missing from it holds 0
+export function targetFromVariantStockRecord(
+  record: VariantStockRecord,
+  locations: { id: number; name: string }[],
+): AdjustStockTarget {
+  return {
+    variantId: record.variantId,
+    productName: record.optionsLabel
+      ? `${record.productName} · ${record.optionsLabel}`
+      : record.productName,
+    sku: record.sku,
+    locations: locations.map((l) => ({
+      id: l.id,
+      name: l.name,
+      stock: record.locations.find((r) => r.locationId === l.id)?.stock ?? 0,
+    })),
   };
 }

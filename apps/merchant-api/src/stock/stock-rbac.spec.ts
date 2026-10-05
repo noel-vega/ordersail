@@ -24,6 +24,9 @@ describe('stock RBAC (OS-177)', () => {
     expect(perm(InventoryController.prototype, 'findAll')).toEqual([
       'inventory:read',
     ]);
+    expect(perm(InventoryController.prototype, 'findVariants')).toEqual([
+      'inventory:read',
+    ]);
     expect(perm(InventoryController.prototype, 'findMovements')).toEqual([
       'inventory:read',
     ]);

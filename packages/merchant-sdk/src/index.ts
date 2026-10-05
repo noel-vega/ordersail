@@ -53,6 +53,11 @@ export type Location = components["schemas"]["Location"];
 export type PaginatedLocations = components["schemas"]["PaginatedLocations"];
 export type InventoryRecord = components["schemas"]["InventoryRecord"];
 export type PaginatedInventory = components["schemas"]["PaginatedInventory"];
+export type VariantStockRecord = components["schemas"]["VariantStockRecord"];
+export type VariantLocationStock =
+  components["schemas"]["VariantLocationStock"];
+export type PaginatedVariantStock =
+  components["schemas"]["PaginatedVariantStock"];
 export type InventoryMovementRecord =
   components["schemas"]["InventoryMovementRecord"];
 export type PaginatedInventoryMovements =

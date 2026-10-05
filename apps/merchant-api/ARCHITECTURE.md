@@ -48,7 +48,7 @@ globally via `APP_GUARD`), `env.ts`.
    | `stock` | `identity` |
    | `payments` | `identity` |
    | `sales` | `identity`, `catalog`, `stock`, `payments` (refunds — via `sales/orders/ports/`) |
-   | `platform` | `identity`, `sales`, `stock` (location check — via `platform/pos-devices/ports/`) — **`platform/dashboard` is the one cross-context read-model**, allowed to query other contexts' data for summary views |
+   | `platform` | `identity`, `sales`, `stock` (location check — via `platform/pos-devices/ports/`; variant stock — via `platform/dashboard/ports/`) — **`platform/dashboard` is the one cross-context read-model**, allowed to query other contexts' data for summary views |
 
 4. The shared kernel is a **leaf** — it may not import a context.
 
@@ -70,8 +70,19 @@ Adding a new cross-context edge = update the table above **and** the
     `sales`' services. Only `dashboard/ports/` and the wiring
     `dashboard.module.ts` may import `src/sales` at all — enforced by
     `no-restricted-imports` in `eslint.config.mjs`. `dashboard.service`'s `getSalesTotals` /
-    `getSalesTimeseries` / `getOutOfStockCount` stay as direct SQL (deliberate
-    read-model projections — platform is exempt from the read-graph).
+    `getSalesTimeseries` stay as direct SQL (deliberate read-model
+    projections — platform is exempt from the read-graph).
+  - **`platform/dashboard → stock`** (OS-693). `stock` owns the one definition
+    of out/low stock: a variant's stock summed across every location, archived
+    products excluded, judged against `accounts.lowStockThreshold`.
+    `VariantStockService` (`stock/inventory/`) holds it and backs both
+    `GET /inventory/variants` and the dashboard, so the dashboard's counts and
+    Low stock card always agree with the inventory list's By variant view.
+    `dashboard.service` depends on `StockPort`
+    (`platform/dashboard/ports/stock.port.ts`); `StockAdapter` beside it is the
+    only dashboard file that calls `src/stock`. Not direct SQL, unlike the sales
+    figures: the dashboard links to the full list, so a second copy of the rule
+    would show up as two lists that disagree.
   - **`sales → payments`** (M2 refunds, OS-121). `sales` owns the order
     lifecycle; `payments` owns the Connect mapping (`stripe_accounts`) and the
     Stripe surface. `RefundsService` (`sales/orders/`) depends on `PaymentsPort`

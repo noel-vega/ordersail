@@ -20,6 +20,10 @@ export const MOVEMENT_REASONS: InventoryMovementRecord["reason"][] = [
 ]
 
 export const inventorySearchSchema = listSearchSchema.extend({
+  // a row per variant × location (the default), or per variant with its
+  // stock summed across locations — the dashboard's view (OS-693)
+  view: z.enum(["variant"]).optional().catch(undefined),
+  // location rows only
   locationId: z.number().int().optional().catch(undefined),
   lowStock: z.boolean().optional().catch(undefined),
 })
@@ -47,8 +51,31 @@ export function getInventoryPageQueryOptions(search: InventorySearch) {
   })
 }
 
-export function useInventoryPageQuery(search: InventorySearch) {
-  return useQuery(getInventoryPageQueryOptions(search))
+export function useInventoryPageQuery(search: InventorySearch, enabled = true) {
+  return useQuery({ ...getInventoryPageQueryOptions(search), enabled })
+}
+
+// one page of the Inventory list route's By variant view — stock summed
+// across locations, judged low/out exactly as the dashboard does (OS-693)
+export function getVariantStockPageQueryOptions(search: InventorySearch) {
+  return queryOptions({
+    queryKey: ["inventory", "variants", search],
+    queryFn: () =>
+      merchantApi.inventory.variants.list({
+        limit: PAGE_SIZE,
+        offset: pageOffset(search.page),
+        q: search.q || undefined,
+        lowStock: search.lowStock,
+      }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useVariantStockPageQuery(
+  search: InventorySearch,
+  enabled: boolean,
+) {
+  return useQuery({ ...getVariantStockPageQueryOptions(search), enabled })
 }
 
 // one page of the movement-history route

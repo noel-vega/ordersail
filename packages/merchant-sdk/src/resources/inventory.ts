@@ -39,6 +39,33 @@ export function createInventoryResource(
       return data;
     },
 
+    // one row per variant, stock summed across locations — the dashboard's
+    // out/low definition (OS-693)
+    variants: {
+      list: async (params?: {
+        limit?: number;
+        offset?: number;
+        q?: string;
+        productId?: number;
+        // summed stock at or below the threshold, most urgent first
+        lowStock?: boolean;
+      }) => {
+        const query: NonNullable<
+          paths["/inventory/variants"]["get"]["parameters"]["query"]
+        > = {
+          limit: params?.limit ?? 20,
+          offset: params?.offset ?? 0,
+          ...(params?.q ? { q: params.q } : {}),
+          ...(params?.productId != null ? { productId: params.productId } : {}),
+          ...(params?.lowStock ? { lowStock: true } : {}),
+        };
+        const { data } = await doRequest(() =>
+          client.GET("/inventory/variants", { params: { query } }),
+        );
+        return data;
+      },
+    },
+
     movements: {
       list: async (params?: {
         limit?: number;

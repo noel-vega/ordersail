@@ -9,6 +9,7 @@ import {
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { DashboardService, granularityFor } from './dashboard.service';
 import { SALES_PORT } from './ports/sales.port';
+import { STOCK_PORT } from './ports/stock.port';
 
 const db = useTestDb();
 
@@ -18,6 +19,7 @@ async function build() {
       DashboardService,
       { provide: DRIZZLE, useValue: db },
       { provide: SALES_PORT, useValue: {} },
+      { provide: STOCK_PORT, useValue: {} },
     ],
   }).compile();
   return ref.get(DashboardService);

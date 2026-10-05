@@ -9,7 +9,10 @@ import {
 } from 'test-support';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import { DashboardService } from './dashboard.service';
+import { VariantStockService } from 'src/stock';
 import { SALES_PORT } from './ports/sales.port';
+import { STOCK_PORT } from './ports/stock.port';
+import { StockAdapter } from './ports/stock.adapter';
 
 const db = useTestDb();
 
@@ -17,7 +20,9 @@ async function build() {
   const ref = await Test.createTestingModule({
     providers: [
       DashboardService,
+      VariantStockService,
       { provide: DRIZZLE, useValue: db },
+      { provide: STOCK_PORT, useClass: StockAdapter },
       {
         provide: SALES_PORT,
         useValue: {
