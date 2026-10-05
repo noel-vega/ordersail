@@ -134,7 +134,9 @@ const bullmqClientFactory = (options: RedisOptions) => createIORedisClient(new R
 // (merchant-api, storefront-api) pass it — apps/worker passes none, since
 // BullMQ's blocking job-wait reads are supposed to sit idle for a long time
 // and must not be cut off by a command timeout.
-function baseRedisOptions(options?: { commandTimeout?: number }): RedisOptions {
+export type RedisClientOptions = { commandTimeout?: number };
+
+function baseRedisOptions(options?: RedisClientOptions): RedisOptions {
   return {
     host: process.env.REDIS_HOST ?? "localhost",
     port: Number(process.env.REDIS_PORT ?? 6379),
@@ -146,16 +148,17 @@ function baseRedisOptions(options?: { commandTimeout?: number }): RedisOptions {
 // Connection options for BullModule.forRoot. Also installs BullMQ's global
 // client factory: the options are only usable with it, so both come from one
 // call. (Not at import time, where a bundler could drop it.)
-export function bullmqConnectionOptions(options?: { commandTimeout?: number }): RedisOptions {
+export function bullmqConnectionOptions(options?: RedisClientOptions): RedisOptions {
   RedisConnection.clientFactory = bullmqClientFactory;
   return baseRedisOptions(options);
 }
 
 // A client outside BullMQ (each API's health check) that the caller owns and
-// must close on shutdown, with disconnect() rather than quit(): quit() queues a
-// command that never completes while Redis is unreachable, so it would stall
+// must close on shutdown, with disconnect() rather than quit(). While Redis is
+// unreachable, quit() waits behind any command already in the offline queue —
+// a timed-out health ping is rejected but stays queued — so it can stall
 // app.close().
-export function createOwnedRedisClient(options?: { commandTimeout?: number }): Redis {
+export function createOwnedRedisClient(options?: RedisClientOptions): Redis {
   return new Redis(baseRedisOptions(options));
 }
 

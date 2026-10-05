@@ -63,7 +63,7 @@ describe('DrainingWorkerHost', () => {
     }).compile();
     await ref.init();
 
-    await ref.get<Queue>(getQueueToken(SOURCE)).add('gated', {});
+    const job = await ref.get<Queue>(getQueueToken(SOURCE)).add('gated', {});
     await jobStarted;
 
     const closing = ref.close();
@@ -74,6 +74,17 @@ describe('DrainingWorkerHost', () => {
 
     expect(outcome.error).toBeUndefined();
     expect(outcome.enqueued).toBe(true);
+    // and the interrupted job finished rather than being left to stall
+    const source = new Queue(SOURCE, {
+      connection: bullmqConnectionOptions(),
+      prefix,
+    });
+    try {
+      expect(await source.getJobState(job.id!)).toBe('completed');
+      expect(await source.getActiveCount()).toBe(0);
+    } finally {
+      await source.close();
+    }
   });
 
   it("doesn't throw when its Worker never started", async () => {
@@ -83,5 +94,17 @@ describe('DrainingWorkerHost', () => {
     await expect(
       new NeverStarted().beforeApplicationShutdown(),
     ).resolves.toBeUndefined();
+  });
+
+  it("doesn't throw when its Worker fails to close", async () => {
+    class FailsToClose extends DrainingWorkerHost {
+      async process() {}
+    }
+    const host = new FailsToClose();
+    // WorkerHost keeps its Worker in a private _worker field
+    Object.defineProperty(host, '_worker', {
+      value: { name: 'q', close: () => Promise.reject(new Error('boom')) },
+    });
+    await expect(host.beforeApplicationShutdown()).resolves.toBeUndefined();
   });
 });

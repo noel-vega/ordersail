@@ -1,6 +1,9 @@
 import { WorkerHost } from '@nestjs/bullmq';
 import type { BeforeApplicationShutdown } from '@nestjs/common';
 import type { Worker } from 'bullmq';
+import { Logger } from 'logging';
+
+const logger = new Logger('DrainingWorkerHost');
 
 // Base class for every @Processor: closes its Worker, which waits for the
 // in-flight job, before any Queue client closes.
@@ -21,14 +24,22 @@ export abstract class DrainingWorkerHost
   implements BeforeApplicationShutdown
 {
   async beforeApplicationShutdown() {
+    // Nothing here may throw: that would abort app.close() and skip the
+    // other processors' drains.
     let worker: Worker;
     try {
       worker = this.worker;
     } catch {
-      // never started (a shutdown during boot): nothing to drain. Throwing
-      // here would abort app.close() and skip the other processors' drains.
+      // never started (a shutdown during boot): nothing to drain
       return;
     }
-    await worker.close();
+    try {
+      await worker.close();
+    } catch (err: unknown) {
+      logger.error(
+        { err, event: 'worker.drain_failed', queue: worker.name },
+        'Worker failed to drain on shutdown',
+      );
+    }
   }
 }
