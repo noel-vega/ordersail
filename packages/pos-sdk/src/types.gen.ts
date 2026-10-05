@@ -236,6 +236,25 @@ export interface components {
             createdAt: string;
             items: components["schemas"]["PosOrderItem"][];
         };
+        ErrorResponse: {
+            error: {
+                /** @enum {string} */
+                type: "invalid_request_error" | "authentication_error" | "permission_error" | "rate_limit_error" | "api_error";
+                /** @enum {string} */
+                code: "bad_request" | "unauthenticated" | "forbidden" | "not_found" | "method_not_allowed" | "not_acceptable" | "request_timeout" | "conflict" | "gone" | "precondition_failed" | "content_too_large" | "unsupported_media_type" | "misdirected_request" | "unprocessable_content" | "rate_limited" | "internal_error" | "not_implemented" | "bad_gateway" | "service_unavailable" | "gateway_timeout" | "http_version_not_supported" | "validation_failed" | "invalid_access_token" | "invalid_app_key" | "invalid_device_token" | "invalid_credentials" | "mfa_factor_required" | "email_taken";
+                /** @description For people. Never parse it; branch on `code`. */
+                message: string;
+                /** @description The request field that caused the error. */
+                param?: string;
+                /** Format: uri */
+                doc_url: string;
+                /** @description The x-request-id of the request; quote it when reporting a problem. */
+                request_id: string | null;
+                details?: {
+                    [key: string]: unknown;
+                };
+            };
+        };
     };
     responses: never;
     parameters: never;
@@ -260,6 +279,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     PairingController_pair: {
@@ -281,6 +309,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PairingResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -308,6 +345,15 @@ export interface operations {
                     "application/json": components["schemas"]["PosCatalogPage"];
                 };
             };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     CatalogController_scan: {
@@ -328,6 +374,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PosScanResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -355,7 +410,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
         };
     };
@@ -374,6 +440,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PosSession"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -397,6 +472,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PosOrder"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -464,57 +548,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** @example error */
-                        status?: string;
-                        /**
-                         * @example {
-                         *       "database": {
-                         *         "status": "up"
-                         *       }
-                         *     }
-                         */
-                        info?: {
-                            [key: string]: {
-                                status: string;
-                            } & {
-                                [key: string]: unknown;
-                            };
-                        } | null;
-                        /**
-                         * @example {
-                         *       "redis": {
-                         *         "status": "down",
-                         *         "message": "Could not connect"
-                         *       }
-                         *     }
-                         */
-                        error?: {
-                            [key: string]: {
-                                status: string;
-                            } & {
-                                [key: string]: unknown;
-                            };
-                        } | null;
-                        /**
-                         * @example {
-                         *       "database": {
-                         *         "status": "up"
-                         *       },
-                         *       "redis": {
-                         *         "status": "down",
-                         *         "message": "Could not connect"
-                         *       }
-                         *     }
-                         */
-                        details?: {
-                            [key: string]: {
-                                status: string;
-                            } & {
-                                [key: string]: unknown;
-                            };
-                        };
-                    };
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

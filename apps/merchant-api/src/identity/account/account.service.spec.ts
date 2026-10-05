@@ -12,7 +12,6 @@ import {
 } from 'db/identity';
 import { locationsTable } from 'db/stock';
 import { DRIZZLE } from 'src/shared/database/database.constants';
-import { ConflictException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { RolesService } from '../roles/roles.service';
 import { AccountService } from './account.service';
@@ -108,8 +107,11 @@ describe('AccountService.provision — first-run seed (OS-173)', () => {
       .provision({ ...provisionInput, businessName: 'Second Shop' })
       .catch((err: unknown) => err);
 
-    expect(refusal).toBeInstanceOf(ConflictException);
-    expect(refusal).toMatchObject({ message: 'Email already in use' });
+    expect(refusal).toMatchObject({
+      code: 'email_taken',
+      param: 'email',
+      message: 'An account with this email already exists.',
+    });
 
     const accounts = await db.select().from(accountsTable);
     expect(accounts).toHaveLength(1);

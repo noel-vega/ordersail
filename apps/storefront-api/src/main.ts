@@ -10,7 +10,6 @@ import {
 import { SwaggerModule } from '@nestjs/swagger';
 import {
   Logger,
-  LoggingExceptionFilter,
   configureLogging,
   exitOnFatal,
   installProcessHandlers,
@@ -18,6 +17,7 @@ import {
   requestLoggingMiddleware,
   trackRouteTemplates,
 } from 'logging';
+import { withErrorResponses } from 'errors';
 import { shutdownTracing } from 'tracing';
 import { AppModule } from './app.module';
 import { configureApp } from './configure-app';
@@ -34,7 +34,6 @@ async function bootstrap() {
     new FastifyAdapter(),
     { logger: new Logger() },
   );
-  app.useGlobalFilters(new LoggingExceptionFilter(app.getHttpAdapter()));
   // spans still in the batch are sent before the process exits on a deploy
   installShutdownHandler(app, { afterClose: shutdownTracing });
 
@@ -44,8 +43,8 @@ async function bootstrap() {
   trackRouteTemplates(app.getHttpAdapter().getInstance());
   app.use(requestLoggingMiddleware());
 
-  // /v1 prefix and validation — shared with the OpenAPI generator and
-  // the SDK contract spec
+  // /v1 prefix, validation and the error envelope — shared with the OpenAPI
+  // generator and the SDK contract spec
   configureApp(app);
 
   // Storefronts can be hosted on any merchant-owned domain, so there's no
@@ -70,7 +69,9 @@ async function bootstrap() {
     exposedHeaders: ['x-request-id'],
   });
 
-  const document = SwaggerModule.createDocument(app, createSwaggerConfig());
+  const document = withErrorResponses(
+    SwaggerModule.createDocument(app, createSwaggerConfig()),
+  );
   SwaggerModule.setup('swagger', app, document, {
     jsonDocumentUrl: 'swagger/json',
   });

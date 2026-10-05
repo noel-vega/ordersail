@@ -1,10 +1,10 @@
 import {
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
   Injectable,
   Provider,
 } from '@nestjs/common';
+import { ApiException } from 'errors';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import {
   IS_PUBLIC_KEY,
@@ -74,11 +74,8 @@ export class MfaFactorGuard implements CanActivate {
     if (!holdsFactor) {
       // The `code` is the point: merchant-web has to tell this apart from a
       // permission denial to offer setting a factor up, and a message alone
-      // can only be matched by string comparison (see merchant-sdk's do()).
-      throw new ForbiddenException({
-        message: 'A passkey or authenticator app is required for this action',
-        code: 'MFA_FACTOR_REQUIRED',
-      });
+      // can only be matched by string comparison.
+      throw new ApiException('mfa_factor_required');
     }
 
     return true;

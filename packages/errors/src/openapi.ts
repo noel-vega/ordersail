@@ -1,9 +1,12 @@
 import { codes, ERROR_TYPES } from './codes.ts';
 
-// The slice of an OpenAPI 3.0 document this touches. Structural, so it takes
-// @nestjs/swagger's OpenAPIObject (or any other generator's) without depending
-// on it.
-type OpenApiDocument = {
+// Any OpenAPI 3.0 document: @nestjs/swagger's OpenAPIObject or another
+// generator's. Kept structural and loose (OpenAPIObject's path items have no
+// index signature) so this package doesn't depend on a document generator; the
+// slice it touches is read through DocumentSlice below.
+type OpenApiDocument = { paths: object; components?: object };
+
+type DocumentSlice = {
   paths: Record<string, Record<string, unknown>>;
   components?: { schemas?: Record<string, unknown> };
 };
@@ -49,12 +52,15 @@ export function errorResponseSchema() {
 // Post-processes a generated document (run on SwaggerModule.createDocument's
 // output) so every error response is described:
 // - adds components.schemas.ErrorResponse;
-// - gives every 4xx/5xx response that has no content the ErrorResponse body
-//   (one that already has content — Terminus's /health 503 — is left alone);
+// - gives every 4xx/5xx response the ErrorResponse body, replacing whatever a
+//   decorator declared: ApiErrorFilter writes the envelope for every error, so
+//   any other error schema (Terminus's /health 503) would describe a body the
+//   API never sends;
 // - adds a `default` error response to every operation.
 // Returns a new document; the input is not modified.
 export function withErrorResponses<T extends OpenApiDocument>(document: T): T {
-  const result = structuredClone(document);
+  const copy = structuredClone(document);
+  const result = copy as unknown as DocumentSlice;
   result.components = {
     ...result.components,
     schemas: { ...result.components?.schemas, ErrorResponse: errorResponseSchema() },
@@ -66,10 +72,10 @@ export function withErrorResponses<T extends OpenApiDocument>(document: T): T {
       if (!operation) continue;
       const responses = (operation.responses ??= {});
       for (const [status, response] of Object.entries(responses)) {
-        if (/^[45](\d\d|XX)$/.test(status) && !response.content) response.content = errorContent();
+        if (/^[45](\d\d|XX)$/.test(status)) response.content = errorContent();
       }
       responses.default ??= { description: 'Error', content: errorContent() };
     }
   }
-  return result;
+  return copy;
 }

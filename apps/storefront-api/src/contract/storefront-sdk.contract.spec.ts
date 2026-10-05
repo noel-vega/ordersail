@@ -607,6 +607,77 @@ describe('storefront-sdk contract', () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
+  // ADR 0001: a bad app key is a misconfiguration a refresh can't fix, so the
+  // client reports it by code and never spends a refresh on it — even with a
+  // session it could have refreshed, and even on a read whose expected
+  // "empty" outcome is a 401
+  it('reports a bad app key as invalid_app_key and never tries a refresh', async () => {
+    const account = await insertAccount(db);
+    const apiKey = await insertApiKey(db, { accountId: account.id });
+    const signedIn = new StorefrontClient(baseUrl, apiKey.key);
+    await signedIn.signUp({
+      firstName: 'Bad',
+      lastName: 'Key',
+      email: `bad-key-${account.id}@buyer.test`,
+      password: 'a-real-password-123',
+    });
+
+    const paths: string[] = [];
+    const realFetch = globalThis.fetch;
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((input, init) => {
+        const url = input instanceof Request ? input.url : input.toString();
+        paths.push(new URL(url).pathname);
+        return realFetch(input, init);
+      });
+    try {
+      const client = new StorefrontClient(
+        baseUrl,
+        'sfk_not_a_real_key',
+        undefined,
+        signedIn.refreshToken,
+      );
+      client.accessToken = signedIn.accessToken;
+
+      const ordersError = await client.customer.orders
+        .list()
+        .catch((err: unknown) => err);
+      expect(ordersError).toBeInstanceOf(ApiError);
+      expect(ordersError).toMatchObject({
+        status: 401,
+        code: 'invalid_app_key',
+        type: 'authentication_error',
+      });
+      await expect(client.customer.get()).rejects.toMatchObject({
+        code: 'invalid_app_key',
+      });
+      expect(paths).not.toContain('/v1/auth/token/refresh');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('reports a bad request body as validation_failed with the field at fault', async () => {
+    const account = await insertAccount(db);
+    const apiKey = await insertApiKey(db, { accountId: account.id });
+    const client = new StorefrontClient(baseUrl, apiKey.key);
+
+    const error = await client.cart
+      .addItem({ variantId: 1, quantity: 0 })
+      .catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 400,
+      code: 'validation_failed',
+      param: 'quantity',
+    });
+    const fields = (error as ApiError).details?.fields as
+      { param: string; message: string }[] | undefined;
+    expect(fields?.map((field) => field.param)).toEqual(['quantity']);
+  });
+
   it('returns undefined only for the one expected outcome, not any failure', async () => {
     const account = await insertAccount(db);
     const apiKey = await insertApiKey(db, { accountId: account.id });

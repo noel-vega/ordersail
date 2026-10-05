@@ -169,12 +169,31 @@ requests are never logged (ALB + ECS checks hit them every 15s).
 
 ## Errors
 
-Every service's `main.ts` wires the same three things from `logging`, so an error is logged
-once, as structured JSON, wherever it happens:
+Every service's `main.ts` wires the same few things, so an error is logged once, as structured
+JSON, wherever it happens, and answered with one body:
 
-- **`LoggingExceptionFilter`** (`app.useGlobalFilters`) — every exception that escapes a
-  controller or guard. The filter only logs: today the response still comes from Nest's
-  `BaseExceptionFilter`, and clients never see a stack.
+- **`useApiErrors(app)`** (`packages/errors`; storefront-api calls it from `configureApp`) — on
+  the three APIs, it registers the `ValidationPipe` and **`ApiErrorFilter`**, which handles every
+  exception that escapes a controller or guard. It logs the exception (the line below), then
+  answers with the error envelope from [root ADR 0001](./adr/0001-api-error-envelope.md):
+
+  ```json
+  { "error": { "type": "invalid_request_error", "code": "email_taken",
+               "message": "Email already in use", "param": "email",
+               "doc_url": "https://ordersail.com/docs/errors/email-taken",
+               "request_id": "8f0c…" } }
+  ```
+
+  - `request_id` is the request's `correlationId` (the `x-request-id` header): quote it from a
+    client report and the logs and trace for that request are one query away.
+  - **A 5xx body never contains internals**: no thrown message, stack or `cause`, only the
+    code's generic message. The detail is in the `http.unhandled_error` line. Errors the HTTP
+    layer raises itself (Fastify's `FST_*`) keep their 4xx status and message; any other error
+    carrying a `statusCode` (a Stripe SDK error, say) is answered as a 500.
+  - Codes come from the registry in `packages/errors/src/codes.ts`. Throw
+    `new ApiException('<code>')` where a client needs to tell a case apart; a plain
+    `NotFoundException` still works and gets the generic code for its status.
+
   The log line:
 
   | Status | Level | Line |
@@ -183,12 +202,12 @@ once, as structured JSON, wherever it happens:
   | 401 / 403 / 429 | `warn` | `{ event: 'http.request_rejected', route, status, reason }` — no stack |
   | other 4xx (validation, not found, 413…) | `debug` | same as above |
 
-  Nest's own unstructured `ExceptionsHandler` line is suppressed so each error shows up once.
-  The access line for the same request is still written separately. Don't catch-and-rethrow
-  just to log: throw, and let the filter log it.
+  `status` is the status the client got. Nest's own unstructured `ExceptionsHandler` line is
+  never written, so each error shows up once. The access line for the same request is still
+  written separately. Don't catch-and-rethrow just to log: throw, and let the filter log it.
 
-  The response body is changing. [Root ADR 0001](./adr/0001-api-error-envelope.md) replaces it
-  with one error envelope whose `request_id` is the `correlationId` above.
+  The worker serves only an internal `/health`, so it keeps `LoggingExceptionFilter` from
+  `logging`: the same log line, with Nest's default response body.
 - **`installProcessHandlers()`** — an uncaught exception or unhandled rejection logs one
   `fatal` line (`process.uncaught_exception` / `process.unhandled_rejection`), flushes, then
   exits 1. The process still crashes, same as Node's default. The difference is that the last

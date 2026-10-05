@@ -38,7 +38,7 @@ export const queryClient = new QueryClient({
       // module-level cache needs a provider and an imperative handle wired
       // through the app shell, which is a lot of machinery for a path that
       // shouldn't fire.
-      if (error instanceof ApiError && error.code === "MFA_FACTOR_REQUIRED") {
+      if (error instanceof ApiError && error.code === "mfa_factor_required") {
         toast.error(error.message, {
           action: {
             label: "Set one up",

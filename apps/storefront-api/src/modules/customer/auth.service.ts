@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ApiException } from 'errors';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { type AuthenticatedCustomer } from './auth.decorators';
@@ -77,7 +78,7 @@ export class AuthService {
     );
 
     if (!customer || !(await bcrypt.compare(dto.password, customer.password))) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_credentials');
     }
 
     // carries the guest cart (if any) over to the account that just signed

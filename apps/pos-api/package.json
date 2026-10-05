@@ -31,6 +31,7 @@
     "class-validator": "^0.15.1",
     "config": "*",
     "db": "*",
+    "errors": "*",
     "fastify": "5.11.3",
     "logging": "*",
     "reflect-metadata": "^0.2.2",

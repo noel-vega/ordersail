@@ -4,10 +4,10 @@ import {
   Inject,
   Injectable,
   Provider,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
+import { ApiException } from 'errors';
 import { DRIZZLE } from '../../database/database.constants';
 import { accountApiKeysTable, and, eq, isNull, type db as Db } from 'db';
 import { setLogContext } from 'logging';
@@ -34,7 +34,7 @@ export class AppKeyGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const appKey = request.headers[APP_KEY_HEADER];
     if (!appKey || Array.isArray(appKey)) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_app_key');
     }
 
     const [record] = await this.db
@@ -48,7 +48,7 @@ export class AppKeyGuard implements CanActivate {
       );
 
     if (!record) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_app_key');
     }
 
     // stashed for CurrentAccountId() and for services to scope queries by tenant

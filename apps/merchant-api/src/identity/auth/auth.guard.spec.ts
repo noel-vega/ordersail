@@ -1,4 +1,4 @@
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -58,9 +58,9 @@ describe('AuthGuard typ enforcement (OS-467)', () => {
     const token = await jwt.signAsync({ ...payload, typ: 'refresh', jti: 'x' });
     const { context } = ctx({ authorization: `Bearer ${token}` });
 
-    await expect(guard().canActivate(context)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard().canActivate(context)).rejects.toMatchObject({
+      code: 'invalid_access_token',
+    });
   });
 
   it('allows a @Public() route through with no token at all', async () => {
@@ -70,8 +70,8 @@ describe('AuthGuard typ enforcement (OS-467)', () => {
 
   it('rejects a gated route with no token', async () => {
     const { context } = ctx({});
-    await expect(guard().canActivate(context)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard().canActivate(context)).rejects.toMatchObject({
+      code: 'invalid_access_token',
+    });
   });
 });

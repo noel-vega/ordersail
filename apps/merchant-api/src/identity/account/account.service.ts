@@ -1,9 +1,5 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ApiException } from 'errors';
 import { DRIZZLE } from 'src/shared/database/database.constants';
 import {
   accountApiKeysTable,
@@ -69,7 +65,7 @@ export class AccountService {
       return await this.provisionTenant(input, hashedPassword);
     } catch (err) {
       if (isUniqueViolation(err, USERS_EMAIL_UNIQUE_CONSTRAINT)) {
-        throw new ConflictException('Email already in use');
+        throw new ApiException('email_taken', { param: 'email' });
       }
       throw err;
     }

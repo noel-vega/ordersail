@@ -35,7 +35,7 @@ export function useRefreshStripeConnectStatus() {
 // passkey or authenticator. The link is single-use and expires in minutes, so
 // this is a mutation fired from a click, never a query. The error is rendered
 // next to the button that caused it, so the global toast would only repeat
-// it — but the MFA_FACTOR_REQUIRED backstop sits above that opt-out and still
+// it — but the mfa_factor_required backstop sits above that opt-out and still
 // fires.
 export function useCreateOnboardingLinkMutation() {
   return useMutation({

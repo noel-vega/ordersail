@@ -6,6 +6,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ApiException } from 'errors';
 import { authenticator } from 'otplib';
 import { SignInDto } from './dto/signin.dto';
 import { SignUpDto } from './dto/signup.dto';
@@ -101,7 +102,7 @@ export class AuthService {
     // (a revoked invite, say) is a 401, which sends the client to refresh,
     // where the Session is refused for good
     if (!row) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_access_token');
     }
 
     const permissions =
@@ -128,11 +129,11 @@ export class AuthService {
     // staff created from the dashboard have no password until they join via
     // an invite link — treat that the same as a wrong password, not a crash
     if (!user || !user.password) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_credentials');
     }
 
     if (!(await bcrypt.compare(signinDto.password, user.password))) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_credentials');
     }
 
     const factors = await this.factorState.getFactorState(user.id);
@@ -318,8 +319,10 @@ export class AuthService {
       .select()
       .from(usersTable)
       .where(eq(usersTable.id, userId));
+    // the token outlived its User: send the client to refresh, which refuses
+    // the Session for good (same as me())
     if (!user) {
-      throw new UnauthorizedException();
+      throw new ApiException('invalid_access_token');
     }
     if (!user.emailVerifiedAt) {
       throw new ForbiddenException('Verify your email before enabling MFA');
@@ -360,11 +363,13 @@ export class AuthService {
       .select()
       .from(usersTable)
       .where(eq(usersTable.id, userId));
-    if (!user || !user.password) {
-      throw new UnauthorizedException();
+    // the token outlived its User: send the client to refresh, which refuses
+    // the Session for good (same as me())
+    if (!user) {
+      throw new ApiException('invalid_access_token');
     }
-    if (!(await bcrypt.compare(password, user.password))) {
-      throw new UnauthorizedException();
+    if (!user.password || !(await bcrypt.compare(password, user.password))) {
+      throw new ApiException('unauthenticated');
     }
   }
 
@@ -807,7 +812,7 @@ export class AuthService {
       // enumerates nothing — and without it the dashboard can't tell this
       // apart from an expired access token, which it would answer by
       // silently refreshing instead of reporting the mistake.
-      if (err instanceof UnauthorizedException) {
+      if (err instanceof ApiException && err.code === 'unauthenticated') {
         throw new UnauthorizedException('Current password is incorrect');
       }
       throw err;

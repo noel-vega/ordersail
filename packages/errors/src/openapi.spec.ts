@@ -34,13 +34,14 @@ describe('withErrorResponses', () => {
     assert.deepEqual(schema.properties.error.properties.code.enum, Object.keys(codes));
   });
 
-  it('fills only the error responses that have no content', () => {
+  it('gives every error response the ErrorResponse body, and leaves success responses alone', () => {
     const { paths } = withErrorResponses(document()) as any;
     assert.deepEqual(paths['/products/{id}'].get.responses['404'].content, errorContent);
     assert.equal(paths['/auth/sign-in'].post.responses['401'].description, 'Bad credentials');
     assert.deepEqual(paths['/auth/sign-in'].post.responses['401'].content, errorContent);
     assert.equal(paths['/products/{id}'].get.responses['200'].content, undefined, 'success responses untouched');
-    assert.deepEqual(paths['/health'].get.responses['503'].content, healthContent, "Terminus's 503 left alone");
+    assert.deepEqual(paths['/health'].get.responses['503'].content, errorContent, "Terminus's 503 replaced");
+    assert.equal(paths['/health'].get.responses['503'].description, 'down', 'its description kept');
   });
 
   it('adds a default error response to every operation', () => {

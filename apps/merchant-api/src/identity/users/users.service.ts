@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import { ApiException } from 'errors';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { User, UserRoleSummary, type UserStatus } from './entities/user.entity';
@@ -249,7 +250,7 @@ export class UsersService {
       return toUser(user, roles.get(user.id) ?? []);
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new ConflictException('Email already in use');
+        throw new ApiException('email_taken', { param: 'email' });
       }
       if (isForeignKeyViolation(err)) {
         throw new BadRequestException('One or more roles no longer exist');

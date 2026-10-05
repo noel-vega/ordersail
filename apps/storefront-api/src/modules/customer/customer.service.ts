@@ -1,9 +1,5 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ApiException } from 'errors';
 import { Customer } from './entities/customer.entity';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { DRIZZLE } from '../../database/database.constants';
@@ -80,7 +76,7 @@ export class CustomerService {
       return customer;
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new ConflictException('Email already in use');
+        throw new ApiException('email_taken', { param: 'email' });
       }
       throw err;
     }
@@ -113,7 +109,7 @@ export class CustomerService {
       return toCustomer(row);
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new ConflictException('Email already in use');
+        throw new ApiException('email_taken', { param: 'email' });
       }
       throw err;
     }

@@ -1,5 +1,4 @@
 import type { ExecutionContext } from '@nestjs/common';
-import { UnauthorizedException } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 import { insertAccount, insertApiKey, useTestDb } from 'test-support';
 import { AppKeyGuard } from './app-key.guard';
@@ -48,18 +47,18 @@ describe('AppKeyGuard (OS-170)', () => {
     const guard = build();
     const { ctx } = contextWithHeaders({ 'x-app-key': key.key });
 
-    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+      code: 'invalid_app_key',
+    });
   });
 
   it('rejects a missing header', async () => {
     const guard = build();
     const { ctx } = contextWithHeaders({});
 
-    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+      code: 'invalid_app_key',
+    });
   });
 
   it('lets a @Public() route through without a key', async () => {

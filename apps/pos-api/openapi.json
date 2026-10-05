@@ -8,6 +8,16 @@
         "responses": {
           "200": {
             "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -36,6 +46,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PairingResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -88,6 +108,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -121,6 +151,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PosScanResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -161,7 +201,24 @@
             }
           },
           "404": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -185,6 +242,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PosSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -221,6 +288,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PosOrder"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -320,80 +397,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string",
-                      "example": "error"
-                    },
-                    "info": {
-                      "type": "object",
-                      "example": {
-                        "database": {
-                          "status": "up"
-                        }
-                      },
-                      "additionalProperties": {
-                        "type": "object",
-                        "required": [
-                          "status"
-                        ],
-                        "properties": {
-                          "status": {
-                            "type": "string"
-                          }
-                        },
-                        "additionalProperties": true
-                      },
-                      "nullable": true
-                    },
-                    "error": {
-                      "type": "object",
-                      "example": {
-                        "redis": {
-                          "status": "down",
-                          "message": "Could not connect"
-                        }
-                      },
-                      "additionalProperties": {
-                        "type": "object",
-                        "required": [
-                          "status"
-                        ],
-                        "properties": {
-                          "status": {
-                            "type": "string"
-                          }
-                        },
-                        "additionalProperties": true
-                      },
-                      "nullable": true
-                    },
-                    "details": {
-                      "type": "object",
-                      "example": {
-                        "database": {
-                          "status": "up"
-                        },
-                        "redis": {
-                          "status": "down",
-                          "message": "Could not connect"
-                        }
-                      },
-                      "additionalProperties": {
-                        "type": "object",
-                        "required": [
-                          "status"
-                        ],
-                        "properties": {
-                          "status": {
-                            "type": "string"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -839,6 +853,90 @@
           "createdAt",
           "items"
         ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "type",
+              "code",
+              "message",
+              "doc_url",
+              "request_id"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "invalid_request_error",
+                  "authentication_error",
+                  "permission_error",
+                  "rate_limit_error",
+                  "api_error"
+                ]
+              },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "unauthenticated",
+                  "forbidden",
+                  "not_found",
+                  "method_not_allowed",
+                  "not_acceptable",
+                  "request_timeout",
+                  "conflict",
+                  "gone",
+                  "precondition_failed",
+                  "content_too_large",
+                  "unsupported_media_type",
+                  "misdirected_request",
+                  "unprocessable_content",
+                  "rate_limited",
+                  "internal_error",
+                  "not_implemented",
+                  "bad_gateway",
+                  "service_unavailable",
+                  "gateway_timeout",
+                  "http_version_not_supported",
+                  "validation_failed",
+                  "invalid_access_token",
+                  "invalid_app_key",
+                  "invalid_device_token",
+                  "invalid_credentials",
+                  "mfa_factor_required",
+                  "email_taken"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "description": "For people. Never parse it; branch on `code`."
+              },
+              "param": {
+                "type": "string",
+                "description": "The request field that caused the error."
+              },
+              "doc_url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "request_id": {
+                "type": "string",
+                "nullable": true,
+                "description": "The x-request-id of the request; quote it when reporting a problem."
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
       }
     }
   }

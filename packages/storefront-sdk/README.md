@@ -44,6 +44,25 @@ try {
 lives under `/v1`), and the SDK adds that prefix itself, so a given SDK
 release always talks to the API version it was generated from.
 
+### Upgrading from 0.7.x
+
+**0.8.0 changes how errors arrive.** Every API error now has one body, and
+`ApiError` carries it as typed fields: branch on `err.code` (see
+[Error handling](#error-handling)) instead of `err.status` or the message.
+Two behaviours change with it:
+
+- The client refreshes the customer's token only on `invalid_access_token`.
+  A bad app key or wrong credentials no longer trigger a refresh and retry.
+- `ApiError`'s constructor changed. If you construct one yourself (in tests,
+  say), pass `(message, status, body?)`.
+
+0.7.x clients keep working against the new API, but every `ApiError.message`
+is the generic `Request failed (<status>)`.
+
+```bash
+npm install @ordersail/storefront-sdk@^0.8.0
+```
+
 ### Upgrading from 0.6.x
 
 **0.7.0 is a breaking change.** storefront-api now serves every route under
@@ -81,22 +100,58 @@ npm install @ordersail/storefront-sdk@^0.7.0
 
 ## Error handling
 
-Every mutation throws `ApiError` (from `@ordersail/storefront-sdk`) on a
-non-2xx response:
+Every failed call throws `ApiError` (from `@ordersail/storefront-sdk`). Every
+API error has the same shape, so one handler covers them all:
 
 ```ts
 export class ApiError extends Error {
-  readonly status: number; // the HTTP status code
-  readonly message: string; // the server's message, when it sends one
+  readonly status: number; // the HTTP status
+  readonly code: ApiErrorCode | undefined; // what to branch on, e.g. "email_taken"
+  readonly type: ApiErrorType | undefined; // the broad category, e.g. "invalid_request_error"
+  readonly message: string; // for people — show it, never parse it
+  readonly param: string | undefined; // the request field at fault, when there is one
+  readonly details: Record<string, unknown> | undefined; // data specific to the code
+  readonly requestId: string | undefined; // quote this when reporting a problem
+  readonly docUrl: string | undefined; // the code's reference page
 }
 ```
 
-`error.message` is the API's own message when the response body has one
-(most validation and conflict errors do); otherwise it falls back to
-`` `Request failed (${status})` ``. Two exceptions worth knowing: `signIn`'s
-`401` and `signUp`'s `409` currently carry no response body at all, so
-`error.message` for those two is always the generic fallback — write your
-own copy for those cases rather than surfacing it.
+**Branch on `code`, never on `message`.** Codes are part of the SDK's
+contract; messages can be reworded at any time. `ApiErrorCode` is the union of
+every code the API returns, and `isApiError` narrows a caught value:
+
+```ts
+import { isApiError } from "@ordersail/storefront-sdk";
+
+try {
+  await client.signUp(form);
+} catch (err) {
+  if (isApiError(err, "email_taken")) {
+    setFieldError(err.param ?? "email", "That email already has an account.");
+  } else if (isApiError(err, "validation_failed")) {
+    // details.fields lists every failing field as { param, message }
+    for (const { param, message } of err.details.fields) setFieldError(param, message);
+  } else {
+    throw err;
+  }
+}
+```
+
+A few codes worth knowing:
+
+| Code | When |
+|---|---|
+| `invalid_app_key` | The `x-app-key` is missing, wrong or revoked. A configuration problem — fix the key. |
+| `invalid_access_token` | The customer's access token is missing, expired or invalid. The client refreshes and retries this one for you. |
+| `invalid_credentials` | `signIn` with a wrong email or password. |
+| `email_taken` | `signUp` (or a profile update) with an email that already has an account. |
+| `validation_failed` | A request field failed validation; `param` is the first, `details.fields` lists all. |
+| `not_found` | The resource doesn't exist (single-resource reads return `undefined` instead). |
+| `internal_error` | Something failed on OrderSail's side. The message is always generic; quote `requestId`. |
+
+`code` is `undefined` only when the response carried no error body at all (a
+proxy's or the network's error page); `message` is then
+`` `Request failed (${status})` ``.
 
 ## Auth model
 

@@ -1,5 +1,6 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { ApiException } from 'errors';
 import {
   IS_PUBLIC_KEY,
   NO_MFA_FACTOR_REQUIRED_KEY,
@@ -84,7 +85,7 @@ describe('MfaFactorGuard (OS-492)', () => {
   it('blocks a marked route when the caller holds none', async () => {
     await expect(
       guard(false).canActivate(ctx({ required: true, user: caller })),
-    ).rejects.toThrow(ForbiddenException);
+    ).rejects.toMatchObject({ code: 'mfa_factor_required' });
   });
 
   // merchant-web branches on this to offer setting a factor up; a message
@@ -94,10 +95,9 @@ describe('MfaFactorGuard (OS-492)', () => {
       .canActivate(ctx({ required: true, user: caller }))
       .catch((e: unknown) => e);
 
-    expect(err).toBeInstanceOf(ForbiddenException);
-    expect((err as ForbiddenException).getResponse()).toMatchObject({
-      code: 'MFA_FACTOR_REQUIRED',
-    });
+    expect(err).toBeInstanceOf(ApiException);
+    expect((err as ApiException).code).toBe('mfa_factor_required');
+    expect((err as ApiException).getStatus()).toBe(403);
   });
 
   it('allows a public route regardless', async () => {
@@ -116,13 +116,13 @@ describe('MfaFactorGuard (OS-492)', () => {
       guard(false).canActivate(
         ctx({ required: true, classNotRequired: true, user: caller }),
       ),
-    ).rejects.toThrow(ForbiddenException);
+    ).rejects.toMatchObject({ code: 'mfa_factor_required' });
   });
 
   it('honours a class-level requirement', async () => {
     await expect(
       guard(false).canActivate(ctx({ classRequired: true, user: caller })),
-    ).rejects.toThrow(ForbiddenException);
+    ).rejects.toMatchObject({ code: 'mfa_factor_required' });
   });
 
   // A missing user means an earlier guard should already have rejected this,
@@ -130,7 +130,7 @@ describe('MfaFactorGuard (OS-492)', () => {
   it('blocks a marked route with no user at all', async () => {
     await expect(
       guard(true).canActivate(ctx({ required: true, user: undefined })),
-    ).rejects.toThrow(ForbiddenException);
+    ).rejects.toMatchObject({ code: 'mfa_factor_required' });
   });
 
   // the live lookup is the price of a gated route, not of every request
