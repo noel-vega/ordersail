@@ -17,7 +17,7 @@ Two SNS topics, created in `infra/terraform/envs/production/monitoring.tf`:
 
 | Topic | ARN name | Subscribers | Use for |
 |---|---|---|---|
-| **critical** | `ordersail-alerts-critical` | email (+ SMS once the sandbox is exited) | pages — a human needs to act now |
+| **critical** | `ordersail-alerts-critical` | email (+ SMS once the sandbox is exited) | will page (OS-732) — a human needs to act now |
 | **warning** | `ordersail-alerts-warning` | email | elevated but not down; look when convenient |
 
 ### Adding / changing recipients
@@ -88,7 +88,7 @@ aws cloudwatch set-alarm-state --alarm-name ordersail-<name> --state-value OK \
 
 ## Alarm inventory
 
-Each row is added by its issue's PR. `→` is the topic the alarm notifies.
+Each row is added or removed by its issue's PR. `→` is the topic the alarm notifies.
 
 | Alarm | Source | Fires when | → |
 |---|---|---|---|
@@ -126,9 +126,10 @@ unresolved count (`failedOrderRecorded: false` if the row write failed too).
    `OrderJobData` — it does not touch Redis/BullMQ.
 3. Cross-check the Stripe payment intent to confirm the charge before/after.
 
-The worker's direct SNS page is the only notification for a dead-letter. Until the Loki
-alert rule (OS-732) exists, there's no backstop for when that publish fails, so check the
-`alert: true` lines below.
+The worker publishes a dead-letter straight to `ordersail-alerts-critical`, but **while paging
+is off that topic has no subscribers, so a dead-letter notifies nobody**. Check the
+failed-orders view and the `alert: true` lines below. Once paging is back on, that publish is
+the only notification; until the Loki alert rule (OS-732) exists, nothing backs it up if it fails.
 
 ## `alert: true` lines
 

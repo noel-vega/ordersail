@@ -7,8 +7,8 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 > **Status:** in place — the **M1b — Structured logging** milestone (Observability & alerting
 > project) landed as pino (OS-478) → redaction (OS-81) → request logs (OS-82) → request
 > context (OS-479) → error handling (OS-480) → call-site migration (OS-481) → log alarms
-> (OS-99) → saved queries (OS-98). Traces: merchant-api can emit them (OS-94, see
-> [Traces](#traces)); they are not exported anywhere by default yet.
+> (OS-99, since deleted in OS-731) → saved queries (OS-98). Traces: merchant-api can emit
+> them (OS-94, see [Traces](#traces)); they are not exported anywhere by default yet.
 
 ## Roles of each tool
 
@@ -17,7 +17,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | **pino → Grafana Cloud Loki** | *What happened, step by step?* — searched on demand | this doc, [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **CloudWatch Logs** | the migrator's output, Fluent Bit's own output, and service logs from before the move to Loki | [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
-| **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | paging **off** pre-launch (OS-731); `docs/runbooks/alerts.md` |
+| **CloudWatch alarms → SNS** | *Is something down / over threshold?* — will page us (OS-732) | paging **off** pre-launch (OS-731); `docs/runbooks/alerts.md` |
 | **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api, storefront-api, pos-api (not the worker yet); off unless an OTLP endpoint is set — [Traces](#traces) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
