@@ -57,17 +57,21 @@ jobs:
           fi
 
   # merchant-api's jest suite is serial by design (maxWorkers: 1 — every spec
-  # shares one Testcontainers Postgres) and was ~74s of the single test leg, so
-  # it gets its own runner (OS-763). Both legs need Redis.
+  # shares one Testcontainers Postgres): 63 suites / ~107s even on its own
+  # runner. So it's sharded across runners (`jest --shard`), each with its own
+  # Testcontainers DB; everything else is one leg (OS-763). All legs need Redis.
   verify-test:
-    name: verify-test (${{ matrix.leg }})
+    name: verify-test (${{ matrix.leg }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
     runs-on: ubuntu-latest
     env:
       NX_NO_CLOUD: "true"
     strategy:
       fail-fast: false
       matrix:
-        leg: [merchant-api, rest]
+        include:
+          - { leg: merchant-api, shard: 1/2 }
+          - { leg: merchant-api, shard: 2/2 }
+          - { leg: rest }
     services:
       # storefront-api/merchant-api/worker all connect to a real Redis for
       # BullMQ (see packages/queue's bullmqConnectionOptions) — without this,
@@ -111,7 +115,7 @@ jobs:
         run: |
           if [ "${{ matrix.leg }}" = "merchant-api" ]; then
             if [ "${{ inputs.run_all }}" = "true" ] || [ "$(npx nx show projects --affected -p merchant-api --json)" != "[]" ]; then
-              npx nx run-many -t test -p merchant-api
+              npx nx run merchant-api:test -- --shard=${{ matrix.shard }}
             else
               echo "merchant-api not affected — nothing to test"
             fi
