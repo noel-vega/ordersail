@@ -486,23 +486,29 @@ export class Logger implements LoggerService {
 // the env schema's z.url() and the tfvars validation catch that one instead.
 //
 // Everything logs at `warn`, not `error`: the service is fine, only its traces
-// are lost. `error` means a customer or merchant was failed, or a human must act
+// or metrics are lost. `error` means a customer or merchant was failed, or a human must act
 // (docs/observability.md → Levels).
 //
 // - A failed export arrives once per batch, never once per request: the
 //   BatchSpanProcessor hands the error to OpenTelemetry's global error handler,
 //   which flattens it to a JSON string and passes it to diag.error. That shape
 //   is what marks it as `tracing.export_failed`.
-// - Any other diag.error — an instrumentation's own (HTTP, pg) — is
-//   `tracing.sdk_errored`, so it doesn't send anyone after the token.
 // - Metrics (packages/metrics) report through the same diag logger, and only
 //   the PeriodicExportingMetricReader's own wording tells them apart: a failed
 //   export reaches the handler as an Error whose message starts with
 //   METRICS_READER, and a timeout as a plain diag string with that prefix.
-//   Those become `metrics.export_failed` / `metrics.sdk_errored`, so a metrics
-//   problem never reads as "Trace export failed". The reader folds the
-//   exporter's error into its message as text, so these lines carry no
-//   separate `err.code`; the HTTP status is in `err.message`.
+//   Those become `metrics.export_failed` / `metrics.sdk_errored`. The reader
+//   folds the exporter's error into its message as text, so these lines carry
+//   no separate `err.code`; the HTTP status is in `err.message`. An exporter
+//   that throws would reach the handler as its own, unprefixed error — and read
+//   as a trace export failure — so packages/metrics turns a throw into a failed
+//   result before the reader sees it.
+// - Everything else is `otel.sdk_warned` / `otel.sdk_errored`, naming no
+//   signal: the OTLP exporter code is shared by traces and metrics, and most
+//   SDK messages ("negative value provided to counter …", a header that won't
+//   parse, spans dropped because the queue filled) carry no prefix to tell
+//   which one spoke. The message says; the event only promises it isn't an
+//   export failure.
 //
 // Only string arguments (a component logger's namespace, then the message) and
 // an Error reach the line. Other arguments are dropped: instrumentation-pg
@@ -523,12 +529,12 @@ const otelDiagLogger: DiagLogger = {
       return;
     }
     const [fields, text] = diagLine(message, args);
-    const event = message.startsWith(METRICS_READER) ? 'metrics.sdk_errored' : 'tracing.sdk_errored';
+    const event = message.startsWith(METRICS_READER) ? 'metrics.sdk_errored' : 'otel.sdk_errored';
     otelLogger.warn({ event, ...fields }, text);
   },
   warn: (message, ...args) => {
     const [fields, text] = diagLine(message, args);
-    otelLogger.warn({ event: 'tracing.sdk_warned', ...fields }, text);
+    otelLogger.warn({ event: 'otel.sdk_warned', ...fields }, text);
   },
   info: () => undefined,
   debug: () => undefined,

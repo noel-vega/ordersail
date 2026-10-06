@@ -492,8 +492,10 @@ merchant-api logs one `warn` line for it, `event: "tracing.export_failed"`, `con
 "OpenTelemetry"`, with `err.code` the HTTP status when there was one. One per batch, never one
 per request, and `warn` rather than `error`: the service is fine, only its traces are lost, so
 it wouldn't count toward an error-volume alert. Other OpenTelemetry warnings (spans dropped because the
-queue filled) log as `tracing.sdk_warned`, and an instrumentation's own error (an HTTP or `pg`
-hook) as `tracing.sdk_errored` — neither means export is failing. `packages/logging` registers
+queue filled) log as `otel.sdk_warned`, and an instrumentation's own error (an HTTP or `pg`
+hook) as `otel.sdk_errored` — neither means export is failing. These two name no signal on
+purpose: traces and metrics share the OTLP exporter code, and most SDK messages carry nothing that
+says which one spoke, so the message text is where to look. `packages/logging` registers
 this as OpenTelemetry's diag logger in `configureLogging()`; only text and an `Error` reach the
 line, never other arguments (`pg` can pass query parameter values).
 
@@ -562,8 +564,10 @@ A failed export logs one `warn` line per attempt, never per recording: `event:
 "metrics.export_failed"`, `context: "OpenTelemetry"`. `err.message` carries the reason, for
 example `… metrics export failed (error OTLPExporterError: Unauthorized)`. It never carries the
 credentials. A timed-out export and other reader errors are `metrics.sdk_errored`. These are
-deliberately separate from `tracing.export_failed`, so a metrics problem doesn't send anyone after
-the trace setup.
+deliberately separate from `tracing.export_failed`, so a metrics export failure doesn't send anyone
+after the trace setup; an exporter that throws is logged as a failed export too, never as a trace
+one. Warnings from the shared OTLP exporter or the metrics SDK itself (a header that won't parse, a
+negative value recorded on a counter) carry no signal name and log as `otel.sdk_warned`.
 
 ```logql
 {deployment_environment="production"} | json | event=~"metrics\\.(export_failed|sdk_errored)"

@@ -4,6 +4,7 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { metrics } from '@opentelemetry/api';
+import { ExportResultCode } from '@opentelemetry/core';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-proto';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import {
@@ -62,6 +63,28 @@ export function createExporter(): PushMetricExporter {
   return new OTLPMetricExporter({ temporalityPreference: AggregationTemporality.CUMULATIVE });
 }
 
+// The reader reports an exporter that returns a failed result as its own,
+// prefixed error, which the logs file under `metrics.export_failed`. An
+// exporter that throws instead is rethrown to the global error handler as-is —
+// no prefix, so packages/logging could only call it a trace export failure.
+// Turning the throw into the failed result keeps every failure on the one path.
+function failInsteadOfThrowing(exporter: PushMetricExporter): PushMetricExporter {
+  return {
+    export: (batch, done) => {
+      try {
+        exporter.export(batch, done);
+      } catch (thrown) {
+        done({ code: ExportResultCode.FAILED, error: thrown instanceof Error ? thrown : new Error(String(thrown)) });
+      }
+    },
+    forceFlush: () => exporter.forceFlush(),
+    shutdown: () => exporter.shutdown(),
+    // the reader reads both at construction: cumulative, exponential
+    selectAggregationTemporality: exporter.selectAggregationTemporality?.bind(exporter),
+    selectAggregation: exporter.selectAggregation?.bind(exporter),
+  };
+}
+
 function enabledByEnv(): boolean {
   // the standard kill switch: metrics stay off even with the shared endpoint set
   if (process.env.OTEL_METRICS_EXPORTER === 'none') return false;
@@ -104,7 +127,12 @@ export function startMetrics(options: MetricsOptions): boolean {
       resourceFromAttributes({ 'service.instance.id': randomUUID() }),
     ),
     views: createViews(),
-    readers: [new PeriodicExportingMetricReader({ exporter, exportIntervalMillis: exportIntervalMillis() })],
+    readers: [
+      new PeriodicExportingMetricReader({
+        exporter: failInsteadOfThrowing(exporter),
+        exportIntervalMillis: exportIntervalMillis(),
+      }),
+    ],
   });
   metrics.setGlobalMeterProvider(provider);
   return true;
