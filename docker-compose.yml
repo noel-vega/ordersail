@@ -99,7 +99,8 @@ services:
   # --- local traces + metrics: services → Alloy (OTLP/HTTP) → Tempo / Prometheus
 
   # The one OTLP endpoint `npm run dev` services export to (ALLOY_OTLP_PORT in
-  # .env). Routes traces to Tempo and metrics to Prometheus
+  # .env). Routes traces to Tempo and metrics to Prometheus, and forwards
+  # Fluent Bit's logs to Loki on the Loki push API (:3100, not published)
   # (docker/alloy/config.alloy). No volume: nothing in this pipeline needs
   # --storage.path to survive a restart.
   alloy:
@@ -134,6 +135,9 @@ services:
         condition: service_healthy
       prometheus:
         condition: service_healthy
+      # logs: Fluent Bit → Alloy → Loki (OS-738)
+      loki:
+        condition: service_started
 
   # no volume: traces last until `npm run down`. Reached only through Alloy
   # (and Grafana) inside the compose network, so nothing is published.
@@ -207,7 +211,11 @@ services:
       # tail offsets, so a Fluent Bit restart doesn't re-send whole files
       - ordersail-fluent-bit-state:/fluent-bit/state
     depends_on:
-      - loki
+      # `npm run dev` logs go through Alloy; the production rehearsal straight to Loki
+      alloy:
+        condition: service_healthy
+      loki:
+        condition: service_started
 
   # merchant-api as it runs in production: the real image, NODE_ENV=production
   # (so pino writes JSON), stdout handed to Fluent Bit by the same log driver
