@@ -77,12 +77,7 @@ export function ListOrdersView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const orders = useListOrdersQuery(search);
-  useClampPage({
-    page: search.page,
-    query: orders,
-    onClamp: (page) =>
-      navigate({ search: (prev) => ({ ...prev, page }), replace: true }),
-  });
+  useClampPage({ page: search.page, query: orders });
   const failedOrders = useQuery(getFailedOrdersQueryOptions());
   const unresolvedFailed = failedOrders.data?.unresolvedCount ?? 0;
 

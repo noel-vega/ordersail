@@ -58,12 +58,7 @@ export function ProductListView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const products = useListProductsQuery(search);
-  useClampPage({
-    page: search.page,
-    query: products,
-    onClamp: (page) =>
-      navigate({ search: (prev) => ({ ...prev, page }), replace: true }),
-  });
+  useClampPage({ page: search.page, query: products });
 
   const total = products.data?.total ?? 0;
   const isFiltered = !!search.q || !!search.status;

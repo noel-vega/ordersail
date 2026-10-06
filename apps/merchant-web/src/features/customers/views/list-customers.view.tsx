@@ -33,12 +33,7 @@ export function ListCustomersView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const customers = useListCustomersQuery(search);
-  useClampPage({
-    page: search.page,
-    query: customers,
-    onClamp: (page) =>
-      navigate({ search: (prev) => ({ ...prev, page }), replace: true }),
-  });
+  useClampPage({ page: search.page, query: customers });
 
   return (
     <div className="space-y-4">
