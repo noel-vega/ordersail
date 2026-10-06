@@ -1,0 +1,56 @@
+name: Setup workspace
+description: >-
+  Node 22 plus the workspace's installed dependencies. Restores node_modules
+  from the GitHub Actions cache and runs `npm ci` only on a miss (OS-749).
+
+# The key covers every package.json, not just the lockfile: skipping `npm ci`
+# also skips its "package.json and package-lock.json are in sync" check, so a
+# manifest edit without a lockfile update must miss and run `npm ci`, which
+# then fails as before. No workspace has its own install/prepare script, and
+# dependencies' install scripts (esbuild, swc binaries) write inside
+# node_modules, so the restored tree is what `npm ci` would have produced.
+#
+# Only cd.yml (on main) saves, so the one entry is main-scoped and every PR can
+# restore it. A PR's own entry would only ever serve that PR and would eat the
+# repo's 10 GB cache budget (see OS-743).
+
+inputs:
+  save:
+    description: '"true" saves node_modules after a miss. Set only on main.'
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # no `cache: npm` — on a hit there's no install for ~/.npm to speed up
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+        key: node-modules-${{ runner.os }}-${{ runner.arch }}-node22-npm11-${{ hashFiles('package-lock.json', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+
+    # honor packageManager (package.json) — node 22 ships npm 10, whose
+    # `npm ci` can't reconcile this lockfile's `overrides`. Installed on a hit
+    # too, so later steps see the same npm whether the cache was warm or cold.
+    - shell: bash
+      run: npm install -g npm@11
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: npm ci
+
+    - if: steps.restore.outputs.cache-hit != 'true' && inputs.save == 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+        key: ${{ steps.restore.outputs.cache-primary-key }}

@@ -390,16 +390,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-workspace
         with:
-          node-version: 22
-          cache: npm
-
-      # honor packageManager (package.json) — node 22 ships npm 10, whose
-      # `npm ci` can't reconcile this lockfile's `overrides`
-      - run: npm install -g npm@11
-
-      - run: npm ci
+          # main-scoped node_modules cache every PR restores (OS-749). One leg
+          # saves: both legs share the key, so a second save only races and
+          # fails to reserve it.
+          save: ${{ matrix.app == 'merchant-web' }}
 
       - name: Build shared packages this frontend needs
         run: npm run build --workspace=merchant-sdk --if-present
