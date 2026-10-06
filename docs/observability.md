@@ -655,6 +655,14 @@ sum by (job) (v8js_memory_heap_used_bytes)
 - **Switching it on or off** takes a Terraform apply *and a deploy.* CD renders the task
   definitions from the SSM contract at deploy time, so after the apply, re-run CD (Actions → CD
   → **Run workflow** on `main`).
+- **Dashboard:** **Ordersail → Node runtime (OpenTelemetry)** shows event loop, heap
+  (per instance, so a leak is a staircase that resets on deploy), GC, CPU and handles, with
+  deploys marked. It's managed as code in `infra/terraform/grafana/dashboards/runtime.json`
+  (OS-737). The local Grafana provisions the same file, under **Dashboards → Ordersail**.
+- **Counting live processes:** OTLP-pushed series get no staleness marker, so a stopped task's
+  series still show in a plain query for several minutes. On top of that, a replaced task keeps
+  exporting while the load balancer drains it (300s). Count what's live with
+  `last_over_time(…[2m])`, as the dashboard's **Live instances** does.
 - **Usage.** After each deploy, check the stack's active series in Explore →
   `grafanacloud-usage`: `grafanacloud_instance_active_series`. The expected count is in
   [What's recorded](#whats-recorded), and why it briefly doubles is in
