@@ -317,8 +317,15 @@ jobs:
   migrate:
     needs: [guard, images-ready, verify-contracts]
     # skipped while parked (see guard), and when this migrator image has
-    # already been applied (see images-ready)
-    if: needs.guard.outputs.parked != 'true' && needs.images-ready.outputs.migrate == 'true'
+    # already been applied (see images-ready).
+    # Explicit `!cancelled()` + results, never the implicit success(): that
+    # one checks the whole upstream graph, so a legitimately skipped
+    # build-and-push or retag (nothing to build / nothing to re-tag) skipped
+    # migrate — and with it every deploy — while the run still went green.
+    if: >-
+      !cancelled() && needs.guard.outputs.parked != 'true' &&
+      needs.images-ready.result == 'success' && needs.verify-contracts.result == 'success' &&
+      needs.images-ready.outputs.migrate == 'true'
     uses: ./.github/workflows/migrate.yml
     with:
       image_tag: ${{ github.sha }}
@@ -326,7 +333,8 @@ jobs:
   deploy-services:
     # after a successful migrate, or when migrate was skipped as already
     # applied — never while parked, after a failed migrate, or on a failed
-    # contract check (which migrate used to stand in for)
+    # contract check (which migrate used to stand in for). Explicit
+    # `!cancelled()` for the same reason as migrate's.
     needs: [guard, images-ready, verify-contracts, migrate]
     if: >-
       !cancelled() && needs.guard.outputs.parked != 'true' &&
