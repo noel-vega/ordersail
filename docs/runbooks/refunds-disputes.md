@@ -64,7 +64,8 @@ select status from orders where id = 1;
 - logs one structured line per event (`docs/observability.md`). Only
   `charge.dispute.created` needs a human: it logs at `error` with
   `alert: true` / `event: "dispute.opened"` — the same convention as the
-  order-job dead-letter (`alerts.md`), and what the OS-99 log alarm pages on.
+  order-job dead-letter (`alerts.md`). Nothing pages on it pre-launch; the
+  Grafana Loki alert rule on `alert: true` (OS-732) will.
   The later events log `dispute.closed` (`warn` when lost, else `info`),
   `dispute.funds_withdrawn` and `dispute.funds_reinstated` without `alert`
 - **does not** touch the money. The merchant responds with evidence in the

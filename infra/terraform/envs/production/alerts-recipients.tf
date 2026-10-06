@@ -18,6 +18,11 @@
 #
 # To change recipients later: `aws secretsmanager put-secret-value ...` then
 # `terraform apply`. Runbook: docs/runbooks/alerts.md.
+#
+# var.alert_paging_enabled = false (its default, pre-launch — OS-731) empties
+# both lists below: the alarms keep evaluating and publishing to the topics, but
+# the topics have no subscribers. The secret is still read, so flipping it back
+# on (OS-732) needs no other change.
 data "aws_secretsmanager_secret_version" "alert_recipients" {
   secret_id = "${var.name_prefix}/production/alerts/recipients"
 }
@@ -32,6 +37,6 @@ locals {
     {},
   )
 
-  alert_emails      = try(local.alert_recipients.emails, [])
-  alert_sms_numbers = try(local.alert_recipients.sms, [])
+  alert_emails      = var.alert_paging_enabled ? try(local.alert_recipients.emails, []) : []
+  alert_sms_numbers = var.alert_paging_enabled ? try(local.alert_recipients.sms, []) : []
 }

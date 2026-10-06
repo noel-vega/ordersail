@@ -17,7 +17,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | **pino → Grafana Cloud Loki** | *What happened, step by step?* — searched on demand | this doc, [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **CloudWatch Logs** | the migrator's output, Fluent Bit's own output, and service logs from before the move to Loki | [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
-| **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md` |
+| **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | paging **off** pre-launch (OS-731); `docs/runbooks/alerts.md` |
 | **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api, storefront-api, pos-api (not the worker yet); off unless an OTLP endpoint is set — [Traces](#traces) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
@@ -65,7 +65,7 @@ In local dev the same data is pretty-printed.
 | `event` | caller | stable dotted name, see below |
 | domain IDs | caller | `orderId`, `jobId`, `queue`, `disputeId`, `chargeId`, `stripeEventId`… — top-level, camelCase |
 | `err` | caller | the Error object; serialized to `type`, `message`, `stack` (+ safe provider fields) |
-| `alert` | caller | `true` when a human must act — drives a critical alarm (OS-99) |
+| `alert` | caller | `true` when a human must act — the hook for the Grafana alert rule that pages (launch blocker OS-732) |
 | `trace_id`, `span_id` | `mixin()` in `packages/logging`, from the active span | only while a sampled span is active — inside a traced request; absent at boot, in untraced services and in the worker (OS-95). The access line carries the HTTP server span's IDs |
 
 Request-context fields (`correlationId`, `accountId`, `userId`, …) are attached automatically
@@ -148,18 +148,18 @@ Examples: `order.created`, `order_job.dead_lettered`, `checkout.session_created`
 `alert: true` lines today: `order_job.dead_lettered` (a paid checkout with no order) and
 `dispute.opened`. Both log at `error`. Grep the code for `alert: true` for the current list.
 
-In production, any `alert: true` line pages: a CloudWatch metric filter on each service's
-log group feeds the `ordersail-<service>-alert-lines` alarm → critical topic (OS-99). A
-sustained run of `error`/`fatal` lines trips `ordersail-<service>-error-lines` → warning.
-So `alert: true` is a paging decision — set it only when a human must act now. Runbook:
-`docs/runbooks/alerts.md`.
+`alert: true` is a paging decision — set it only when a human must act now. **Nothing pages
+on it today.** The CloudWatch log alarms that used to (OS-99) were deleted in OS-731: since the
+move to Loki nothing writes to the service log groups, so they could never fire. They come
+back as Grafana Loki alert rules before launch (OS-732). Until then, find these lines with
+the `alert="true"` query in [Tracing a bug](#tracing-a-bug). Runbook: `docs/runbooks/alerts.md`.
 
 ## Levels
 
 | Level | Use for | In prod? |
 |---|---|---|
 | `fatal` | process is about to exit (uncaught exception) | yes |
-| `error` | a customer/merchant was failed, or a human must act (`alert: true`) | yes — counted by alarms |
+| `error` | a customer/merchant was failed, or a human must act (`alert: true`) | yes |
 | `warn` | unexpected but handled: a retry, a 401/403/429, a degraded dependency | yes |
 | `info` | business events + one access line per request | yes |
 | `debug` | diagnostics while developing | no |
@@ -287,10 +287,9 @@ app is unchanged — it still just writes JSON to stdout.
   query: `| json | level=~"error|fatal"`.
 - **When lines are missing**, read Fluent Bit's own output in the CloudWatch log group
   `/ecs/ordersail-log-router` — a rejected token or an unreachable Loki only shows up there.
-- The services no longer write to their CloudWatch log groups, so the `alert-lines` /
-  `error-lines` alarms (OS-99) and the Logs Insights saved queries see no new lines. Nothing
-  pages on a log line yet, apart from the worker's dead-letter alert, which publishes to SNS
-  directly. Grafana alert rules are the replacement, not yet built.
+- The services no longer write to their CloudWatch log groups, so the Logs Insights saved
+  queries see no new lines, and the log-based alarms (OS-99) were deleted (OS-731). Nothing
+  pages on a log line; Grafana Loki alert rules are the replacement (OS-732, before launch).
 
 ### Logs in local Grafana
 
@@ -491,7 +490,7 @@ unreachable gateway, after the exporter's own retries for the latter — is drop
 merchant-api logs one `warn` line for it, `event: "tracing.export_failed"`, `context:
 "OpenTelemetry"`, with `err.code` the HTTP status when there was one. One per batch, never one
 per request, and `warn` rather than `error`: the service is fine, only its traces are lost, so
-it doesn't feed the error-lines alarm. Other OpenTelemetry warnings (spans dropped because the
+it wouldn't count toward an error-volume alert. Other OpenTelemetry warnings (spans dropped because the
 queue filled) log as `tracing.sdk_warned`, and an instrumentation's own error (an HTTP or `pg`
 hook) as `tracing.sdk_errored` — neither means export is failing. `packages/logging` registers
 this as OpenTelemetry's diag logger in `configureLogging()`; only text and an `Error` reach the
@@ -569,7 +568,7 @@ so API → worker hops show up in one timeline. Pick the time range, edit the pl
 | `ordersail/Order history` | every line naming an order — creation, fulfillment, refunds (email jobs carry no `orderId`; follow them via `correlationId`) | `orderId` |
 | `ordersail/POS device activity` | one paired POS device (pos-api) | `deviceId` |
 | `ordersail/Errors by service` | `error` + `fatal` lines, counted by `service`, `event` | — |
-| `ordersail/Alerts` | `alert: true` lines — what the alert-lines alarm fired on | — |
+| `ordersail/Alerts` | `alert: true` lines | — |
 | `ordersail/Slow requests` | access lines over 1s: count, p95, max by `route` | — |
 | `ordersail/4xx-5xx by route` | failed requests by `route` and status | — |
 

@@ -486,7 +486,7 @@ export class Logger implements LoggerService {
 // the env schema's z.url() and the tfvars validation catch that one instead.
 //
 // Everything logs at `warn`, not `error`: the service is fine, only its traces
-// are lost (docs/observability.md → Levels), and error lines feed the error alarm.
+// are lost (docs/observability.md → Levels), and error lines are what error alerts count.
 //
 // - A failed export arrives once per batch, never once per request: the
 //   BatchSpanProcessor hands the error to OpenTelemetry's global error handler,
