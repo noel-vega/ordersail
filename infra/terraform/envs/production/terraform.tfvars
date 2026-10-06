@@ -30,3 +30,9 @@ loki_user = "1808609"
 # and pos-api. Comment out to turn it off for all three. The OTEL_EXPORTER_OTLP_HEADERS key of the grafana-cloud
 # secret must be set first. From grafana.com → your stack → OpenTelemetry → Configure.
 otel_exporter_otlp_endpoint = "https://otlp-gateway-prod-us-east-2.grafana.net/otlp"
+
+# Grafana Cloud's CloudWatch data source (grafana-cloudwatch.tf, OS-733). From the
+# data source's Settings tab, Authentication provider "Grafana Assume Role". Not
+# secret. Comment both out to remove the role.
+grafana_aws_account_id         = "008923505280"
+grafana_cloudwatch_external_id = "1850829"

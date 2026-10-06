@@ -9,6 +9,8 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 > context (OS-479) → error handling (OS-480) → call-site migration (OS-481) → log alarms
 > (OS-99, since deleted in OS-731) → saved queries (OS-98). Traces: merchant-api can emit
 > them (OS-94, see [Traces](#traces)); they are not exported anywhere by default yet.
+> Infrastructure metrics are read live from CloudWatch by Grafana Cloud (OS-733, see
+> [CloudWatch metrics in Grafana Cloud](#cloudwatch-metrics-in-grafana-cloud)).
 
 ## Roles of each tool
 
@@ -19,6 +21,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md`, whose top note says whether paging is on |
 | **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api, storefront-api, pos-api (not the worker yet); off unless an OTLP endpoint is set — [Traces](#traces) |
+| **CloudWatch metrics in Grafana Cloud** | *How busy / healthy is the infrastructure?* — CPU, memory, ALB, RDS, Redis | queried live, nothing ingested — [CloudWatch metrics in Grafana Cloud](#cloudwatch-metrics-in-grafana-cloud) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
 `correlationId` field on every log line, rides on every BullMQ job, and (later) is a Sentry tag.
@@ -507,6 +510,54 @@ allowance. Check it after the first day with export on, and again before launch 
    `Authorization=Basic%20…` form); a timeout or `ECONNREFUSED` is the network or the endpoint.
 4. Traces with an HTTP span but no `pg` spans: the loading order (above).
 5. A `/health` request: never traced, on purpose.
+
+## CloudWatch metrics in Grafana Cloud
+
+Infrastructure metrics — ECS CPU and memory (per service in `AWS/ECS`, per task in
+`ECS/ContainerInsights`), ALB, RDS, ElastiCache, SES — stay in CloudWatch. Grafana Cloud's **CloudWatch data source** queries them live, so they cost
+none of the free tier's 10k active series and the dashboards read the same numbers the alarms
+do. Production only: the local Grafana has no AWS credentials.
+
+Grafana Cloud signs in with **Grafana Assume Role**: Grafana's AWS account assumes the
+`ordersail-grafana-cloudwatch` role (`infra/terraform/envs/production/grafana-cloudwatch.tf`),
+and only when it presents the external ID Grafana generated for our stack. No AWS keys live in
+Grafana. The role is read-only: CloudWatch metrics, alarm configuration, state and history,
+Contributor Insights rule reports, the region list, and `tag:GetResources`, which lists the ARN
+and tags of every tagged resource in the account. It can't read logs, read what's inside any
+resource (database rows, S3 objects, secrets), or change anything.
+
+**Setting it up** (once; redo only if the stack is recreated):
+
+1. grafana.com → your stack → **Connections → Data sources → Add new data source →
+   CloudWatch**. Name it `CloudWatch`.
+2. **Authentication provider: Grafana Assume Role.** The Settings tab then shows Grafana's AWS
+   account ID and our **external ID**. Leave the page open.
+3. Put both in `infra/terraform/envs/production/terraform.tfvars`:
+   `grafana_aws_account_id` and `grafana_cloudwatch_external_id`. Neither is secret. Plan and
+   apply from an up-to-date `main`.
+4. `terraform output -raw grafana_cloudwatch_role_arn` → paste into **Assume Role ARN**.
+   **Default region:** `us-east-1`. Leave **External ID** as Grafana filled it.
+5. **Save & test.** Then check in **Explore**: namespace `AWS/ECS`, metric `CPUUtilization`
+   (percent), dimensions `ClusterName = ordersail` and `ServiceName = ordersail-merchant-api`.
+   It returns points whenever tasks are running. A parked environment has no tasks, so no
+   data, and that's expected.
+6. Confirm the role reads nothing else. Every action below should come back `implicitDeny`:
+
+   ```bash
+   aws iam simulate-principal-policy \
+     --policy-source-arn "$(terraform -chdir=infra/terraform/envs/production output -raw grafana_cloudwatch_role_arn)" \
+     --action-names logs:StartQuery logs:FilterLogEvents s3:GetObject secretsmanager:GetSecretValue rds:DescribeDBInstances \
+     --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output table
+   ```
+
+**Cost:** CloudWatch bills `GetMetricData` by metrics requested (about $0.01 per 1,000). Keep
+dashboard refresh at **1m or slower**, never 5s. While the environment is parked (OS-379),
+Container Insights is off and its panels show gaps, which is expected.
+
+**If the test fails:** "not authorized to perform sts:AssumeRole" means the external ID or
+account ID in tfvars doesn't match the Settings tab, or the apply hasn't run. An
+`AccessDenied` on a specific action means the panel needs a permission the role doesn't have;
+add it to `grafana-cloudwatch.tf` deliberately rather than widening to `cloudwatch:*`.
 
 ## Tracing a bug
 

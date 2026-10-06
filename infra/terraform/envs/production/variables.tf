@@ -109,6 +109,34 @@ variable "loki_user" {
   default     = null
 }
 
+variable "grafana_aws_account_id" {
+  description = "Grafana Cloud's AWS account ID, which assumes the CloudWatch read role (grafana-cloudwatch.tf). Shown in the CloudWatch data source's Settings tab with Authentication provider \"Grafana Assume Role\". Null leaves the role off."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_aws_account_id == null || can(regex("^[0-9]{12}$", var.grafana_aws_account_id))
+    error_message = "A 12-digit AWS account ID."
+  }
+}
+
+variable "grafana_cloudwatch_external_id" {
+  description = "The external ID Grafana Cloud generates for our stack, from the same Settings tab as grafana_aws_account_id. Not secret: it only stops another Grafana customer from pointing their data source at our role. Null leaves the role off."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_cloudwatch_external_id == null || try(length(trimspace(var.grafana_cloudwatch_external_id)) > 0, false)
+    error_message = "Empty external ID: the role would exist but nobody could assume it. Use null to leave it off."
+  }
+
+  # the role needs both; one without the other is a half-done setup, not "off"
+  validation {
+    condition     = (var.grafana_cloudwatch_external_id == null) == (var.grafana_aws_account_id == null)
+    error_message = "Set grafana_aws_account_id and grafana_cloudwatch_external_id together, or neither."
+  }
+}
+
 variable "otel_exporter_otlp_endpoint" {
   description = "Grafana Cloud OTLP gateway for the APIs' traces (merchant-api, storefront-api, pos-api) — the base URL ending in /otlp, e.g. \"https://otlp-gateway-prod-us-east-2.grafana.net/otlp\" (grafana.com → your stack → OpenTelemetry → Configure). The exporter appends /v1/traces. Null leaves trace export off. See tracing.tf."
   type        = string
