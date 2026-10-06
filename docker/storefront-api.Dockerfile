@@ -24,6 +24,7 @@ COPY packages/email-templates/package.json packages/email-templates/package.json
 COPY packages/logging/package.json packages/logging/package.json
 COPY packages/errors/package.json packages/errors/package.json
 COPY packages/tracing/package.json packages/tracing/package.json
+COPY packages/metrics/package.json packages/metrics/package.json
 COPY packages/password-policy/package.json packages/password-policy/package.json
 COPY packages/queue/package.json packages/queue/package.json
 COPY packages/payments/package.json packages/payments/package.json
@@ -36,7 +37,7 @@ RUN npm ci
 # (dependency order), then the app itself.
 FROM deps AS build
 COPY . .
-RUN npm run build --workspace=logging --workspace=errors --workspace=tracing --workspace=config --workspace=db --workspace=queue --workspace=payments --workspace=password-policy
+RUN npm run build --workspace=logging --workspace=errors --workspace=tracing --workspace=metrics --workspace=config --workspace=db --workspace=queue --workspace=payments --workspace=password-policy
 RUN npm run build --workspace=storefront-api
 
 # --- prod-deps: same package.json-only copy, but omit devDependencies —
@@ -56,6 +57,7 @@ COPY packages/email-templates/package.json packages/email-templates/package.json
 COPY packages/logging/package.json packages/logging/package.json
 COPY packages/errors/package.json packages/errors/package.json
 COPY packages/tracing/package.json packages/tracing/package.json
+COPY packages/metrics/package.json packages/metrics/package.json
 COPY packages/password-policy/package.json packages/password-policy/package.json
 COPY packages/queue/package.json packages/queue/package.json
 COPY packages/payments/package.json packages/payments/package.json
@@ -83,6 +85,7 @@ COPY --from=build /app/packages/config/dist ./packages/config/dist
 COPY --from=build /app/packages/logging/dist ./packages/logging/dist
 COPY --from=build /app/packages/errors/dist ./packages/errors/dist
 COPY --from=build /app/packages/tracing/dist ./packages/tracing/dist
+COPY --from=build /app/packages/metrics/dist ./packages/metrics/dist
 COPY --from=build /app/packages/db/dist ./packages/db/dist
 COPY --from=build /app/packages/payments/dist ./packages/payments/dist
 COPY --from=build /app/packages/password-policy/dist ./packages/password-policy/dist

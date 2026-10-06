@@ -22,7 +22,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md`, whose top note says whether paging is on |
 | **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api, storefront-api, pos-api (not the worker yet); off unless an OTLP endpoint is set — [Traces](#traces) |
 | **CloudWatch metrics in Grafana Cloud** | *How busy / healthy is the infrastructure?* — CPU, memory, ALB, RDS, Redis | queried live, nothing ingested — [CloudWatch metrics in Grafana Cloud](#cloudwatch-metrics-in-grafana-cloud) |
-| **OpenTelemetry metrics → Mimir** | *How is the app itself doing, over time?* — runtime health, then request and business counts | `packages/metrics` exists; no service records anything yet (OS-735); off unless an OTLP endpoint is set — [App metrics](#app-metrics-opentelemetry--mimir) |
+| **OpenTelemetry metrics → Mimir** | *How is the app itself doing, over time?* — runtime health, then request and business counts | merchant-api, storefront-api, pos-api record Node runtime + process metrics (OS-735); off in production until OS-736, and off unless an OTLP endpoint is set — [App metrics](#app-metrics-opentelemetry--mimir) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
 `correlationId` field on every log line, rides on every BullMQ job, and (later) is a Sentry tag.
@@ -528,8 +528,8 @@ allowance. Check it after the first day with export on, and again before launch 
 - `startMetrics({ service })` — call it from `instrument.ts`, next to `startTracing`
 - `shutdownMetrics` — goes in the shutdown handler's `afterClose`, next to `shutdownTracing`
 
-Instruments come from the standard API: `metrics.getMeter(...)` from `@opentelemetry/api`. No
-service calls `startMetrics` yet; the Node runtime metrics are the first (OS-735).
+Instruments come from the standard API: `metrics.getMeter(...)` from `@opentelemetry/api`.
+merchant-api, storefront-api and pos-api call both (OS-735); the worker doesn't yet.
 
 - **Off unless configured.** It starts only when `OTEL_EXPORTER_OTLP_ENDPOINT` (or
   `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`) is set. The same endpoint and `OTEL_EXPORTER_OTLP_HEADERS`
@@ -545,6 +545,28 @@ service calls `startMetrics` yet; the Node runtime metrics are the first (OS-735
   for traces either: nothing passes the image version to the process.
 - **Histograms are exponential.** Mimir stores them as native histograms: a few series each,
   not one per fixed bucket. A fixed-bucket histogram needs a recorded reason.
+
+### What's recorded
+
+`startMetrics` registers these itself, so a service records them just by starting. The pinned
+list is `createInstrumentations()` plus `registerProcessMetrics()`, and `runtime.spec.ts` pins it.
+
+| Metric (Prometheus name) | What it tells you |
+|---|---|
+| `nodejs_eventloop_delay_{min,max,mean,stddev,p50,p90,p99}_seconds` | how late timers fire: the event loop is blocked |
+| `nodejs_eventloop_utilization_ratio`, `nodejs_eventloop_time_seconds_total{nodejs_eventloop_state}` | how busy the loop is (active vs idle) |
+| `v8js_memory_heap_used_bytes`, `…_heap_space_size_bytes`, `…_available_size_bytes`, `…_physical_size_bytes` — by `v8js_heap_space_name` | the V8 heap per space; a steady climb in `old_space` is a leak |
+| `v8js_gc_duration_seconds{v8js_gc_type}` | GC pauses by kind (a native histogram) |
+| `v8js_resource_active{v8js_resource_type}` | live handles (timers, sockets); a climb is a handle leak |
+| `process_cpu_time_seconds_total{cpu_mode}` | process CPU, user and system. Compare it with the ECS task's CPU: "busy in our JS" vs "busy elsewhere" |
+| `process_memory_usage_bytes` | RSS: the heap plus what lives outside it (buffers, native modules) |
+
+- **64 series per API process**, measured locally with all three APIs running (OS-735).
+  44 of them are the four heap metrics across V8's 11 heap spaces. That's kept on purpose: the
+  heap gauges are last-value, so dropping the space would report one space, not the total.
+- **Event-loop delay has a floor of about 10ms.** The sampler's resolution is 10ms, so an idle
+  process reads about 11ms at p99. Look for movement above that baseline, or use
+  `nodejs_eventloop_utilization_ratio`.
 
 ### The series budget
 

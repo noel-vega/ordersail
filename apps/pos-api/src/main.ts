@@ -19,6 +19,7 @@ import {
 } from "logging";
 import { useApiErrors, withErrorResponses } from "errors";
 import { shutdownTracing } from "tracing";
+import { shutdownMetrics } from "metrics";
 import { AppModule } from "./app.module";
 import { createSwaggerConfig } from "./swagger.config";
 
@@ -36,7 +37,12 @@ async function bootstrap() {
   // validation, and the one error body every API returns (ADR 0001)
   useApiErrors(app);
   // spans still in the batch are sent before the process exits on a deploy
-  installShutdownHandler(app, { afterClose: shutdownTracing });
+  installShutdownHandler(app, {
+    // final trace and metric exports, in parallel, each bounded (2s)
+    afterClose: async () => {
+      await Promise.all([shutdownTracing(), shutdownMetrics()]);
+    },
+  });
 
   // correlation ID (reused from a well-formed inbound x-request-id or minted)
   // + one access log line per request — see docs/observability.md. The route

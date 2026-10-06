@@ -39,6 +39,7 @@
     "errors": "*",
     "fastify": "5.11.3",
     "logging": "*",
+    "metrics": "*",
     "password-policy": "*",
     "payments": "*",
     "queue": "*",

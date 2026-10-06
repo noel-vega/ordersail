@@ -29,6 +29,7 @@ COPY packages/payments/package.json packages/payments/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/storefront-sdk/package.json packages/storefront-sdk/package.json
 COPY packages/tracing/package.json packages/tracing/package.json
+COPY packages/metrics/package.json packages/metrics/package.json
 COPY packages/ui/package.json packages/ui/package.json
 RUN npm ci
 
@@ -36,7 +37,7 @@ RUN npm ci
 # (dependency order), then the app itself.
 FROM deps AS build
 COPY . .
-RUN npm run build --workspace=logging --workspace=errors --workspace=tracing --workspace=config --workspace=db --workspace=queue --workspace=storage --workspace=payments --workspace=password-policy
+RUN npm run build --workspace=logging --workspace=errors --workspace=tracing --workspace=metrics --workspace=config --workspace=db --workspace=queue --workspace=storage --workspace=payments --workspace=password-policy
 RUN npm run build --workspace=merchant-api
 
 # --- prod-deps: same package.json-only copy, but omit devDependencies —
@@ -63,6 +64,7 @@ COPY packages/payments/package.json packages/payments/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/storefront-sdk/package.json packages/storefront-sdk/package.json
 COPY packages/tracing/package.json packages/tracing/package.json
+COPY packages/metrics/package.json packages/metrics/package.json
 COPY packages/ui/package.json packages/ui/package.json
 RUN npm ci --omit=dev
 
@@ -90,6 +92,7 @@ COPY --from=build /app/packages/password-policy/dist ./packages/password-policy/
 COPY --from=build /app/packages/queue/dist ./packages/queue/dist
 COPY --from=build /app/packages/storage/dist ./packages/storage/dist
 COPY --from=build /app/packages/tracing/dist ./packages/tracing/dist
+COPY --from=build /app/packages/metrics/dist ./packages/metrics/dist
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
