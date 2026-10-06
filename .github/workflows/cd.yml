@@ -84,7 +84,19 @@ jobs:
             SERVICES="$SERVICES $(aws ssm get-parameter --name /ordersail/production/ecs/$app-service --query 'Parameter.Value' --output text)"
           done
           # shellcheck disable=SC2086  # word-split into one --services arg each
-          DESIRED=$(aws ecs describe-services --cluster "$CLUSTER" --services $SERVICES --query 'sum(services[].desiredCount)' --output text)
+          OUT=$(aws ecs describe-services --cluster "$CLUSTER" --services $SERVICES --output json)
+          # Fail closed: a name that doesn't resolve lands in failures[], not
+          # services[], and would silently drop out of the sum — an empty sum is
+          # 0, i.e. "parked", i.e. a skipped deploy. Demand all four, ACTIVE.
+          ACTIVE=$(echo "$OUT" | jq '[.services[] | select(.status == "ACTIVE")] | length')
+          FAILURES=$(echo "$OUT" | jq '.failures | length')
+          if [ "$ACTIVE" != "4" ] || [ "$FAILURES" != "0" ]; then
+            echo "::error::expected 4 ACTIVE ECS services, got $ACTIVE (failures: $(echo "$OUT" | jq -c .failures))"
+            exit 1
+          fi
+          DESIRED=$(echo "$OUT" | jq '[.services[].desiredCount] | add')
+          # Partly parked (some at 0, some not) counts as live on purpose: it's a
+          # broken state, and the API smoke checks should go red on it.
           if [ "$DESIRED" = "0" ]; then
             echo "parked=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Environment is parked (every ECS service at desired-count 0) — building images and deploying frontends only; migrate, deploy-services and the API smoke checks are skipped. After Environment → up, re-run CD (workflow_dispatch) to ship $GITHUB_SHA."
@@ -234,9 +246,10 @@ jobs:
     # While parked deploy-services is skipped, and the frontends ship anyway:
     # the public website doesn't depend on the APIs, and merchant-web is down
     # with them regardless; the post-`up` CD re-run redeploys it against them.
-    needs: [guard, build-and-push, deploy-services]
+    needs: [guard, build-and-push, verify-contracts, deploy-services]
     if: >-
       !cancelled() && needs.build-and-push.result == 'success' &&
+      needs.verify-contracts.result == 'success' &&
       (needs.deploy-services.result == 'success' ||
        (needs.guard.outputs.parked == 'true' && needs.deploy-services.result == 'skipped'))
     runs-on: ubuntu-latest
@@ -339,13 +352,10 @@ jobs:
           aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"
 
   smoke-test:
-    needs: [guard, deploy-services, deploy-frontends]
-    # same gate as deploy-frontends: run after a real deploy, or after a parked
-    # run's frontends-only deploy (the API checks then skip — see the script)
-    if: >-
-      !cancelled() && needs.deploy-frontends.result == 'success' &&
-      (needs.deploy-services.result == 'success' ||
-       (needs.guard.outputs.parked == 'true' && needs.deploy-services.result == 'skipped'))
+    needs: [guard, deploy-frontends]
+    # deploy-frontends only succeeds after a real deploy or a parked run's
+    # frontends-only one (its gate) — the API checks then skip, see the script
+    if: ${{ !cancelled() && needs.deploy-frontends.result == 'success' }}
     runs-on: ubuntu-latest
     environment: production
     env:
