@@ -3,9 +3,11 @@
 // packages/tracing.
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
-import { metrics } from '@opentelemetry/api';
+import { metrics, type Meter } from '@opentelemetry/api';
 import { ExportResultCode } from '@opentelemetry/core';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-proto';
+import { registerInstrumentations, type Instrumentation } from '@opentelemetry/instrumentation';
+import { RuntimeNodeInstrumentation } from '@opentelemetry/instrumentation-runtime-node';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import {
   AggregationTemporality,
@@ -29,9 +31,19 @@ import { serviceResource } from 'tracing/resource';
 // series. So nothing per-tenant or per-request belongs here — no `accountId`,
 // `userId`, `customerId`, `orderId`, IDs of any kind, raw URLs or emails
 // (docs/observability.md → Metrics). Per-tenant questions are answered by logs
-// and traces. Empty until the first instruments land (OS-735); adding a key
-// is a deliberate change (views.spec.ts pins the list).
-export const ALLOWED_ATTRIBUTES: ReadonlySet<string> = new Set<string>([]);
+// and traces. Adding a key is a deliberate change (views.spec.ts pins the
+// list); each one below has a small, fixed set of values.
+export const ALLOWED_ATTRIBUTES: ReadonlySet<string> = new Set<string>([
+  // runtime instrumentation (createInstrumentations)
+  'nodejs.eventloop.state', // active | idle
+  'v8js.gc.type', // major | minor | incremental | weakcb
+  // ~11 heap spaces. Kept rather than dropped: the heap gauges are
+  // last-value, so without it they'd report one space, not the total.
+  'v8js.heap.space.name',
+  'v8js.resource.type', // Timeout, TCPSocketWrap, … — the cardinality cap bounds it
+  // process metrics (registerProcessMetrics)
+  'cpu.mode', // user | system
+]);
 
 // A hard ceiling on series per metric. If something does slip past the
 // allow-list, the SDK folds everything past the limit into one series marked
@@ -54,6 +66,39 @@ export function createViews(): ViewOptions[] {
         : {}),
     }),
   );
+}
+
+// The pinned instrumentation list — the only place one is named. Runtime
+// health from inside Node, which the container's CPU and memory can't show: event-loop
+// delay and utilization, heap by space, GC pauses by kind, active handles.
+// It reads perf_hooks and v8, and patches no module, so it can start here
+// after the tracing instrumentations. Adding one is a deliberate change
+// (runtime.spec.ts pins the list and the series count).
+export function createInstrumentations(): Instrumentation[] {
+  return [new RuntimeNodeInstrumentation()];
+}
+
+// Process CPU and memory, which the runtime instrumentation doesn't cover,
+// under the OpenTelemetry semantic-convention names. Compared with the ECS
+// task's CPU, process CPU tells "busy in our JS" apart from "busy elsewhere";
+// RSS includes what lives outside the V8 heap (buffers, native modules).
+export function registerProcessMetrics(meter: Meter): void {
+  meter
+    .createObservableCounter('process.cpu.time', {
+      description: 'CPU time used by this process.',
+      unit: 's',
+    })
+    .addCallback((result) => {
+      const { user, system } = process.cpuUsage(); // microseconds
+      result.observe(user / 1e6, { 'cpu.mode': 'user' });
+      result.observe(system / 1e6, { 'cpu.mode': 'system' });
+    });
+  meter
+    .createObservableUpDownCounter('process.memory.usage', {
+      description: 'Resident set size of this process.',
+      unit: 'By',
+    })
+    .addCallback((result) => result.observe(process.memoryUsage.rss()));
 }
 
 // OTLP over HTTP/protobuf to <OTEL_EXPORTER_OTLP_ENDPOINT>/v1/metrics, with
@@ -111,6 +156,7 @@ export type MetricsOptions = {
 };
 
 let provider: MeterProvider | undefined;
+let unregisterInstrumentations: (() => void) | undefined;
 
 // Call from a service's instrument.ts. Off unless an OTLP endpoint is set and
 // OTEL_METRICS_EXPORTER isn't `none`: no provider is registered, and every
@@ -137,6 +183,11 @@ export function startMetrics(options: MetricsOptions): boolean {
     ],
   });
   metrics.setGlobalMeterProvider(provider);
+  unregisterInstrumentations = registerInstrumentations({
+    meterProvider: provider,
+    instrumentations: createInstrumentations(),
+  });
+  registerProcessMetrics(provider.getMeter('metrics'));
   return true;
 }
 
@@ -156,6 +207,8 @@ export async function shutdownMetrics(timeoutMs = 2000): Promise<void> {
   const current = provider;
   if (!current) return;
   provider = undefined;
+  unregisterInstrumentations?.();
+  unregisterInstrumentations = undefined;
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<void>((resolve) => {
     timer = setTimeout(resolve, timeoutMs);

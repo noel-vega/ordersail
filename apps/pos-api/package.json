@@ -34,6 +34,7 @@
     "errors": "*",
     "fastify": "5.11.3",
     "logging": "*",
+    "metrics": "*",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "tracing": "*"

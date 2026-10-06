@@ -6,8 +6,14 @@ import { ALLOWED_ATTRIBUTES, CARDINALITY_LIMIT, createExporter, createViews } fr
 // Pins what reaches Mimir. Changing any of these changes the series count —
 // update the spec on purpose (docs/observability.md → Metrics).
 describe('the metrics pipeline config', () => {
-  it('allows no attributes yet', () => {
-    assert.deepEqual([...ALLOWED_ATTRIBUTES].sort(), []);
+  it('allows exactly the runtime and process attributes', () => {
+    assert.deepEqual([...ALLOWED_ATTRIBUTES].sort(), [
+      'cpu.mode',
+      'nodejs.eventloop.state',
+      'v8js.gc.type',
+      'v8js.heap.space.name',
+      'v8js.resource.type',
+    ]);
   });
 
   it('never allows a per-tenant or per-request attribute', () => {
