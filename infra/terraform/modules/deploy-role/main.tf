@@ -96,8 +96,9 @@ data "aws_iam_policy_document" "deploy" {
         "ecr:InitiateLayerUpload",
         "ecr:UploadLayerPart",
         "ecr:CompleteLayerUpload",
-        # cd.yml build-and-push checks whether a SHA is already pushed;
-        # migrate.yml resolves the most recently pushed migrator tag
+        # cd.yml plan-images lists each repo's tags to find the re-tag base
+        # and skip a SHA already pushed (retag's BatchGetImage + PutImage are
+        # above); migrate.yml resolves the most recently pushed migrator tag
         "ecr:DescribeImages",
         "ecr:ListImages",
       ]

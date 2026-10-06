@@ -6,7 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       rebuild_all:
-        description: Rebuild every image instead of re-tagging the unchanged ones
+        # ECR tags are IMMUTABLE, so an image already tagged with this SHA is
+        # never rebuilt. Dispatched on a commit CD already shipped (main's tip,
+        # usually) this does nothing — it only reaches images that have no tag
+        # for the SHA yet (e.g. its push run was superseded or failed first).
+        description: >-
+          Build every image not yet tagged with this SHA, instead of re-tagging
+          the unchanged ones. An image CD already tagged is never rebuilt.
         type: boolean
         default: false
 
@@ -109,22 +115,23 @@ jobs:
             echo "parked=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # Which images this commit changes (OS-746). The base is the newest earlier
-  # commit on main that every image repo has a tag for: each CD run tags all
-  # five (built or re-tagged), and a commit guard skipped as superseded has
-  # none, so it's normally the previous deployed merge. Affected images are
-  # built; the rest get this SHA added as a tag on the base's image — same
-  # digest, no build — so every downstream job (migrate, deploy-services,
-  # rollback.yml) still addresses all five images by github.sha. Rules and
-  # image map: .github/actions/affected-images, docker/images.json.
-  images:
+  # Which images this commit builds and which it re-tags (OS-746). The base is
+  # the newest earlier commit on main that every image repo has a tag for:
+  # each CD run tags every image (built or re-tagged), and a commit guard
+  # skipped as superseded has none, so it's normally the previous deployed
+  # merge. Affected images are built; the rest get this SHA added as a tag on
+  # the base's image — same digest, no build — so every downstream job
+  # (migrate, deploy-services, rollback.yml) still addresses every image by
+  # github.sha. Rules and image map: .github/actions/affected-images,
+  # docker/images.json; each image's ECR repo is ordersail-<app>.
+  plan-images:
     needs: guard
     if: needs.guard.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     outputs:
       base: ${{ steps.base.outputs.base }}
-      build: ${{ steps.affected.outputs.affected }}
-      retag: ${{ steps.affected.outputs.unaffected }}
+      build: ${{ steps.plan.outputs.build }}
+      retag: ${{ steps.plan.outputs.retag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,23 +145,29 @@ jobs:
       - id: base
         run: |
           set -euo pipefail
-          # tags present in every image repo
+          # COMMON: tags present in every image repo. TAGGED: apps whose repo
+          # already has this SHA (a workflow_dispatch of a commit CD shipped).
           COMMON=null
+          TAGGED='[]'
           for app in $(jq -r '.[].app' docker/images.json); do
             TAGS=$(aws ecr list-images --repository-name "ordersail-$app" --filter tagStatus=TAGGED \
               --query 'imageIds[].imageTag' --output json)
             COMMON=$(jq -c --argjson t "$TAGS" 'if . == null then $t else map(select(. as $x | $t | any(. == $x))) end' <<<"$COMMON")
+            if jq -e --arg s "$GITHUB_SHA" 'any(. == $s)' <<<"$TAGS" >/dev/null; then
+              TAGGED=$(jq -c --arg a "$app" '. + [$a]' <<<"$TAGGED")
+            fi
           done
           BASE=""
           for c in $(git rev-list --first-parent --max-count=50 "$GITHUB_SHA~1"); do
             if jq -e --arg c "$c" 'any(. == $c)' <<<"$COMMON" >/dev/null; then BASE=$c; break; fi
           done
           if [ -z "$BASE" ]; then
-            echo "::notice::no earlier commit has all five images in ECR — building every image"
+            echo "::notice::no earlier commit has every image in ECR — building every image"
           else
             echo "base: $BASE ($(git log --format=%s -1 "$BASE"))"
           fi
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "tagged=$TAGGED" >> "$GITHUB_OUTPUT"
 
       - id: affected
         uses: ./.github/actions/affected-images
@@ -164,14 +177,31 @@ jobs:
           all: ${{ inputs.rebuild_all == true || steps.base.outputs.base == '' }}
           force-paths: .github/workflows/cd.yml
 
+      # ECR is IMMUTABLE — a re-pushed tag fails — so an image already tagged
+      # with this SHA is dropped from both lists, rebuild_all included.
+      - id: plan
+        env:
+          TAGGED: ${{ steps.base.outputs.tagged }}
+          AFFECTED: ${{ steps.affected.outputs.affected }}
+          UNAFFECTED: ${{ steps.affected.outputs.unaffected }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016  # a jq program — $a/$tagged are jq vars
+          UNTAGGED='map(select(.app as $a | $tagged | any(. == $a) | not))'
+          if [ "$TAGGED" != "[]" ]; then
+            echo "::notice::already tagged $GITHUB_SHA, skipping: $(jq -r 'join(", ")' <<<"$TAGGED")"
+          fi
+          echo "build=$(jq -c --argjson tagged "$TAGGED" "$UNTAGGED" <<<"$AFFECTED")" >> "$GITHUB_OUTPUT"
+          echo "retag=$(jq -c --argjson tagged "$TAGGED" "$UNTAGGED" <<<"$UNAFFECTED")" >> "$GITHUB_OUTPUT"
+
   build-and-push:
     name: build-and-push (${{ matrix.app }})
-    needs: [guard, images]
-    if: needs.images.outputs.build != '[]'
+    needs: [guard, plan-images]
+    if: needs.plan-images.outputs.build != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include: ${{ fromJSON(needs.images.outputs.build) }}
+        include: ${{ fromJSON(needs.plan-images.outputs.build) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -183,33 +213,14 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
         id: ecr-login
 
-      - name: Resolve ECR repo URI
-        id: ecr-uri
-        run: |
-          URI=$(aws ssm get-parameter --name "/ordersail/production/ecr/${{ matrix.app }}-uri" --query 'Parameter.Value' --output text)
-          echo "uri=$URI" >> "$GITHUB_OUTPUT"
-
-      # ECR is IMMUTABLE — a re-pushed tag fails. On a workflow_dispatch re-run
-      # of a commit already built, skip rather than error.
-      - name: Skip build if this SHA is already in ECR
-        id: check
-        run: |
-          if aws ecr describe-images --repository-name "ordersail-${{ matrix.app }}" \
-               --image-ids imageTag="${{ github.sha }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "ordersail-${{ matrix.app }}:${{ github.sha }} already pushed — skipping build"
-          fi
-
       - uses: docker/setup-buildx-action@v3
-        if: steps.check.outputs.exists != 'true'
 
       - uses: docker/build-push-action@v6
-        if: steps.check.outputs.exists != 'true'
         with:
           context: .
           file: docker/${{ matrix.target }}.Dockerfile
           push: true
-          tags: ${{ steps.ecr-uri.outputs.uri }}:${{ github.sha }}
+          tags: ${{ steps.ecr-login.outputs.registry }}/ordersail-${{ matrix.app }}:${{ github.sha }}
           # GHA layer cache, per-image scope. This runs on main (the default
           # branch), so it restores from the previous CD run — one cold build
           # right after each merge, warm thereafter. A durable ECR-backed
@@ -221,8 +232,8 @@ jobs:
   # Unchanged images: tag the base commit's image with this SHA. ECR's IMMUTABLE
   # setting forbids moving an existing tag, not adding one to an image.
   retag:
-    needs: [guard, images]
-    if: needs.images.outputs.retag != '[]'
+    needs: [guard, plan-images]
+    if: needs.plan-images.outputs.retag != '[]'
     runs-on: ubuntu-latest
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
@@ -232,15 +243,12 @@ jobs:
 
       - name: Tag the base images with ${{ github.sha }}
         env:
-          BASE: ${{ needs.images.outputs.base }}
-          RETAG: ${{ needs.images.outputs.retag }}
+          BASE: ${{ needs.plan-images.outputs.base }}
+          RETAG: ${{ needs.plan-images.outputs.retag }}
         run: |
           set -euo pipefail
           for app in $(jq -r '.[].app' <<<"$RETAG"); do
             REPO="ordersail-$app"
-            if aws ecr describe-images --repository-name "$REPO" --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
-              echo "$REPO:$GITHUB_SHA already exists — skipping"; continue
-            fi
             # buildx pushes an OCI image index (provenance attestations on), so
             # ask for every manifest type: the default accepts only a v2 manifest
             IMG=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag="$BASE" \
@@ -262,12 +270,12 @@ jobs:
             echo "$REPO: $BASE -> $GITHUB_SHA ($DIGEST)"
           done
 
-  # Single gate for "all five images exist at github.sha", whichever mix of
+  # Single gate for "every image exists at github.sha", whichever mix of
   # build-and-push and retag produced them (either may be skipped as empty).
   images-ready:
-    needs: [guard, images, build-and-push, retag]
+    needs: [guard, plan-images, build-and-push, retag]
     if: >-
-      !cancelled() && needs.images.result == 'success' &&
+      !cancelled() && needs.plan-images.result == 'success' &&
       contains(fromJSON('["success", "skipped"]'), needs.build-and-push.result) &&
       contains(fromJSON('["success", "skipped"]'), needs.retag.result)
     runs-on: ubuntu-latest

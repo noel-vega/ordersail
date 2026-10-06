@@ -120,7 +120,7 @@ jobs:
   affected-images:
     runs-on: ubuntu-latest
     outputs:
-      images: ${{ steps.images.outputs.images }}
+      images: ${{ steps.affected.outputs.affected }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -135,14 +135,6 @@ jobs:
           head: ${{ env.NX_HEAD }}
           all: ${{ inputs.run_all == true }}
           force-paths: .github/workflows/ci.yml
-
-      # target = docker/<target>.Dockerfile; scope = the GHA cache scope
-      # cd.yml's build-and-push writes for the image (its app name)
-      - id: images
-        env:
-          AFFECTED: ${{ steps.affected.outputs.affected }}
-        run: |
-          echo "images=$(jq -c 'map({target, scope: .app})' <<<"$AFFECTED")" >> "$GITHUB_OUTPUT"
 
   docker-smoke-build:
     # explicit name: with an `include` matrix the default would append every
@@ -172,8 +164,9 @@ jobs:
           # restorable by that same PR, and each PR's mode=max export was
           # ~5 GB — enough to push the repo past GitHub's 10 GB cap and
           # LRU-evict main's layers, leaving CD to build cold (OS-743). Only
-          # cd.yml's build-and-push, running on main, writes these scopes.
-          cache-from: type=gha,scope=${{ matrix.scope }}
+          # cd.yml's build-and-push, running on main, writes these scopes
+          # (one per image, named by its app).
+          cache-from: type=gha,scope=${{ matrix.app }}
 
   # The one required check for the image builds. Branch protection can't
   # require the per-target checks: a skipped matrix never expands, so a PR
