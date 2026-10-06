@@ -1,0 +1,7 @@
+[
+  { "target": "merchant-api", "app": "merchant-api", "project": "merchant-api" },
+  { "target": "storefront-api", "app": "storefront-api", "project": "storefront-api" },
+  { "target": "pos-api", "app": "pos-api", "project": "pos-api" },
+  { "target": "worker", "app": "worker", "project": "worker" },
+  { "target": "migrate", "app": "migrator", "project": "db" }
+]

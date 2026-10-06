@@ -4,8 +4,9 @@ name: Migrate
 # production RDS via a one-off Fargate task (see infra/terraform/.../migrator.tf).
 #
 # Runnable on its own (`gh workflow run Migrate`) so migrations don't have to
-# ride a full deploy, and called by cd.yml between build-and-push and
-# deploy-services. Either way the `production` Environment gate applies.
+# ride a full deploy, and called by cd.yml between its image jobs (once every
+# image is tagged with the SHA) and deploy-services. Either way the
+# `production` Environment gate applies.
 
 on:
   workflow_dispatch:
@@ -53,7 +54,9 @@ jobs:
 
           # workflow_call (cd.yml) always passes the SHA; a bare `gh workflow run
           # Migrate` leaves it empty — fall back to the newest image in the repo
-          # (there's no :latest tag anymore).
+          # (there's no :latest tag anymore). cd.yml re-tags an unchanged image
+          # with each new SHA (OS-746), so the newest image can carry several
+          # tags — any of them resolves to the same digest.
           if [ -z "$IMAGE_TAG" ]; then
             IMAGE_TAG=$(aws ecr describe-images --repository-name ordersail-migrator \
               --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]' --output text)

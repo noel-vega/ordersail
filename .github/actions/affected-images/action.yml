@@ -1,0 +1,91 @@
+name: Affected images
+description: >-
+  Split docker/images.json into the images a base..head diff can change and the
+  ones it can't. Shared by ci.yml (smoke-build only what changed, OS-744) and
+  cd.yml (build what changed, re-tag the rest, OS-746). Needs a checkout with
+  enough history to reach `base` (fetch-depth: 0).
+
+# docker/images.json, one entry per image:
+#   target  — docker/<target>.Dockerfile
+#   app     — the ECR repo (ordersail-<app>), the GHA cache scope, the SSM key
+#             (<app>-uri) and the CD/ECS name; the migrate image is "migrator"
+#   project — the nx project whose dependency closure the image builds
+#
+# An image is affected when its project (or a dependency) is, or when a file nx
+# doesn't own but every build reads changes: the root package.json / lockfile,
+# .dockerignore, its own Dockerfile, the image map or this action — plus any
+# `force-paths` the caller adds (its own workflow file).
+
+inputs:
+  base:
+    description: Commit to diff from
+    required: true
+  head:
+    description: Commit to diff to
+    required: true
+  all:
+    description: '"true" selects every image without diffing'
+    default: "false"
+  force-paths:
+    description: Space-separated extra paths whose change selects every image
+    default: ""
+
+outputs:
+  affected:
+    description: JSON array of images.json entries the diff can change
+    value: ${{ steps.select.outputs.affected }}
+  unaffected:
+    description: JSON array of the remaining images.json entries
+    value: ${{ steps.select.outputs.unaffected }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    # nx alone, not `npm ci`: building the project graph needs only nx itself
+    # (no plugins in nx.json) and gives the same affected set as a full install
+    # — in seconds instead of ~60s, which the image builds would wait on.
+    - name: Install nx only
+      shell: bash
+      run: |
+        npm install --prefix "$RUNNER_TEMP/nx" --no-audit --no-fund \
+          "nx@$(node -p "require('./package.json').devDependencies.nx")"
+        ln -sfn "$RUNNER_TEMP/nx/node_modules" node_modules
+
+    - id: select
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        HEAD: ${{ inputs.head }}
+        ALL: ${{ inputs.all }}
+        FORCE_PATHS: ${{ inputs.force-paths }}
+        NX_DAEMON: "false"
+        NX_NO_CLOUD: "true"
+      run: |
+        set -euo pipefail
+        IMAGES=$(jq -c . docker/images.json)
+        if [ "$ALL" = "true" ]; then
+          AFFECTED=$IMAGES
+        else
+          PROJECTS=$(npx nx show projects --affected --base="$BASE" --head="$HEAD" --json)
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD" | jq -R . | jq -sc .)
+          echo "affected projects: $PROJECTS"
+          AFFECTED=$(jq -c --argjson projects "$PROJECTS" --argjson changed "$CHANGED" \
+                           --arg force "$FORCE_PATHS" '
+            (["package.json", "package-lock.json", ".dockerignore", "docker/images.json"]
+              + ($force | split(" ") | map(select(. != "")))) as $global
+            | ($changed | any(. as $f | $global | any(. == $f))
+                or any(startswith(".github/actions/affected-images/"))) as $all
+            | map(select($all
+                or (.project as $p | $projects | any(. == $p))
+                or (("docker/" + .target + ".Dockerfile") as $f | $changed | any(. == $f))))
+          ' <<<"$IMAGES")
+        fi
+        UNAFFECTED=$(jq -c --argjson affected "$AFFECTED" 'map(select(. as $i | $affected | any(. == $i) | not))' <<<"$IMAGES")
+        echo "affected:   $(jq -c 'map(.target)' <<<"$AFFECTED")"
+        echo "unaffected: $(jq -c 'map(.target)' <<<"$UNAFFECTED")"
+        echo "affected=$AFFECTED" >> "$GITHUB_OUTPUT"
+        echo "unaffected=$UNAFFECTED" >> "$GITHUB_OUTPUT"
