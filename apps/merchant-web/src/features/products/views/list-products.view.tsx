@@ -10,6 +10,7 @@ import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { useClampPage } from "../../../lib/use-clamp-page";
 import {
   PRODUCT_STATUSES,
   useListProductsQuery,
@@ -57,6 +58,12 @@ export function ProductListView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const products = useListProductsQuery(search);
+  useClampPage({
+    page: search.page,
+    query: products,
+    onClamp: (page) =>
+      navigate({ search: (prev) => ({ ...prev, page }), replace: true }),
+  });
 
   const total = products.data?.total ?? 0;
   const isFiltered = !!search.q || !!search.status;

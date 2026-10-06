@@ -20,9 +20,17 @@ export function ListSearchInput({
   const [value, setValue] = useState(initialValue)
   const onChangeRef = useRef(onDebouncedChange)
   onChangeRef.current = onDebouncedChange
+  // the term the URL already has, so mounting with `initialValue` doesn't
+  // push it back up — callers reset `page` to 1 on every push, which sent a
+  // refresh or a deep link on `?page=3` back to page 1
+  const pushedRef = useRef(initialValue)
 
   useEffect(() => {
-    const t = setTimeout(() => onChangeRef.current(value), delayMs)
+    if (value === pushedRef.current) return
+    const t = setTimeout(() => {
+      pushedRef.current = value
+      onChangeRef.current(value)
+    }, delayMs)
     return () => clearTimeout(t)
   }, [value, delayMs])
 

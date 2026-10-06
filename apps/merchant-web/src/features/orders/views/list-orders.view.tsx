@@ -12,6 +12,7 @@ import { formatCents } from "../../../lib/currency";
 import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { useClampPage } from "../../../lib/use-clamp-page";
 import { FulfillmentStatusBadge } from "../components/fulfillment-status-badge";
 import { OrderStatusBadge } from "../components/order-status-badge";
 
@@ -76,6 +77,12 @@ export function ListOrdersView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const orders = useListOrdersQuery(search);
+  useClampPage({
+    page: search.page,
+    query: orders,
+    onClamp: (page) =>
+      navigate({ search: (prev) => ({ ...prev, page }), replace: true }),
+  });
   const failedOrders = useQuery(getFailedOrdersQueryOptions());
   const unresolvedFailed = failedOrders.data?.unresolvedCount ?? 0;
 

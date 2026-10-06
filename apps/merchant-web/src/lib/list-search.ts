@@ -21,8 +21,14 @@ export function pageOffset(page: number): number {
   return (Math.max(page, 1) - 1) * PAGE_SIZE
 }
 
-// the highest page that has rows, so a route can clamp `?page=` past the end
-// (an empty list still has page 1)
+// the highest page that has rows (an empty list still has page 1)
 export function lastPage(total: number): number {
   return Math.max(1, Math.ceil(total / PAGE_SIZE))
+}
+
+// the page a list should be on: `page` itself, or the last page when `page` is
+// past the end (a stale bookmark, a hand-edited URL, a delete that emptied the
+// last page)
+export function clampPage(page: number, total: number): number {
+  return Math.min(page, lastPage(total))
 }

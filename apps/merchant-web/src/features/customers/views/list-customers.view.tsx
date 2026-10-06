@@ -6,6 +6,7 @@ import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { useClampPage } from "../../../lib/use-clamp-page";
 import { useListCustomersQuery } from "../customers.hooks";
 
 const route = getRouteApi("/app/customers/");
@@ -32,6 +33,12 @@ export function ListCustomersView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const customers = useListCustomersQuery(search);
+  useClampPage({
+    page: search.page,
+    query: customers,
+    onClamp: (page) =>
+      navigate({ search: (prev) => ({ ...prev, page }), replace: true }),
+  });
 
   return (
     <div className="space-y-4">
