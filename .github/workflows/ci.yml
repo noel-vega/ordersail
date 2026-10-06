@@ -15,13 +15,15 @@ concurrency:
 
 jobs:
   verify:
-    # Nx runs only the projects affected by the diff and restores unchanged
-    # task outputs from the Nx Cloud remote cache. Replaces the old
-    # build-lint-test + typecheck jobs, which each rebuilt every shared
-    # package from scratch, every run.
+    # Nx runs only the projects affected by the diff, in dependency order.
+    # Replaces the old build-lint-test + typecheck jobs, which each rebuilt
+    # every shared package from scratch, every run. No remote cache (OS-750):
+    # Nx Cloud's free tier ran out, and Nx 23 won't restore a .nx/cache
+    # copied from another machine (its cache index is keyed by machine ID — the
+    # CVE-2025-36852 mitigation), so each run starts cold for affected projects.
     runs-on: ubuntu-latest
     env:
-      NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
+      NX_NO_CLOUD: "true"
     services:
       # storefront-api/merchant-api/worker all connect to a real Redis for
       # BullMQ (see packages/queue's bullmqConnectionOptions) — without this,
