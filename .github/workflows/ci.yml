@@ -115,8 +115,7 @@ jobs:
   docker-smoke-build:
     runs-on: ubuntu-latest
     strategy:
-      # one image failing shouldn't cancel the others mid-build — they each
-      # still write their own layer cache
+      # one image failing shouldn't cancel the others mid-build
       fail-fast: false
       matrix:
         target: [merchant-api, storefront-api, pos-api, worker, migrate]
@@ -131,9 +130,11 @@ jobs:
           context: .
           file: docker/${{ matrix.target }}.Dockerfile
           push: false
-          # per-image scope so the 5 matrix builds don't overwrite each
-          # other's manifest. mode=max caches the intermediate stages too —
-          # `deps` (npm ci), `build` (nest build), `prod-deps` — which is
-          # where all the time goes in these multi-stage Dockerfiles.
-          cache-from: type=gha,scope=${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+          # Read-only: restore main's layer cache (a PR can read its base
+          # branch's GHA cache), never write. A PR-ref cache entry is only
+          # restorable by that same PR, and each PR's mode=max export was
+          # ~5 GB — enough to push the repo past GitHub's 10 GB cap and
+          # LRU-evict main's layers, leaving CD to build cold (OS-743). Only
+          # cd.yml's build-and-push, running on main, writes these scopes —
+          # so the scope must match its name for the image ("migrator").
+          cache-from: type=gha,scope=${{ matrix.target == 'migrate' && 'migrator' || matrix.target }}
