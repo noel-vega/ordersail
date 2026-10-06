@@ -1,17 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { getRouteApi, Link } from "@tanstack/react-router";
 import { type ColumnDef, type Row } from "@tanstack/react-table";
 import { format } from "date-fns";
 import { TriangleAlertIcon } from "lucide-react";
 import type { OrderListItem } from "merchant-sdk";
 import { Alert, AlertDescription, AlertTitle } from "ui/alert";
 import { Badge } from "ui/badge";
-import { getListOrdersQueryOptions } from "../orders.hooks";
+import { useListOrdersQuery } from "../orders.hooks";
 import { getFailedOrdersQueryOptions } from "../../failed-orders/failed-orders.hooks";
 import { formatCents } from "../../../lib/currency";
 import { DataTable } from "../../../components/data-table";
+import { DataTablePagination } from "../../../components/data-table-pagination";
+import { PAGE_SIZE } from "../../../lib/list-search";
 import { FulfillmentStatusBadge } from "../components/fulfillment-status-badge";
 import { OrderStatusBadge } from "../components/order-status-badge";
+
+const route = getRouteApi("/app/orders/");
 
 const columns: ColumnDef<OrderListItem>[] = [
   {
@@ -69,10 +73,11 @@ const columns: ColumnDef<OrderListItem>[] = [
 ];
 
 export function ListOrdersView() {
-  const orders = useQuery(getListOrdersQueryOptions());
+  const search = route.useSearch();
+  const navigate = route.useNavigate();
+  const orders = useListOrdersQuery(search);
   const failedOrders = useQuery(getFailedOrdersQueryOptions());
   const unresolvedFailed = failedOrders.data?.unresolvedCount ?? 0;
-  const navigate = useNavigate();
 
   const handleRowClick = (row: Row<OrderListItem>) => {
     navigate({ to: "/app/orders/$id", params: { id: row.original.id } });
@@ -99,6 +104,14 @@ export function ListOrdersView() {
         data={orders.data?.items ?? []}
         columns={columns}
         emptyMessage="No orders yet."
+      />
+      <DataTablePagination
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        total={orders.data?.total ?? 0}
+        onPageChange={(page) =>
+          navigate({ search: (prev) => ({ ...prev, page }) })
+        }
       />
     </div>
   );

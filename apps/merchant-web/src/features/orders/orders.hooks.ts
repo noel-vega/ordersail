@@ -1,18 +1,30 @@
-import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
+import { keepPreviousData, queryOptions, useMutation, useQuery } from "@tanstack/react-query"
 import type { CancelOrderDto, RefundOrderDto } from "merchant-sdk"
+import type { z } from "zod"
+import { listSearchSchema, PAGE_SIZE, pageOffset } from "../../lib/list-search"
 import { merchantApi } from "../../lib/merchant-api-client"
 import { queryClient } from "../../lib/react-query-client"
 import { getDashboardSummaryQueryOptions } from "../dashboard/dashboard.hooks"
 
-export function getListOrdersQueryOptions() {
+// the orders API has no `q` yet, so the list only takes a page
+export const ordersListSearchSchema = listSearchSchema.pick({ page: true })
+
+export type OrdersListSearch = z.infer<typeof ordersListSearchSchema>
+
+export function getListOrdersQueryOptions(search: OrdersListSearch = { page: 1 }) {
   return queryOptions({
-    queryKey: ["orders"],
-    queryFn: () => merchantApi.orders.list(),
+    queryKey: ["orders", search],
+    queryFn: () =>
+      merchantApi.orders.list({
+        limit: PAGE_SIZE,
+        offset: pageOffset(search.page),
+      }),
+    placeholderData: keepPreviousData,
   })
 }
 
-export function useListOrdersQuery() {
-  return useQuery(getListOrdersQueryOptions())
+export function useListOrdersQuery(search: OrdersListSearch) {
+  return useQuery(getListOrdersQueryOptions(search))
 }
 
 export function getOrderQueryOptions(id: number) {
@@ -27,10 +39,10 @@ export function useOrderQuery(id: number) {
 }
 
 // invalidates the order detail + the two views that also show its status
-// (the orders list and the dashboard's recentOrders, same findAll data)
-function invalidateOrder(orderId: number) {
-  queryClient.invalidateQueries(getOrderQueryOptions(orderId))
-  queryClient.invalidateQueries(getListOrdersQueryOptions())
+// (every orders list page and the dashboard's recentOrders, same findAll data).
+// The ["orders"] prefix covers both the detail and each ["orders", { page }].
+export function invalidateOrder() {
+  queryClient.invalidateQueries({ queryKey: ["orders"] })
   queryClient.invalidateQueries(getDashboardSummaryQueryOptions())
 }
 
@@ -39,7 +51,7 @@ export function useRefundOrderMutation(orderId: number) {
     // the refund sheet shows the error inline next to the form
     meta: { skipGlobalErrorToast: true },
     mutationFn: (body: RefundOrderDto) => merchantApi.orders.refund(orderId, body),
-    onSuccess: () => invalidateOrder(orderId),
+    onSuccess: () => invalidateOrder(),
   })
 }
 
@@ -48,6 +60,6 @@ export function useCancelOrderMutation(orderId: number) {
     // the cancel dialog shows the error inline
     meta: { skipGlobalErrorToast: true },
     mutationFn: (body: CancelOrderDto) => merchantApi.orders.cancel(orderId, body),
-    onSuccess: () => invalidateOrder(orderId),
+    onSuccess: () => invalidateOrder(),
   })
 }
