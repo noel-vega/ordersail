@@ -236,6 +236,8 @@ jobs:
     if: needs.plan-images.outputs.retag != '[]'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
@@ -248,30 +250,17 @@ jobs:
         run: |
           set -euo pipefail
           for app in $(jq -r '.[].app' <<<"$RETAG"); do
-            REPO="ordersail-$app"
-            # buildx pushes an OCI image index (provenance attestations on), so
-            # ask for every manifest type: the default accepts only a v2 manifest
-            IMG=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag="$BASE" \
-              --accepted-media-types application/vnd.oci.image.index.v1+json \
-                application/vnd.docker.distribution.manifest.list.v2+json \
-                application/vnd.oci.image.manifest.v1+json \
-                application/vnd.docker.distribution.manifest.v2+json \
-              --output json)
-            DIGEST=$(jq -r '.images[0].imageId.imageDigest' <<<"$IMG")
-            NEW=$(aws ecr put-image --repository-name "$REPO" --image-tag "$GITHUB_SHA" \
-              --image-manifest "$(jq -r '.images[0].imageManifest' <<<"$IMG")" \
-              --image-manifest-media-type "$(jq -r '.images[0].imageManifestMediaType' <<<"$IMG")" \
-              --query 'image.imageId.imageDigest' --output text)
-            # the manifest bytes must round-trip exactly, or this "re-tag" is a
-            # new image that merely references the same layers
-            if [ "$NEW" != "$DIGEST" ]; then
-              echo "::error::$REPO:$GITHUB_SHA got digest $NEW, expected the base's $DIGEST"; exit 1
-            fi
-            echo "$REPO: $BASE -> $GITHUB_SHA ($DIGEST)"
+            scripts/ecr-add-tag.sh "ordersail-$app" imageTag="$BASE" "$GITHUB_SHA"
           done
 
   # Single gate for "every image exists at github.sha", whichever mix of
   # build-and-push and retag produced them (either may be skipped as empty).
+  #
+  # Also decides whether migrate must run (OS-747). migrate.yml tags each
+  # migrator image it applies successfully with `migrated-<digest>`; a re-tagged
+  # (unchanged) migrator shares its digest, so it inherits the marker. Missing
+  # marker — a new migrator build, or one whose migrate was skipped (parked) or
+  # failed — means run it. Re-apply by hand: `gh workflow run Migrate -f image_tag=<sha>`.
   images-ready:
     needs: [guard, plan-images, build-and-push, retag]
     if: >-
@@ -279,8 +268,27 @@ jobs:
       contains(fromJSON('["success", "skipped"]'), needs.build-and-push.result) &&
       contains(fromJSON('["success", "skipped"]'), needs.retag.result)
     runs-on: ubuntu-latest
+    outputs:
+      migrate: ${{ steps.migrate.outputs.needed }}
     steps:
-      - run: echo "all images tagged ${{ github.sha }}"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - id: migrate
+        run: |
+          set -euo pipefail
+          IMG=$(aws ecr describe-images --repository-name ordersail-migrator \
+            --image-ids imageTag="$GITHUB_SHA" --query 'imageDetails[0]' --output json)
+          MARK="migrated-$(jq -r '.imageDigest | ltrimstr("sha256:")' <<<"$IMG")"
+          if jq -e --arg m "$MARK" '.imageTags | any(. == $m)' <<<"$IMG" >/dev/null; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::migrator image $(jq -r .imageDigest <<<"$IMG") already applied ($MARK) — skipping migrate"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "migrator image $(jq -r .imageDigest <<<"$IMG") not yet applied — migrate will run"
+          fi
 
   # Fails before the production approval gate and before anything is mutated:
   # a task-definition contract can be well-formed yet undeployable, and
@@ -308,15 +316,31 @@ jobs:
 
   migrate:
     needs: [guard, images-ready, verify-contracts]
-    # skipped while parked (see guard) — and deploy-services, which needs it,
-    # skips with it
-    if: needs.guard.outputs.parked != 'true'
+    # skipped while parked (see guard), and when this migrator image has
+    # already been applied (see images-ready).
+    # Explicit `!cancelled()` + results, never the implicit success(): that
+    # one checks the whole upstream graph, so a legitimately skipped
+    # build-and-push or retag (nothing to build / nothing to re-tag) skipped
+    # migrate — and with it every deploy — while the run still went green.
+    if: >-
+      !cancelled() && needs.guard.outputs.parked != 'true' &&
+      needs.images-ready.result == 'success' && needs.verify-contracts.result == 'success' &&
+      needs.images-ready.outputs.migrate == 'true'
     uses: ./.github/workflows/migrate.yml
     with:
       image_tag: ${{ github.sha }}
 
   deploy-services:
-    needs: migrate
+    # after a successful migrate, or when migrate was skipped as already
+    # applied — never while parked, after a failed migrate, or on a failed
+    # contract check (which migrate used to stand in for). Explicit
+    # `!cancelled()` for the same reason as migrate's.
+    needs: [guard, images-ready, verify-contracts, migrate]
+    if: >-
+      !cancelled() && needs.guard.outputs.parked != 'true' &&
+      needs.images-ready.result == 'success' && needs.verify-contracts.result == 'success' &&
+      (needs.migrate.result == 'success' ||
+       (needs.migrate.result == 'skipped' && needs.images-ready.outputs.migrate == 'false'))
     runs-on: ubuntu-latest
     environment: production
     strategy:

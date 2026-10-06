@@ -7,6 +7,11 @@ name: Migrate
 # ride a full deploy, and called by cd.yml between its image jobs (once every
 # image is tagged with the SHA) and deploy-services. Either way the
 # `production` Environment gate applies.
+#
+# A successful run tags the migrator image `migrated-<digest>`; cd.yml skips
+# this workflow while the migrator image carries that marker (OS-747). To
+# re-apply anyway (e.g. after restoring the database from a snapshot), run it
+# standalone: `gh workflow run Migrate -f image_tag=<sha>`.
 
 on:
   workflow_dispatch:
@@ -41,12 +46,15 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - uses: actions/checkout@v4
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Run migration task
+        id: run
         env:
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
@@ -103,3 +111,17 @@ jobs:
             exit 1
           fi
           echo "migration task exited 0"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      # Mark this exact migrator image as applied, so cd.yml skips migrate while
+      # the migrator is unchanged — a re-tagged image shares the digest and so
+      # the marker (OS-747). Only after exit 0: a failed or skipped run leaves
+      # no marker, and the next CD retries.
+      - name: Mark the migrator image as applied
+        env:
+          IMAGE_TAG: ${{ steps.run.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          DIGEST=$(aws ecr describe-images --repository-name ordersail-migrator \
+            --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
+          scripts/ecr-add-tag.sh ordersail-migrator imageDigest="$DIGEST" "migrated-${DIGEST#sha256:}"
