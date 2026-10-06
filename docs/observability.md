@@ -338,12 +338,12 @@ tag the same in `docker-compose.yml` and the module.
 Fastify, so one instrumentation list covers them. The worker isn't traced yet (OS-704).
 
 **Off unless configured.** Nothing is registered or patched unless `OTEL_EXPORTER_OTLP_ENDPOINT`
-is set, so tests and CI run exactly as before. Local dev sets it to the local Tempo
-([Traces in local Grafana](#traces-in-local-grafana)); production sets it from Terraform
+is set, so tests and CI run exactly as before. Local dev sets it to the local Alloy, which
+forwards traces to Tempo ([Traces in local Grafana](#traces-in-local-grafana)); production sets it from Terraform
 ([Traces in production](#traces-in-production-grafana-cloud)). Set it to the base URL of any
 OTLP/HTTP receiver — the exporter appends `/v1/traces` — and, for a hosted backend, put its
 credentials in `OTEL_EXPORTER_OTLP_HEADERS`. The app only ever reads those two standard
-variables, so a local Tempo, Grafana Cloud or a collector are all just configuration.
+variables, so a local Alloy, Grafana Cloud or a collector are all just configuration.
 
 **What a request records.** One trace per request:
 
@@ -426,8 +426,9 @@ points `OTEL_EXPORTER_OTLP_ENDPOINT` at Alloy (`http://localhost:4318`). Alloy i
 endpoint for every signal: it sends traces on to Tempo and metrics to Prometheus
 (`docker/alloy/config.alloy`, OS-734). An existing `apps/<api>/.env` created before that line
 was there needs it added by hand, since `npm run setup` never overwrites. Alloy's UI at
-<http://localhost:12345> shows the pipeline graph and each component's health. Under `npm run dev`, open <http://localhost:3300> → Explore → **Tempo**, then
-**Search**, or switch to **TraceQL**:
+<http://localhost:12345> shows the pipeline graph and each component's health. Under
+`npm run dev`, open <http://localhost:3300> → Explore → **Tempo**, then **Search**, or switch
+to **TraceQL**:
 
 ```traceql
 { resource.service.name = "merchant-api" }                          # every trace
@@ -437,8 +438,8 @@ was there needs it added by hand, since `npm run setup` never overwrites. Alloy'
 ```
 
 Traces show up a few seconds after the request (the exporter batches every 5s) and last
-until `npm run down`. If Alloy or Tempo isn't running, merchant-api still starts and serves as usual;
-the spans are dropped, and stopping the service can take up to 2s longer while the exporter
+until `npm run down`. If Alloy or Tempo isn't running, merchant-api still starts and serves as
+usual; the spans are dropped, and stopping the service can take up to 2s longer while the exporter
 gives up. To turn tracing off locally, comment the line out or leave it empty
 (`OTEL_EXPORTER_OTLP_ENDPOINT=`).
 
@@ -604,6 +605,9 @@ count by (job) ({__name__=~".+", job!=""})            # active series per servic
 Metrics last until `npm run down` and appear about a minute after they're recorded, since the
 export interval is 60s. Alloy's UI shows whether the `otelcol.exporter.otlphttp.prometheus`
 component is healthy.
+
+Exemplars (a histogram point → the trace that produced it) aren't wired yet: no app records
+any, so the Prometheus data source has no Tempo link (OS-762).
 
 ## CloudWatch metrics in Grafana Cloud
 

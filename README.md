@@ -73,7 +73,7 @@ Started 2026-07-07. In active early development.
 - `@ordersail/storefront-sdk` published publicly on npm — any merchant (or their developer) can build a custom storefront against `storefront-api`, hosted on any domain
 - Shared `ui` component package and Drizzle-based `db` schema package used across every app
 - DB-touching tests run against a real Postgres (Testcontainers) via `packages/test-support`
-- Structured logging (pino) and OpenTelemetry tracing, with a local Loki + Tempo + Grafana stack for `npm run dev` — see [docs/observability.md](./docs/observability.md)
+- Structured logging (pino) and OpenTelemetry tracing, with a local Loki + Tempo + Prometheus + Grafana stack (behind Alloy) for `npm run dev` — see [docs/observability.md](./docs/observability.md)
 
 ## Architecture
 
@@ -131,7 +131,7 @@ All commands run from the repo root.
 ```bash
 npm ci
 npm run setup       # .env from every .env.example — placeholder secrets, see "Secrets"
-npm run up          # Postgres + Redis + MinIO + Mailpit + local Loki/Tempo/Grafana (waits until healthy)
+npm run up          # Postgres + Redis + MinIO + Mailpit + local Alloy/Loki/Tempo/Prometheus/Grafana (waits until healthy)
 npm run bootstrap   # wait for Postgres, drizzle push, seed the demo catalog
                     #  ↳ copy the "Created storefront API key: sfk_…" line it prints
 npm run dev         # the five coupled app servers, in parallel

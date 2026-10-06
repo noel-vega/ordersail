@@ -1,10 +1,10 @@
 // Local OTLP gateway for `npm run dev` (OS-734). The services export
-// everything to one endpoint, OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318,
-// and Alloy routes it by signal: traces to Tempo, metrics to Prometheus.
-// Logs don't come through here (yet): Fluent Bit ships them straight to Loki
-// (OS-738 moves them). Never receives or sends anything from production.
+// everything to one endpoint (OTEL_EXPORTER_OTLP_ENDPOINT, published by
+// docker-compose.yml), and Alloy routes it by signal: traces to Tempo, metrics
+// to Prometheus. Logs don't come through here (yet): Fluent Bit ships them
+// straight to Loki (OS-738 moves them).
 //
-// Pipeline graph and live component state: http://localhost:12345
+// Pipeline graph and live component state: Alloy's UI (ALLOY_UI_PORT).
 
 logging {
   level = "warn"

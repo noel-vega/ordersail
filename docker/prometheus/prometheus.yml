@@ -1,8 +1,7 @@
 # Local Prometheus for `npm run dev` metrics (docs/observability.md → "Metrics
 # in local Grafana"). Scrapes nothing: metrics arrive by OTLP push from the
 # local Alloy (docker/alloy/config.alloy), the same push model as production,
-# where Grafana Cloud Mimir takes the place of this. No volume: metrics last
-# until `npm run down`. Never receives anything from production.
+# where Grafana Cloud Mimir takes the place of this.
 #
 # OTLP → Prometheus naming, as on Mimir: the resource's service.name becomes
 # the `job` label and service.instance.id the `instance` label; other resource

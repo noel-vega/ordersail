@@ -1,5 +1,5 @@
-# Local Grafana's trace data source: the local Tempo that `npm run dev`
-# services export to (OTEL_EXPORTER_OTLP_ENDPOINT). Never points at Grafana Cloud.
+# Local Grafana's trace data source: the local Tempo that Alloy forwards
+# `npm run dev` traces to (docker/alloy/config.alloy). Never points at Grafana Cloud.
 apiVersion: 1
 
 datasources:

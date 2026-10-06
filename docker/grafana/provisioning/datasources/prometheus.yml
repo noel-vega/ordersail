@@ -13,3 +13,5 @@ datasources:
       # matches the 60s export interval (packages/metrics): a step below that
       # would draw gaps between points
       timeInterval: 60s
+      # no exemplarTraceIdDestinations → Tempo yet: no app records exemplars
+      # (OS-762)
