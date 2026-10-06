@@ -6,8 +6,9 @@ All AWS infrastructure for Ordersail. Region `us-east-1`, account `084375572674`
 infra/terraform/
 ├── bootstrap/          # S3 state bucket + DynamoDB lock table — LOCAL state, run once
 ├── modules/            # reusable modules (network, rds, ecs-service, alb, s3-static-site, …)
-└── envs/
-    └── production/     # the live stack — S3 remote state
+├── envs/
+│   └── production/     # the live stack — S3 remote state
+└── grafana/            # Grafana Cloud folders + dashboards (+ alert rules later) — S3 remote state
 ```
 
 ## Layer order
@@ -50,6 +51,45 @@ no `:latest`), the GitHub OIDC provider, and two GitHub-Actions deploy roles
 stack was applied under the pre-rename `shop-admin-*` names; the rename apply
 (31 create / 31 destroy — every resource an empty shell) landed this date and
 also replaced RDS to pick up `db_name = "ordersail"` (was `"shop"`).
+
+### 3. `grafana/` — Grafana Cloud as code (OS-758)
+
+Folders and dashboards in our Grafana Cloud stack, and alert rules and contact points before
+launch (OS-732). It's a separate root from `envs/production`, so a Grafana outage or a bad
+token never blocks an AWS apply. Its state is `grafana/terraform.tfstate` in the same bucket,
+locked with S3-native locking.
+
+```bash
+cd infra/terraform/grafana
+terraform init && terraform plan && terraform apply
+```
+
+AWS credentials are all you need. The provider's Grafana token is read from Secrets Manager
+**ephemerally**, so it's never written to the plan or the state.
+
+**One-time setup** (redo only if the token is rotated or the stack is recreated):
+
+1. Grafana Cloud → **Administration → Users and access → Service accounts → Add service
+   account**. Name it `terraform`, role **Editor**. Editor covers folders, dashboards and alert
+   rules. Data sources stay hand-managed, which is why Admin isn't needed.
+2. In that service account, **Add service account token** with no expiry, or a long one with a
+   calendar reminder. Copy it (it starts with `glsa_`).
+3. Store it in a **local terminal**, not in a chat or an agent session, so it doesn't end up in
+   a transcript:
+
+   ```bash
+   read -rs GRAFANA_TOKEN && aws secretsmanager create-secret --region us-east-1 \
+     --name ordersail/production/grafana-terraform --secret-string "$GRAFANA_TOKEN" \
+     && unset GRAFANA_TOKEN
+   ```
+
+   Rotate later with `put-secret-value --secret-id ordersail/production/grafana-terraform`.
+   Keep it apart from `ordersail/production/grafana-cloud`, which ECS tasks can read.
+4. Set `grafana_url` in `grafana/terraform.tfvars` to the stack URL (`https://<stack>.grafana.net`).
+
+**Editing a dashboard:** change `grafana/dashboards/*.json` and apply. The dashboards are
+read-only in the UI (`editable: false`) because a UI edit would be overwritten on the next
+apply. To prototype, use **Save as** to make a copy, then export its JSON back into the repo.
 
 ## GitHub configuration (consumed by `.github/workflows/`)
 
