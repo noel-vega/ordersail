@@ -52,6 +52,40 @@
           ]
         },
         "hide": 0
+      },
+      {
+        "name": "targetgroup",
+        "label": "Target group",
+        "type": "query",
+        "datasource": {
+          "type": "cloudwatch",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "refId": "CloudWatchVariableQueryEditor-VariableQuery",
+          "queryType": "dimensionValues",
+          "region": "default",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "RequestCount",
+          "dimensionKey": "TargetGroup",
+          "dimensionFilters": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc"
+          }
+        },
+        "regex": "/(?<value>targetgroup\\/(?:${service:regex})-tg\\/.*)/",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 1,
+        "hide": 2
       }
     ]
   },
@@ -328,17 +362,20 @@
           },
           "queryMode": "Metrics",
           "metricQueryType": 0,
-          "metricEditorMode": 1,
+          "metricEditorMode": 0,
           "region": "default",
-          "expression": "SEARCH('{AWS/ApplicationELB,LoadBalancer,TargetGroup} MetricName=\"RequestCount\" LoadBalancer=\"app/ordersail-api/2ba61b99d891c2dc\"', 'Sum', $__period_auto)",
-          "id": "",
-          "label": "${PROP('Dim.TargetGroup')}",
-          "namespace": "",
-          "metricName": "",
-          "dimensions": {},
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "RequestCount",
+          "dimensions": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
+            "TargetGroup": "$targetgroup"
+          },
           "matchExact": true,
           "statistic": "Sum",
-          "period": ""
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "${PROP('Dim.TargetGroup')}"
         }
       ],
       "fieldConfig": {
@@ -399,17 +436,20 @@
           },
           "queryMode": "Metrics",
           "metricQueryType": 0,
-          "metricEditorMode": 1,
+          "metricEditorMode": 0,
           "region": "default",
-          "expression": "SEARCH('{AWS/ApplicationELB,LoadBalancer,TargetGroup} MetricName=\"TargetResponseTime\" LoadBalancer=\"app/ordersail-api/2ba61b99d891c2dc\"', 'p50', $__period_auto)",
-          "id": "",
-          "label": "${PROP('Dim.TargetGroup')} p50",
-          "namespace": "",
-          "metricName": "",
-          "dimensions": {},
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "TargetResponseTime",
+          "dimensions": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
+            "TargetGroup": "$targetgroup"
+          },
           "matchExact": true,
           "statistic": "p50",
-          "period": ""
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "${PROP('Dim.TargetGroup')} p50"
         },
         {
           "refId": "B",
@@ -419,17 +459,20 @@
           },
           "queryMode": "Metrics",
           "metricQueryType": 0,
-          "metricEditorMode": 1,
+          "metricEditorMode": 0,
           "region": "default",
-          "expression": "SEARCH('{AWS/ApplicationELB,LoadBalancer,TargetGroup} MetricName=\"TargetResponseTime\" LoadBalancer=\"app/ordersail-api/2ba61b99d891c2dc\"', 'p95', $__period_auto)",
-          "id": "",
-          "label": "${PROP('Dim.TargetGroup')} p95",
-          "namespace": "",
-          "metricName": "",
-          "dimensions": {},
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "TargetResponseTime",
+          "dimensions": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
+            "TargetGroup": "$targetgroup"
+          },
           "matchExact": true,
           "statistic": "p95",
-          "period": ""
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "${PROP('Dim.TargetGroup')} p95"
         },
         {
           "refId": "C",
@@ -439,17 +482,20 @@
           },
           "queryMode": "Metrics",
           "metricQueryType": 0,
-          "metricEditorMode": 1,
+          "metricEditorMode": 0,
           "region": "default",
-          "expression": "SEARCH('{AWS/ApplicationELB,LoadBalancer,TargetGroup} MetricName=\"TargetResponseTime\" LoadBalancer=\"app/ordersail-api/2ba61b99d891c2dc\"', 'p99', $__period_auto)",
-          "id": "",
-          "label": "${PROP('Dim.TargetGroup')} p99",
-          "namespace": "",
-          "metricName": "",
-          "dimensions": {},
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "TargetResponseTime",
+          "dimensions": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
+            "TargetGroup": "$targetgroup"
+          },
           "matchExact": true,
           "statistic": "p99",
-          "period": ""
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "${PROP('Dim.TargetGroup')} p99"
         }
       ],
       "fieldConfig": {
@@ -510,17 +556,20 @@
           },
           "queryMode": "Metrics",
           "metricQueryType": 0,
-          "metricEditorMode": 1,
+          "metricEditorMode": 0,
           "region": "default",
-          "expression": "SEARCH('{AWS/ApplicationELB,LoadBalancer,TargetGroup} MetricName=\"HealthyHostCount\" LoadBalancer=\"app/ordersail-api/2ba61b99d891c2dc\"', 'Minimum', $__period_auto)",
-          "id": "",
-          "label": "${PROP('Dim.TargetGroup')} healthy",
-          "namespace": "",
-          "metricName": "",
-          "dimensions": {},
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HealthyHostCount",
+          "dimensions": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
+            "TargetGroup": "$targetgroup"
+          },
           "matchExact": true,
           "statistic": "Minimum",
-          "period": ""
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "${PROP('Dim.TargetGroup')} healthy"
         },
         {
           "refId": "B",
@@ -530,17 +579,20 @@
           },
           "queryMode": "Metrics",
           "metricQueryType": 0,
-          "metricEditorMode": 1,
+          "metricEditorMode": 0,
           "region": "default",
-          "expression": "SEARCH('{AWS/ApplicationELB,LoadBalancer,TargetGroup} MetricName=\"UnHealthyHostCount\" LoadBalancer=\"app/ordersail-api/2ba61b99d891c2dc\"', 'Maximum', $__period_auto)",
-          "id": "",
-          "label": "${PROP('Dim.TargetGroup')} unhealthy",
-          "namespace": "",
-          "metricName": "",
-          "dimensions": {},
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "UnHealthyHostCount",
+          "dimensions": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
+            "TargetGroup": "$targetgroup"
+          },
           "matchExact": true,
           "statistic": "Maximum",
-          "period": ""
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "${PROP('Dim.TargetGroup')} unhealthy"
         }
       ],
       "fieldConfig": {
@@ -601,17 +653,20 @@
           },
           "queryMode": "Metrics",
           "metricQueryType": 0,
-          "metricEditorMode": 1,
+          "metricEditorMode": 0,
           "region": "default",
-          "expression": "SEARCH('{AWS/ApplicationELB,LoadBalancer,TargetGroup} MetricName=\"HTTPCode_Target_4XX_Count\" LoadBalancer=\"app/ordersail-api/2ba61b99d891c2dc\"', 'Sum', $__period_auto)",
-          "id": "",
-          "label": "${PROP('Dim.TargetGroup')} 4xx",
-          "namespace": "",
-          "metricName": "",
-          "dimensions": {},
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_Target_4XX_Count",
+          "dimensions": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
+            "TargetGroup": "$targetgroup"
+          },
           "matchExact": true,
           "statistic": "Sum",
-          "period": ""
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "${PROP('Dim.TargetGroup')} 4xx"
         },
         {
           "refId": "B",
@@ -621,17 +676,20 @@
           },
           "queryMode": "Metrics",
           "metricQueryType": 0,
-          "metricEditorMode": 1,
+          "metricEditorMode": 0,
           "region": "default",
-          "expression": "SEARCH('{AWS/ApplicationELB,LoadBalancer,TargetGroup} MetricName=\"HTTPCode_Target_5XX_Count\" LoadBalancer=\"app/ordersail-api/2ba61b99d891c2dc\"', 'Sum', $__period_auto)",
-          "id": "",
-          "label": "${PROP('Dim.TargetGroup')} 5xx",
-          "namespace": "",
-          "metricName": "",
-          "dimensions": {},
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_Target_5XX_Count",
+          "dimensions": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
+            "TargetGroup": "$targetgroup"
+          },
           "matchExact": true,
           "statistic": "Sum",
-          "period": ""
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "${PROP('Dim.TargetGroup')} 5xx"
         }
       ],
       "fieldConfig": {
