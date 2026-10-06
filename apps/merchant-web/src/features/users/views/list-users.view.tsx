@@ -9,6 +9,7 @@ import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { useClampPage } from "../../../lib/use-clamp-page";
 import { formatPhone } from "../../../lib/phone";
 import { Can } from "../../../components/can";
 import { useListUsersQuery } from "../users.hooks";
@@ -65,6 +66,7 @@ export function ListUsersView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const users = useListUsersQuery(search);
+  useClampPage({ page: search.page, query: users });
 
   return (
     <div className="space-y-4">

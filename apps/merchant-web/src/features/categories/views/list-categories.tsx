@@ -26,6 +26,7 @@ import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { useClampPage } from "../../../lib/use-clamp-page";
 import { usePermissions } from "../../auth/permission-context";
 import { useDeleteCategoryMutation, useListCategoriesQuery } from "../categories.hooks";
 import { EditCategorySheet } from "./edit-category-sheet";
@@ -93,6 +94,7 @@ export function ListCategoriesView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const categories = useListCategoriesQuery(search);
+  useClampPage({ page: search.page, query: categories });
   const canWrite = usePermissions().has("products:write");
   const [editingCategory, setEditingCategory] = useState<CategoryListItem | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<CategoryListItem | null>(null);
