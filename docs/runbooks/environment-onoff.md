@@ -97,11 +97,19 @@ Off-state run-rate ≈ **$50/mo**.
    curl -s -o /dev/null -w '%{http_code}\n' https://pos.ordersail.com/health            # 200
    ```
 
+4. **Ship anything merged while parked.** If `main` moved while parked, run
+   Actions → **CD** → *Run workflow*. The services came back at their
+   last-shipped image, and CD skipped migrate + deploy while parked (see Caveats).
+
 ## Caveats
 
-- **Do not merge to `main` / run CD while parked.** `cd.yml`'s migrate job runs
-  the migrator task in a private subnet and pulls its image through the NAT —
-  which is gone. Bring the environment up first.
+- **Merging to `main` while parked is safe, but the APIs don't ship.** CD's
+  `guard` sees every service at desired-count 0 and runs a parked deploy: it
+  builds and pushes the images and deploys the frontends, but skips migrate (the
+  migrator pulls its image through the NAT, which is gone), `deploy-services`,
+  and the API smoke checks (OS-745). `up` resumes each service at its
+  **last-shipped** image, so after step 3 of *Going ON*, re-run **CD**
+  (Actions → CD → *Run workflow*) to migrate and ship the tip of `main`.
 - **Redis comes back empty.** It's a pure cache + BullMQ backend; any jobs still
   queued at shutdown are lost. Pre-launch this is effectively never a real order,
   but don't park mid-incident with unprocessed `failed_orders` retries pending.

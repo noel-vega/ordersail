@@ -16,8 +16,10 @@ name: Environment
 # separately by `terraform apply` with `environment_on = false|true` (OS-380).
 # Full procedure: docs/runbooks/environment-onoff.md (OS-381).
 #
-# ⚠️  Do NOT merge to main / run CD while the environment is "down" — cd.yml's
-#     migrate job pulls the migrator image through the NAT, which is gone.
+# Merging to main while "down" is safe: cd.yml's guard detects the parked state
+# and skips migrate (it pulls the migrator image through the NAT, which may be
+# gone), deploy-services and the API smoke checks (OS-745). `up` resumes the
+# last-shipped image — re-run CD afterwards to ship anything merged while parked.
 
 on:
   workflow_dispatch:
