@@ -161,8 +161,9 @@ copy-pasteable local flow.
 | Redis | `localhost:6379` | |
 | MinIO | http://localhost:9000 · console http://localhost:9001 | `minioadmin` / `minioadmin` |
 | Mailpit | http://localhost:8025 | catches all outbound dev email |
-| Grafana | http://localhost:3300 | logs (Loki) and traces (Tempo) from `npm run dev` — see [docs/observability.md](./docs/observability.md#logs-in-local-grafana) |
-| Tempo | `localhost:4318` | OTLP/HTTP receiver the services export traces to |
+| Grafana | http://localhost:3300 | logs (Loki), traces (Tempo) and metrics (Prometheus) from `npm run dev` — see [docs/observability.md](./docs/observability.md#logs-in-local-grafana) |
+| Alloy | `localhost:4318` · UI http://localhost:12345 | the one OTLP/HTTP endpoint the services export to; routes traces → Tempo, metrics → Prometheus |
+| Prometheus | http://localhost:9090 | local metrics store (Grafana Cloud Mimir's stand-in), fed by Alloy |
 
 ### Standalone apps — website, pos & storefront-web
 

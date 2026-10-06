@@ -95,9 +95,46 @@ services:
     ports:
       - '${LOKI_PORT:-3100}:3100'
 
-  # --- local traces: services → Tempo (OTLP/HTTP) → Grafana ------------------
+  # --- local traces + metrics: services → Alloy (OTLP/HTTP) → Tempo / Prometheus
 
-  # no volume: traces last until `npm run down`
+  # The one OTLP endpoint `npm run dev` services export to
+  # (OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 in apps/*/.env). Routes
+  # traces to Tempo and metrics to Prometheus (docker/alloy/config.alloy).
+  alloy:
+    image: grafana/alloy:v1.20.1
+    container_name: ordersail-alloy
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    ports:
+      - '${OTLP_PORT:-4318}:4318'
+      # Alloy's UI: the pipeline graph and each component's health
+      - '${ALLOY_UI_PORT:-12345}:12345'
+    healthcheck:
+      # the image has neither curl nor wget; bash's /dev/tcp reads /-/ready
+      test:
+        [
+          'CMD',
+          'bash',
+          '-c',
+          'exec 3<>/dev/tcp/127.0.0.1/12345 && printf "GET /-/ready HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3 && head -1 <&3 | grep -q " 200 "',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      tempo:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+
+  # no volume: traces last until `npm run down`. Reached only through Alloy
+  # (and Grafana) inside the compose network, so nothing is published.
   tempo:
     image: grafana/tempo:2.8.2
     container_name: ordersail-tempo
@@ -105,10 +142,6 @@ services:
     command: ['-config.file=/etc/tempo.yaml']
     volumes:
       - ./docker/tempo/tempo.yaml:/etc/tempo.yaml:ro
-    ports:
-      # the OTLP/HTTP receiver `npm run dev` services export to
-      # (OTEL_EXPORTER_OTLP_ENDPOINT in apps/*/.env)
-      - '${TEMPO_OTLP_PORT:-4318}:4318'
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:3200/ready']
       interval: 5s
@@ -116,6 +149,26 @@ services:
       retries: 20
       # Tempo reports not-ready for its first ~15s while the ring settles
       start_period: 30s
+
+  # no volume: metrics last until `npm run down`. Fed by Alloy over OTLP
+  # (docker/prometheus/prometheus.yml); published only to poke at its own UI.
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    container_name: ordersail-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-otlp-receiver
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - '${PROMETHEUS_PORT:-9090}:9090'
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:9090/-/ready']
+      interval: 2s
+      timeout: 3s
+      retries: 20
 
   grafana:
     image: grafana/grafana:12.1.1
@@ -133,6 +186,7 @@ services:
     depends_on:
       - loki
       - tempo
+      - prometheus
 
   # same image + tag as the production `log-router` sidecar
   # (infra/terraform/modules/ecs-service) — bump them together
