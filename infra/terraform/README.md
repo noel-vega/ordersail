@@ -70,8 +70,8 @@ AWS credentials are all you need. The provider's Grafana token is read from Secr
 **One-time setup** (redo only if the token is rotated or the stack is recreated):
 
 1. Grafana Cloud → **Administration → Users and access → Service accounts → Add service
-   account**. Name it `terraform`, role **Editor**. Editor covers folders, dashboards and alert
-   rules. Data sources stay hand-managed, which is why Admin isn't needed.
+   account**. Name it `terraform` (it shows as `sa-1-terraform`), role **Editor**. Data sources
+   stay hand-managed, which is why Admin isn't needed.
 2. In that service account, **Add service account token** with no expiry, or a long one with a
    calendar reminder. Copy it (it starts with `glsa_`).
 3. Store it in a **local terminal**, not in a chat or an agent session, so it doesn't end up in
@@ -86,6 +86,20 @@ AWS credentials are all you need. The provider's Grafana token is read from Secr
    Rotate later with `put-secret-value --secret-id ordersail/production/grafana-terraform`.
    Keep it apart from `ordersail/production/grafana-cloud`, which ECS tasks can read.
 4. Set `grafana_url` in `grafana/terraform.tfvars` to the stack URL (`https://<stack>.grafana.net`).
+
+**Each new folder needs a one-time grant.** In this stack, Editor's folder access is per folder,
+and a folder the service account creates gets no grant, not even for its creator. So the apply
+that creates a folder fails reading it back (`403 … folders:read`). The folder exists, but nothing
+can be put in it yet. Then:
+
+1. As an admin in the UI: **Dashboards → *the folder* → Folder actions → Manage permissions → Add
+   a permission → Service account `sa-1-terraform` → Edit**. Grant on the folder only, rather than
+   making the service account Admin of the whole stack.
+2. `terraform untaint grafana_folder.<name>`. The failed read-back marked it tainted, and a
+   replace would delete the folder together with the grant you just added.
+3. Plan and apply again. Only the folder's contents should be created.
+
+The `Ordersail` folder got this grant on 2026-10-06.
 
 **Editing a dashboard:** change `grafana/dashboards/*.json` and apply. The dashboards are
 read-only in the UI (`editable: false`) because a UI edit would be overwritten on the next
