@@ -2,9 +2,10 @@
 # alert rules and contact points (OS-732). A root of its own, apart from
 # envs/production, so a Grafana outage or a bad token never blocks an AWS apply.
 #
-# Auth: a Grafana service-account token (Editor) in Secrets Manager, read
-# ephemerally — the value is used to configure the provider and is never
-# written to the plan or the state. All an applier needs is AWS credentials.
+# Auth: a Grafana service-account token (Editor, plus Edit on each folder it
+# manages; see the README) in Secrets Manager, read ephemerally — the value is
+# used to configure the provider and is never written to the plan or the
+# state. All an applier needs is AWS credentials.
 # Data sources are not managed here: the CloudWatch one (OS-733) was made by
 # hand and would need an Admin token; dashboards pick it through a variable.
 #
