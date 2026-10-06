@@ -18,6 +18,7 @@ import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { useClampPage } from "../../../lib/use-clamp-page";
 import { useStockLocations } from "../../locations/locations.hooks";
 import {
   BY_VARIANT,
@@ -46,6 +47,8 @@ export function ListInventoryView() {
   const byVariant = search.view === BY_VARIANT;
   const inventory = useInventoryPageQuery(search, !byVariant);
   const variants = useVariantStockPageQuery(search, byVariant);
+  // only the active view's query is enabled, so clamp against that one
+  useClampPage({ page: search.page, query: byVariant ? variants : inventory });
   const stockLocations = useStockLocations();
   const canAdjust = usePermissions().has("inventory:write");
   const page = byVariant ? variants.data : inventory.data;

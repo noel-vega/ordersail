@@ -15,6 +15,7 @@ import {
 import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { useClampPage } from "../../../lib/use-clamp-page";
 import { MOVEMENT_REASONS, useMovementsPageQuery } from "../inventory.hooks";
 
 const route = getRouteApi("/app/inventory/movements");
@@ -61,6 +62,7 @@ export function ListInventoryMovementsView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const movements = useMovementsPageQuery(search);
+  useClampPage({ page: search.page, query: movements });
 
   return (
     <div className="space-y-4">

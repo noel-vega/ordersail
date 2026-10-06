@@ -26,6 +26,7 @@ import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { useClampPage } from "../../../lib/use-clamp-page";
 import { usePermissions } from "../../auth/permission-context";
 import { useDeleteLocationMutation, useListLocationsQuery } from "../locations.hooks";
 import { EditLocationSheet } from "./edit-location-sheet";
@@ -108,6 +109,7 @@ export function ListLocationsView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const locations = useListLocationsQuery(search);
+  useClampPage({ page: search.page, query: locations });
   const permissions = usePermissions();
   const canWrite = permissions.has("locations:write");
   const canDelete = permissions.has("locations:delete");

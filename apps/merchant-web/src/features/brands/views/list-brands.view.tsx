@@ -26,6 +26,7 @@ import { DataTable } from "../../../components/data-table";
 import { DataTablePagination } from "../../../components/data-table-pagination";
 import { ListSearchInput } from "../../../components/list-search-input";
 import { PAGE_SIZE } from "../../../lib/list-search";
+import { useClampPage } from "../../../lib/use-clamp-page";
 import { usePermissions } from "../../auth/permission-context";
 import { useDeleteBrandMutation, useListBrandsQuery } from "../brands.hooks";
 import { EditBrandSheet } from "./edit-brand-sheet";
@@ -93,6 +94,7 @@ export function ListBrandsView() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const brands = useListBrandsQuery(search);
+  useClampPage({ page: search.page, query: brands });
   const canWrite = usePermissions().has("products:write");
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
   const [deletingBrand, setDeletingBrand] = useState<Brand | null>(null);
