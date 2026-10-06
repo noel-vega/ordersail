@@ -606,30 +606,6 @@ negative value recorded on a counter) carry no signal name and log as `otel.sdk_
 {deployment_environment="production"} | json | event=~"metrics\\.(export_failed|sdk_errored)"
 ```
 
-### Metrics in production (Grafana Cloud)
-
-The three APIs export to Grafana Cloud Mimir. They use the same OTLP gateway and token as traces
-(`envs/production/metrics.tf`), switched on by `metrics_export_enabled = true` in
-`terraform.tfvars` (OS-736). Query them in Grafana Cloud → Explore → **`grafanacloud-ordersail-prom`**,
-with the same names as locally:
-
-```promql
-max by (job) (nodejs_eventloop_delay_p99_seconds)
-sum by (job) (v8js_memory_heap_used_bytes)
-```
-
-- **The token needs `metrics:write`** as well as `traces:write`. A token without it is rejected
-  with `401 … invalid scope requested`, and each API logs `metrics.export_failed` once per
-  minute. Fix it on the access policy at grafana.com → **Security → Access Policies**: tokens
-  inherit their policy's scopes, so the secret doesn't change.
-- **Switching it on or off** takes a Terraform apply *and a deploy.* CD renders the task
-  definitions from the SSM contract at deploy time, so after the apply, re-run CD (Actions → CD
-  → **Run workflow** on `main`).
-- **Usage.** Check how many active series the stack holds after each deploy. Explore →
-  `grafanacloud-usage`: `grafanacloud_instance_active_series`. Or check grafana.com → your
-  organization → **Usage**. Expect about **64 per API task**, so about 192 for the three. Old
-  instances stay counted for a while after a deploy, so it briefly roughly doubles.
-
 ### Metrics in local Grafana
 
 `npm run up` starts a local **Prometheus** (v3, `docker/prometheus/prometheus.yml`). It takes
@@ -658,6 +634,31 @@ component is healthy.
 
 Exemplars (a histogram point → the trace that produced it) aren't wired yet: no app records
 any, so the Prometheus data source has no Tempo link (OS-762).
+
+### Metrics in production (Grafana Cloud)
+
+The three APIs export to Grafana Cloud Mimir. They use the same OTLP gateway and token as traces
+(`infra/terraform/envs/production/metrics.tf`), switched on by `metrics_export_enabled = true` in
+`infra/terraform/envs/production/terraform.tfvars` (OS-736). Query them in Grafana Cloud →
+Explore → **`grafanacloud-ordersail-prom`**, with the same names as in
+[local Grafana](#metrics-in-local-grafana):
+
+```promql
+max by (job) (nodejs_eventloop_delay_p99_seconds)
+sum by (job) (v8js_memory_heap_used_bytes)
+```
+
+- **The token needs `metrics:write`** as well as `traces:write`. A token without it is rejected
+  with `401 … invalid scope requested`, and each API logs `metrics.export_failed` once per
+  minute. Fix it on the access policy at grafana.com → **Security → Access Policies**: tokens
+  inherit their policy's scopes, so the secret doesn't change.
+- **Switching it on or off** takes a Terraform apply *and a deploy.* CD renders the task
+  definitions from the SSM contract at deploy time, so after the apply, re-run CD (Actions → CD
+  → **Run workflow** on `main`).
+- **Usage.** After each deploy, check the stack's active series in Explore →
+  `grafanacloud-usage`: `grafanacloud_instance_active_series`. The expected count is in
+  [What's recorded](#whats-recorded), and why it briefly doubles is in
+  [The series budget](#the-series-budget).
 
 ## CloudWatch metrics in Grafana Cloud
 
