@@ -187,7 +187,7 @@ function CreateFulfillmentFlow({ order }: { order: OrderDetail }) {
   const [selectedRate, setSelectedRate] = useState<ShippingRate | null>(null);
 
   const getRates = useGetFulfillmentRatesMutation();
-  const createFulfillment = useCreateFulfillmentMutation(order.id);
+  const createFulfillment = useCreateFulfillmentMutation();
 
   if (fulfillableItems.length === 0) return null;
 
