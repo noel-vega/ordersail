@@ -550,6 +550,11 @@ resource (database rows, S3 objects, secrets), or change anything.
      --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output table
    ```
 
+**Dashboards:** **Ordersail → Infrastructure (CloudWatch)** shows ECS CPU and memory per
+service, running vs desired tasks, ALB requests, latency, errors and host health per target
+group, and RDS and Redis. It's managed as code in `infra/terraform/grafana/dashboards/infra.json`
+(OS-91). See `infra/terraform/README.md` → "`grafana/` — Grafana Cloud as code".
+
 **Cost:** CloudWatch bills `GetMetricData` by metrics requested (about $0.01 per 1,000). Keep
 dashboard refresh at **1m or slower**, never 5s. While the environment is parked (OS-379),
 Container Insights is off and its panels show gaps, which is expected.

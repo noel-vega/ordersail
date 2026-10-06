@@ -28,3 +28,12 @@ resource "grafana_folder" "ordersail" {
   title = "Ordersail"
 }
 
+# Infra board (OS-91): ECS, ALB, RDS, Redis from the CloudWatch data source
+# (OS-733), queried live. The JSON is the source of truth; the dashboard is
+# read-only in the UI (editable = false) because edits there would be
+# overwritten here. Change dashboards/infra.json and apply.
+resource "grafana_dashboard" "infra" {
+  folder      = grafana_folder.ordersail.uid
+  config_json = file("${path.module}/dashboards/infra.json")
+  overwrite   = true
+}
