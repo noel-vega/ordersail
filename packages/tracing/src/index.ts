@@ -8,10 +8,10 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { registerInstrumentations, type Instrumentation } from '@opentelemetry/instrumentation';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
-import { resourceFromAttributes } from '@opentelemetry/resources';
 import { BatchSpanProcessor, type ReadableSpan, type SpanExporter, type TimedEvent } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { SPAN_ATTRIBUTES } from 'logging/span-attributes';
+import { serviceResource } from './resource.ts';
 
 // This package must not import `logging`'s main entry or `config`: whatever it
 // loads is loaded before the instrumentations are installed. The one exception
@@ -190,10 +190,7 @@ export function startTracing(options: TracingOptions): boolean {
   if (!exporter) return false;
 
   provider = new NodeTracerProvider({
-    resource: resourceFromAttributes({
-      'service.name': options.service,
-      'deployment.environment': process.env.NODE_ENV ?? 'development',
-    }),
+    resource: serviceResource(options.service),
     // default sampler: parent-based, always on — 100% until volume says otherwise
     spanProcessors: [new BatchSpanProcessor(new ScrubbingSpanExporter(exporter))],
   });

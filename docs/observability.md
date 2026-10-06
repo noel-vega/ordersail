@@ -22,6 +22,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md`, whose top note says whether paging is on |
 | **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api, storefront-api, pos-api (not the worker yet); off unless an OTLP endpoint is set — [Traces](#traces) |
 | **CloudWatch metrics in Grafana Cloud** | *How busy / healthy is the infrastructure?* — CPU, memory, ALB, RDS, Redis | queried live, nothing ingested — [CloudWatch metrics in Grafana Cloud](#cloudwatch-metrics-in-grafana-cloud) |
+| **OpenTelemetry metrics → Mimir** | *How is the app itself doing, over time?* — runtime health, then request and business counts | `packages/metrics` exists; no service records anything yet (OS-735); off unless an OTLP endpoint is set — [App metrics](#app-metrics-opentelemetry--mimir) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
 `correlationId` field on every log line, rides on every BullMQ job, and (later) is a Sentry tag.
@@ -491,8 +492,10 @@ merchant-api logs one `warn` line for it, `event: "tracing.export_failed"`, `con
 "OpenTelemetry"`, with `err.code` the HTTP status when there was one. One per batch, never one
 per request, and `warn` rather than `error`: the service is fine, only its traces are lost, so
 it wouldn't count toward an error-volume alert. Other OpenTelemetry warnings (spans dropped because the
-queue filled) log as `tracing.sdk_warned`, and an instrumentation's own error (an HTTP or `pg`
-hook) as `tracing.sdk_errored` — neither means export is failing. `packages/logging` registers
+queue filled) log as `otel.sdk_warned`, and an instrumentation's own error (an HTTP or `pg`
+hook) as `otel.sdk_errored` — neither means export is failing. These two name no signal on
+purpose: traces and metrics share the OTLP exporter code, and most SDK messages carry nothing that
+says which one spoke, so the message text is where to look. `packages/logging` registers
 this as OpenTelemetry's diag logger in `configureLogging()`; only text and an `Error` reach the
 line, never other arguments (`pg` can pass query parameter values).
 
@@ -510,6 +513,69 @@ allowance. Check it after the first day with export on, and again before launch 
    `Authorization=Basic%20…` form); a timeout or `ECONNREFUSED` is the network or the endpoint.
 4. Traces with an HTTP span but no `pg` spans: the loading order (above).
 5. A `/health` request: never traced, on purpose.
+
+## App metrics (OpenTelemetry → Mimir)
+
+`packages/metrics` sets up the OpenTelemetry metrics SDK for the services. Its exports:
+
+- `startMetrics({ service })` — call it from `instrument.ts`, next to `startTracing`
+- `shutdownMetrics` — goes in the shutdown handler's `afterClose`, next to `shutdownTracing`
+
+Instruments come from the standard API: `metrics.getMeter(...)` from `@opentelemetry/api`. No
+service calls `startMetrics` yet; the Node runtime metrics are the first (OS-735).
+
+- **Off unless configured.** It starts only when `OTEL_EXPORTER_OTLP_ENDPOINT` (or
+  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`) is set. The same endpoint and `OTEL_EXPORTER_OTLP_HEADERS`
+  as traces are used, and the exporter appends `/v1/metrics`. `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`
+  overrides it and is the full URL — nothing is appended. **`OTEL_METRICS_EXPORTER=none`**
+  keeps metrics off even with the endpoint set. Production already sets the endpoint for traces,
+  so this is how the two are switched on separately (OS-736).
+- **Export:** OTLP over HTTP/protobuf every 60s (`OTEL_METRIC_EXPORT_INTERVAL` overrides it),
+  plus a final export on shutdown, bounded so a dead backend can't hold the process.
+  Temporality is cumulative.
+- **Resource:** `service.name`, `deployment.environment` (shared with traces through
+  `tracing/resource`) and a per-process `service.instance.id`. There's no `service.version` yet,
+  for traces either: nothing passes the image version to the process.
+- **Histograms are exponential.** Mimir stores them as native histograms: a few series each,
+  not one per fixed bucket. A fixed-bucket histogram needs a recorded reason.
+
+### The series budget
+
+Grafana Cloud's free tier allows **10k active series**. Every distinct combination of a metric's
+attribute values is one series, so attributes are the cost.
+
+- **Allow-list.** `ALLOWED_ATTRIBUTES` in `packages/metrics` lists the only attribute keys a metric
+  may keep. Everything else is dropped before aggregation. It starts empty. Adding a key is a
+  deliberate change, and `views.spec.ts` pins the list.
+- **Never** label a metric with `accountId`, `userId`, `customerId`, `orderId`, `correlationId`,
+  any other ID, a raw URL or path, or an email. Per-tenant and per-request questions belong to logs
+  and traces. Routes are fine as a **template** (`/orders/:id`); status codes as a **class** (`2xx`).
+- **Ceiling.** Each metric is capped at 100 series (`CARDINALITY_LIMIT`). Anything past that is
+  folded into one series marked `otel.metric.overflow`. If you see that attribute, something is
+  wrongly labelled; it doesn't mean the budget needs raising.
+- **Instances.** Every process exports with its own `service.instance.id`, a random UUID. Two ECS
+  tasks of one service must not write the same series, or their cumulative counters interleave
+  into garbage. The cost: a deploy starts new instances while the old ones' series are still
+  counted as active, so **active series briefly double on each deploy**. Budget for twice the
+  steady state. Dashboards aggregate across instances (`sum by (service_name)`) unless one task
+  is the question.
+
+Check usage at grafana.com → your organization → **Usage**, under **Metrics active series**.
+
+### When metrics are missing
+
+A failed export logs one `warn` line per attempt, never per recording: `event:
+"metrics.export_failed"`, `context: "OpenTelemetry"`. `err.message` carries the reason, for
+example `… metrics export failed (error OTLPExporterError: Unauthorized)`. It never carries the
+credentials. A timed-out export and other reader errors are `metrics.sdk_errored`. These are
+deliberately separate from `tracing.export_failed`, so a metrics export failure doesn't send anyone
+after the trace setup; an exporter that throws is logged as a failed export too, never as a trace
+one. Warnings from the shared OTLP exporter or the metrics SDK itself (a header that won't parse, a
+negative value recorded on a counter) carry no signal name and log as `otel.sdk_warned`.
+
+```logql
+{deployment_environment="production"} | json | event=~"metrics\\.(export_failed|sdk_errored)"
+```
 
 ## CloudWatch metrics in Grafana Cloud
 

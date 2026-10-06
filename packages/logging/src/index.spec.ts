@@ -303,8 +303,8 @@ describe('error serialization', () => {
   });
 });
 
-// The export-failure path end to end (a real exporter against a 401) is
-// covered in packages/tracing's export-failure.spec.ts.
+// The export-failure paths end to end (a real exporter against a 401) are
+// covered in packages/tracing's and packages/metrics' export-failure.spec.ts.
 describe("OpenTelemetry's diagnostics", () => {
   it('a diag warning is a warn line; the exporter\'s info chatter is dropped', () => {
     const lines = captureLogs();
@@ -313,8 +313,16 @@ describe("OpenTelemetry's diagnostics", () => {
     assert.equal(lines.length, 1);
     assert.equal(lines[0].level, 'warn');
     assert.equal(lines[0].context, 'OpenTelemetry');
-    assert.equal(lines[0].event, 'tracing.sdk_warned');
+    assert.equal(lines[0].event, 'otel.sdk_warned');
     assert.equal(lines[0].msg, 'Dropped 3 spans because maxQueueSize reached');
+  });
+
+  it('names no signal for a warning that carries none — traces and metrics share the OTLP exporter', () => {
+    const lines = captureLogs();
+    // the shared exporter's, and the metrics SDK's own, both unprefixed
+    diag.warn('Received Partial Success response:', '{"rejectedDataPoints":"3"}');
+    diag.warn('negative value provided to counter spec.requests: -1');
+    assert.deepEqual(lines.map((line) => line.event), ['otel.sdk_warned', 'otel.sdk_warned']);
   });
 
   it("an instrumentation's own error is sdk_errored, not an export failure", () => {
@@ -324,7 +332,7 @@ describe("OpenTelemetry's diagnostics", () => {
     diag.createComponentLogger({ namespace: '@opentelemetry/instrumentation-pg' }).error('Error running query hook', hookError);
     assert.equal(lines.length, 1);
     assert.equal(lines[0].level, 'warn');
-    assert.equal(lines[0].event, 'tracing.sdk_errored');
+    assert.equal(lines[0].event, 'otel.sdk_errored');
     assert.equal(lines[0].msg, '@opentelemetry/instrumentation-pg Error running query hook');
     assert.equal(lines[0].err.message, 'hook threw');
   });
@@ -333,7 +341,7 @@ describe("OpenTelemetry's diagnostics", () => {
     const lines = captureLogs();
     diag.error('failed to stringify ', ['jane@example.com', '4242'], new TypeError('circular'));
     assert.equal(lines.length, 1);
-    assert.equal(lines[0].event, 'tracing.sdk_errored');
+    assert.equal(lines[0].event, 'otel.sdk_errored');
     assert.equal(lines[0].err.message, 'circular');
     assert.equal(JSON.stringify(lines[0]).includes('jane@example.com'), false);
   });
@@ -345,6 +353,27 @@ describe("OpenTelemetry's diagnostics", () => {
     assert.equal(lines[0].event, 'tracing.export_failed');
     assert.equal(lines[0].msg, 'Trace export failed');
     assert.equal(lines[0].err.code, '401');
+  });
+
+  it("the metric reader's flattened export failure is metrics.export_failed, not a trace one", () => {
+    const lines = captureLogs();
+    const message = 'PeriodicExportingMetricReader: metrics export failed (error OTLPExporterError: Unauthorized)';
+    diag.error(JSON.stringify({ name: 'Error', message, stack: `Error: ${message}` }));
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].level, 'warn');
+    assert.equal(lines[0].event, 'metrics.export_failed');
+    assert.equal(lines[0].msg, 'Metric export failed');
+    assert.equal(lines[0].err.message, message);
+  });
+
+  it("the metric reader's own errors — a timed-out export — are metrics.sdk_errored", () => {
+    const lines = captureLogs();
+    diag.error('PeriodicExportingMetricReader: metrics export timed out after 30000ms');
+    diag.error('PeriodicExportingMetricReader: metrics collection errors', new Error('callback threw'));
+    assert.deepEqual(lines.map((line) => line.event), ['metrics.sdk_errored', 'metrics.sdk_errored']);
+    assert.equal(lines[0].level, 'warn');
+    assert.equal(lines[0].msg, 'PeriodicExportingMetricReader: metrics export timed out after 30000ms');
+    assert.equal(lines[1].err.message, 'callback threw');
   });
 });
 
