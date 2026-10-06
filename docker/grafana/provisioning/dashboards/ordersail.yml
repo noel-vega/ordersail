@@ -1,0 +1,15 @@
+# Local Grafana: the dashboards from infra/terraform/grafana/dashboards that
+# work without AWS, provisioned from the same JSON that Terraform applies to
+# Grafana Cloud — so `npm run up` always shows the current version. Only the
+# runtime board for now: the infra board reads CloudWatch, which local dev
+# doesn't have. Read-only here too; edit the JSON in the repo.
+apiVersion: 1
+
+providers:
+  - name: ordersail
+    folder: Ordersail
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/ordersail

@@ -189,6 +189,8 @@ services:
       - '${GRAFANA_PORT:-3300}:3000'
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      # the same dashboard JSON Terraform applies to Grafana Cloud (OS-737)
+      - ./infra/terraform/grafana/dashboards/runtime.json:/var/lib/grafana/dashboards/ordersail/runtime.json:ro
     depends_on:
       - loki
       - tempo

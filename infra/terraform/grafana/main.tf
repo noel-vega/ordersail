@@ -38,3 +38,13 @@ resource "grafana_dashboard" "infra" {
   config_json = file("${path.module}/dashboards/infra.json")
   overwrite   = true
 }
+
+# Node runtime board (OS-737): event loop, heap, GC, CPU and handles from
+# inside each API (packages/metrics), on Grafana Cloud Mimir. The same JSON is
+# provisioned into the local Grafana (docker/grafana/provisioning/dashboards),
+# where its data-source variable picks the local Prometheus.
+resource "grafana_dashboard" "runtime" {
+  folder      = grafana_folder.ordersail.uid
+  config_json = file("${path.module}/dashboards/runtime.json")
+  overwrite   = true
+}
