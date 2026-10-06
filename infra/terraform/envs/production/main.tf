@@ -275,6 +275,8 @@ module "ecs_service_merchant_api" {
     ], local.trace_export_enabled ? [
     # trace export to Grafana Cloud Tempo (tracing.tf); unset, tracing is off
     { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = var.otel_exporter_otlp_endpoint },
+    # metrics share the endpoint; `none` keeps them off until enabled (metrics.tf)
+    { name = "OTEL_METRICS_EXPORTER", value = local.otel_metrics_exporter },
   ] : [])
 
   secrets = concat([
@@ -328,6 +330,8 @@ module "ecs_service_storefront_api" {
     ], local.trace_export_enabled ? [
     # trace export to Grafana Cloud Tempo (tracing.tf); unset, tracing is off
     { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = var.otel_exporter_otlp_endpoint },
+    # metrics share the endpoint; `none` keeps them off until enabled (metrics.tf)
+    { name = "OTEL_METRICS_EXPORTER", value = local.otel_metrics_exporter },
   ] : [])
 
   secrets = concat([
@@ -415,6 +419,8 @@ module "ecs_service_pos_api" {
     ], local.trace_export_enabled ? [
     # trace export to Grafana Cloud Tempo (tracing.tf); unset, tracing is off
     { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = var.otel_exporter_otlp_endpoint },
+    # metrics share the endpoint; `none` keeps them off until enabled (metrics.tf)
+    { name = "OTEL_METRICS_EXPORTER", value = local.otel_metrics_exporter },
   ] : [])
 
   secrets = concat([
