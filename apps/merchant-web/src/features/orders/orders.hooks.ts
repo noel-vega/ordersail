@@ -7,11 +7,11 @@ import { queryClient } from "../../lib/react-query-client"
 import { getDashboardSummaryQueryOptions } from "../dashboard/dashboard.hooks"
 
 // the orders API has no `q` yet, so the list only takes a page
-export const ordersListSearchSchema = listSearchSchema.pick({ page: true })
+export const orderListSearchSchema = listSearchSchema.pick({ page: true })
 
-export type OrdersListSearch = z.infer<typeof ordersListSearchSchema>
+export type OrderListSearch = z.infer<typeof orderListSearchSchema>
 
-export function getListOrdersQueryOptions(search: OrdersListSearch = { page: 1 }) {
+export function getListOrdersQueryOptions(search: OrderListSearch = { page: 1 }) {
   return queryOptions({
     queryKey: ["orders", search],
     queryFn: () =>
@@ -23,7 +23,7 @@ export function getListOrdersQueryOptions(search: OrdersListSearch = { page: 1 }
   })
 }
 
-export function useListOrdersQuery(search: OrdersListSearch) {
+export function useListOrdersQuery(search: OrderListSearch) {
   return useQuery(getListOrdersQueryOptions(search))
 }
 
@@ -41,7 +41,7 @@ export function useOrderQuery(id: number) {
 // invalidates the order detail + the two views that also show its status
 // (every orders list page and the dashboard's recentOrders, same findAll data).
 // The ["orders"] prefix covers both the detail and each ["orders", { page }].
-export function invalidateOrder() {
+export function invalidateOrders() {
   queryClient.invalidateQueries({ queryKey: ["orders"] })
   queryClient.invalidateQueries(getDashboardSummaryQueryOptions())
 }
@@ -51,7 +51,7 @@ export function useRefundOrderMutation(orderId: number) {
     // the refund sheet shows the error inline next to the form
     meta: { skipGlobalErrorToast: true },
     mutationFn: (body: RefundOrderDto) => merchantApi.orders.refund(orderId, body),
-    onSuccess: () => invalidateOrder(),
+    onSuccess: () => invalidateOrders(),
   })
 }
 
@@ -60,6 +60,6 @@ export function useCancelOrderMutation(orderId: number) {
     // the cancel dialog shows the error inline
     meta: { skipGlobalErrorToast: true },
     mutationFn: (body: CancelOrderDto) => merchantApi.orders.cancel(orderId, body),
-    onSuccess: () => invalidateOrder(),
+    onSuccess: () => invalidateOrders(),
   })
 }
