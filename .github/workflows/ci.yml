@@ -113,10 +113,10 @@ jobs:
         run: npm run doctor --workspace=pos
 
   # Which Docker images this diff can change, so docker-smoke-build only builds
-  # those (OS-744) — a docs/website/merchant-web PR builds none. An image is
-  # affected when its nx project (or a dependency) is, or when a file nx
-  # doesn't own but the build does changes: its Dockerfile, .dockerignore,
-  # the root package.json/lockfile, or this workflow.
+  # those (OS-744) — a docs/website/merchant-web PR builds none. The selection
+  # rules and the image map are shared with cd.yml (.github/actions/affected-images,
+  # docker/images.json); a change to this workflow builds every image, so a
+  # PR touching docker-smoke-build exercises it.
   affected-images:
     runs-on: ubuntu-latest
     outputs:
@@ -126,56 +126,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - uses: nrwl/nx-set-shas@v4
 
-      # nx alone, not `npm ci`: building the project graph needs only nx
-      # itself (no plugins in nx.json) and gives the same affected set as a
-      # full install — in seconds instead of ~60s, which the image builds
-      # would otherwise wait on.
-      - name: Install nx only
-        run: |
-          npm install --prefix "$RUNNER_TEMP/nx" --no-audit --no-fund \
-            "nx@$(node -p "require('./package.json').devDependencies.nx")"
-          ln -s "$RUNNER_TEMP/nx/node_modules" node_modules
+      - id: affected
+        uses: ./.github/actions/affected-images
+        with:
+          base: ${{ env.NX_BASE }}
+          head: ${{ env.NX_HEAD }}
+          all: ${{ inputs.run_all == true }}
+          force-paths: .github/workflows/ci.yml
 
+      # target = docker/<target>.Dockerfile; scope = the GHA cache scope
+      # cd.yml's build-and-push writes for the image (its app name)
       - id: images
         env:
-          RUN_ALL: ${{ inputs.run_all }}
-          NX_DAEMON: "false"
-          NX_NO_CLOUD: "true"
-          # target = docker/<target>.Dockerfile; project = the nx project whose
-          # dependency closure the image builds; scope = the GHA cache scope
-          # cd.yml's build-and-push writes for it (it names migrate "migrator")
-          IMAGES: |
-            [
-              {"target": "merchant-api",   "project": "merchant-api",   "scope": "merchant-api"},
-              {"target": "storefront-api", "project": "storefront-api", "scope": "storefront-api"},
-              {"target": "pos-api",        "project": "pos-api",        "scope": "pos-api"},
-              {"target": "worker",         "project": "worker",         "scope": "worker"},
-              {"target": "migrate",        "project": "db",             "scope": "migrator"}
-            ]
+          AFFECTED: ${{ steps.affected.outputs.affected }}
         run: |
-          set -euo pipefail
-          if [ "$RUN_ALL" = "true" ]; then
-            SELECTED=$(jq -c . <<<"$IMAGES")
-          else
-            AFFECTED=$(npx nx show projects --affected --json)
-            CHANGED=$(git diff --name-only "$NX_BASE" "$NX_HEAD" | jq -R . | jq -sc .)
-            echo "affected projects: $AFFECTED"
-            SELECTED=$(jq -c --argjson affected "$AFFECTED" --argjson changed "$CHANGED" '
-              ($changed | any(. == "package.json" or . == "package-lock.json"
-                              or . == ".dockerignore" or . == ".github/workflows/ci.yml")) as $all
-              | map(select($all
-                  or (.project as $p | $affected | any(. == $p))
-                  or (("docker/" + .target + ".Dockerfile") as $f | $changed | any(. == $f))))
-            ' <<<"$IMAGES")
-          fi
-          echo "images: $(jq -c 'map(.target)' <<<"$SELECTED")"
-          echo "images=$(jq -c 'map({target, scope})' <<<"$SELECTED")" >> "$GITHUB_OUTPUT"
+          echo "images=$(jq -c 'map({target, scope: .app})' <<<"$AFFECTED")" >> "$GITHUB_OUTPUT"
 
   docker-smoke-build:
     # explicit name: with an `include` matrix the default would append every
