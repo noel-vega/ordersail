@@ -46,16 +46,7 @@ jobs:
           # nx-set-shas walks history to find the PR merge-base
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      # honor packageManager (package.json) — node 22 ships npm 10, whose
-      # `npm ci` can't reconcile this lockfile's `overrides`
-      - run: npm install -g npm@11
-
-      - run: npm ci
+      - uses: ./.github/actions/setup-workspace
 
       # sets NX_BASE / NX_HEAD — on pull_request, NX_BASE is the merge-base
       # with the target branch
@@ -86,14 +77,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm install -g npm@11
-
-      - run: npm ci
+      - uses: ./.github/actions/setup-workspace
 
       - run: npm run build --workspace=pos-sdk
 
