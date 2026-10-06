@@ -294,12 +294,14 @@ app is unchanged — it still just writes JSON to stdout.
 
 ### Logs in local Grafana
 
-`npm run up` starts a local Loki, Grafana and Fluent Bit next to Postgres and Redis. Nothing
-local ever talks to Grafana Cloud.
+`npm run up` starts a local Loki, Grafana, Fluent Bit and Alloy next to Postgres and Redis.
+Nothing local ever talks to Grafana Cloud.
 
 Under `npm run dev` each service keeps pretty-printing to the terminal and also writes the
 same lines as JSON to `.logs/<service>.log` (git-ignored, emptied each time the service
-starts). Fluent Bit tails that folder and pushes to Loki. Open <http://localhost:3300> →
+starts). Fluent Bit tails that folder and pushes to **Alloy**, which forwards each entry to Loki
+unchanged (`loki.source.api` → `loki.write`, OS-738). It's the same gateway that carries traces
+and metrics ([ADR 0002](./adr/0002-alloy-telemetry-gateway.md)). Open <http://localhost:3300> →
 Explore:
 
 ```logql
@@ -324,7 +326,9 @@ npm run log-shipping:down   # stops the whole local stack, like `npm run down`
 ```
 
 Its lines are labelled `deployment_environment="production-rehearsal"`, and each should be
-the raw pino JSON, not a wrapper around it.
+the raw pino JSON, not a wrapper around it. The rehearsal pushes **straight to Loki**, not
+through Alloy, because production's FireLens sidecars still push straight to Grafana Cloud
+Loki. The two move behind Alloy together (OS-741).
 
 Fluent Bit's local config is `docker/fluent-bit/dev.conf`. The rehearsal's output options
 mirror the ones in `modules/ecs-service`, apart from the destination (no TLS or credentials

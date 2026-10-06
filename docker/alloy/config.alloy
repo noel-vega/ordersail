@@ -1,8 +1,9 @@
-// Local OTLP gateway for `npm run dev` (OS-734). The services export
-// everything to one endpoint (OTEL_EXPORTER_OTLP_ENDPOINT, published by
-// docker-compose.yml), and Alloy routes it by signal: traces to Tempo, metrics
-// to Prometheus. Logs don't come through here (yet): Fluent Bit ships them
-// straight to Loki (OS-738 moves them).
+// Local telemetry gateway for `npm run dev` (OS-734, OS-738; the decision is
+// docs/adr/0002-alloy-telemetry-gateway.md). Every signal passes through here:
+//
+//   traces, metrics  services → OTLP :4318 (published by docker-compose.yml)
+//                    → Tempo / Prometheus
+//   logs             Fluent Bit → Loki push API :3100 (internal) → Loki
 //
 // Pipeline graph and live component state: Alloy's UI (ALLOY_UI_PORT).
 
@@ -41,5 +42,30 @@ otelcol.exporter.otlphttp "tempo" {
 otelcol.exporter.otlphttp "prometheus" {
   client {
     endpoint = "http://prometheus:9090/api/v1/otlp"
+  }
+}
+
+// --- logs ---------------------------------------------------------------------
+
+// Fluent Bit's `loki` outputs (docker/fluent-bit/dev.conf) push here exactly as
+// they would to Loki: the same push API, on Loki's own port, inside the compose
+// network. Each entry passes through untouched — the raw pino JSON line and
+// the labels Fluent Bit set (service_name, deployment_environment) — so saved
+// queries and the trace ↔ log links can't tell the difference.
+loki.source.api "fluent_bit" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 3100
+  }
+
+  // the default (false) restamps every line with the time Alloy received it
+  use_incoming_timestamp = true
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
   }
 }
