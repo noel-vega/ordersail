@@ -10,7 +10,8 @@
 # in Grafana Cloud".
 
 locals {
-  grafana_cloudwatch_enabled = var.grafana_aws_account_id != null && var.grafana_cloudwatch_external_id != null
+  # one variable is enough: variables.tf rejects setting only one of the pair
+  grafana_cloudwatch_enabled = var.grafana_aws_account_id != null
 }
 
 data "aws_iam_policy_document" "grafana_cloudwatch_trust" {

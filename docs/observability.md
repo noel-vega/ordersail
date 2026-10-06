@@ -513,16 +513,18 @@ allowance. Check it after the first day with export on, and again before launch 
 
 ## CloudWatch metrics in Grafana Cloud
 
-Infrastructure metrics — ECS CPU and memory (Container Insights), ALB, RDS, ElastiCache, SES —
-stay in CloudWatch. Grafana Cloud's **CloudWatch data source** queries them live, so they cost
+Infrastructure metrics — ECS CPU and memory (per service in `AWS/ECS`, per task in
+`ECS/ContainerInsights`), ALB, RDS, ElastiCache, SES — stay in CloudWatch. Grafana Cloud's **CloudWatch data source** queries them live, so they cost
 none of the free tier's 10k active series and the dashboards read the same numbers the alarms
 do. Production only: the local Grafana has no AWS credentials.
 
 Grafana Cloud signs in with **Grafana Assume Role**: Grafana's AWS account assumes the
 `ordersail-grafana-cloudwatch` role (`infra/terraform/envs/production/grafana-cloudwatch.tf`),
 and only when it presents the external ID Grafana generated for our stack. No AWS keys live in
-Grafana. The role is read-only: CloudWatch metrics, alarm state and history, Contributor
-Insights rule reports, and region and tag lookups. No logs, no data, no writes.
+Grafana. The role is read-only: CloudWatch metrics, alarm configuration, state and history,
+Contributor Insights rule reports, the region list, and `tag:GetResources`, which lists the ARN
+and tags of every tagged resource in the account. It can't read logs, read what's inside any
+resource (database rows, S3 objects, secrets), or change anything.
 
 **Setting it up** (once; redo only if the stack is recreated):
 
@@ -539,6 +541,14 @@ Insights rule reports, and region and tag lookups. No logs, no data, no writes.
    (percent), dimensions `ClusterName = ordersail` and `ServiceName = ordersail-merchant-api`.
    It returns points whenever tasks are running. A parked environment has no tasks, so no
    data, and that's expected.
+6. Confirm the role reads nothing else. Every action below should come back `implicitDeny`:
+
+   ```bash
+   aws iam simulate-principal-policy \
+     --policy-source-arn "$(terraform -chdir=infra/terraform/envs/production output -raw grafana_cloudwatch_role_arn)" \
+     --action-names logs:StartQuery logs:FilterLogEvents s3:GetObject secretsmanager:GetSecretValue rds:DescribeDBInstances \
+     --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output table
+   ```
 
 **Cost:** CloudWatch bills `GetMetricData` by metrics requested (about $0.01 per 1,000). Keep
 dashboard refresh at **1m or slower**, never 5s. While the environment is parked (OS-379),
