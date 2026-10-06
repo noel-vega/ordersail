@@ -10,7 +10,8 @@ to the backend:
 - **Traces and metrics:** services export OTLP to Alloy, never straight to Tempo, Prometheus or
   Mimir.
 - **Logs:** Fluent Bit still reads each service's stdout and pushes to Alloy on the Loki push
-  API, never straight to Loki.
+  API, never straight to Loki. Fluent Bit stays (rather than services exporting logs as OTLP)
+  because reading stdout catches crash-at-boot lines written before any SDK has started.
 
 Alloy is the only component that knows where the backends are, and in production the only one
 holding Grafana Cloud credentials. Services know one OTLP endpoint and nothing else.
@@ -75,5 +76,8 @@ live FireLens options.
     every line with the time Alloy received it.
   - Verified locally on 2026-10-06: lines byte-identical, indexed labels exactly those two, and
     the trace → logs query still matches.
+- **Internal service discovery.** Services and FireLens sidecars reach Alloy over the private
+  network (ECS Service Connect / Cloud Map), never through the ALB, which is public. Alloy's
+  OTLP and Loki push listeners must not be exposed on it.
 - **Cost:** one always-on Fargate task in production (about $9–10/mo while the environment is
   up; it parks with it).

@@ -86,7 +86,7 @@ services:
       timeout: 5s
       retries: 15
 
-  # --- local logs: Fluent Bit → Loki → Grafana ---------------------------------
+  # --- local logs: Fluent Bit → Alloy → Loki → Grafana (rehearsal: → Loki) -----
 
   # no volume: logs last until `npm run down`
   loki:
@@ -96,7 +96,7 @@ services:
     ports:
       - '${LOKI_PORT:-3100}:3100'
 
-  # --- local traces + metrics: services → Alloy (OTLP/HTTP) → Tempo / Prometheus
+  # --- local gateway: every signal → Alloy → Tempo / Prometheus / Loki ----------
 
   # The one OTLP endpoint `npm run dev` services export to (ALLOY_OTLP_PORT in
   # .env). Routes traces to Tempo and metrics to Prometheus, and forwards
