@@ -124,6 +124,17 @@ variable "grafana_cloudwatch_external_id" {
   description = "The external ID Grafana Cloud generates for our stack, from the same Settings tab as grafana_aws_account_id. Not secret: it only stops another Grafana customer from pointing their data source at our role. Null leaves the role off."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.grafana_cloudwatch_external_id == null || try(length(trimspace(var.grafana_cloudwatch_external_id)) > 0, false)
+    error_message = "Empty external ID: the role would exist but nobody could assume it. Use null to leave it off."
+  }
+
+  # the role needs both; one without the other is a half-done setup, not "off"
+  validation {
+    condition     = (var.grafana_cloudwatch_external_id == null) == (var.grafana_aws_account_id == null)
+    error_message = "Set grafana_aws_account_id and grafana_cloudwatch_external_id together, or neither."
+  }
 }
 
 variable "otel_exporter_otlp_endpoint" {

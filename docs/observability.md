@@ -9,6 +9,8 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 > context (OS-479) → error handling (OS-480) → call-site migration (OS-481) → log alarms
 > (OS-99, since deleted in OS-731) → saved queries (OS-98). Traces: merchant-api can emit
 > them (OS-94, see [Traces](#traces)); they are not exported anywhere by default yet.
+> Infrastructure metrics are read live from CloudWatch by Grafana Cloud (OS-733, see
+> [CloudWatch metrics in Grafana Cloud](#cloudwatch-metrics-in-grafana-cloud)).
 
 ## Roles of each tool
 
@@ -519,23 +521,24 @@ do. Production only: the local Grafana has no AWS credentials.
 Grafana Cloud signs in with **Grafana Assume Role**: Grafana's AWS account assumes the
 `ordersail-grafana-cloudwatch` role (`infra/terraform/envs/production/grafana-cloudwatch.tf`),
 and only when it presents the external ID Grafana generated for our stack. No AWS keys live in
-Grafana. The role is read-only and metrics-only: `GetMetricData`, `ListMetrics`, alarm reads,
-region and tag lookups. It can't read logs or anything else.
+Grafana. The role is read-only: CloudWatch metrics, alarm state and history, Contributor
+Insights rule reports, and region and tag lookups. No logs, no data, no writes.
 
 **Setting it up** (once; redo only if the stack is recreated):
 
 1. grafana.com → your stack → **Connections → Data sources → Add new data source →
    CloudWatch**. Name it `CloudWatch`.
-2. **Authentication provider: Grafana Assume Role.** The instructions box shows Grafana's AWS
+2. **Authentication provider: Grafana Assume Role.** The Settings tab then shows Grafana's AWS
    account ID and our **external ID**. Leave the page open.
 3. Put both in `infra/terraform/envs/production/terraform.tfvars`:
    `grafana_aws_account_id` and `grafana_cloudwatch_external_id`. Neither is secret. Plan and
    apply from an up-to-date `main`.
 4. `terraform output -raw grafana_cloudwatch_role_arn` → paste into **Assume Role ARN**.
    **Default region:** `us-east-1`. Leave **External ID** as Grafana filled it.
-5. **Save & test.** Then check in **Explore**: namespace `ECS/ContainerInsights`, metric
-   `CpuUtilized`, dimension `ServiceName = ordersail-merchant-api` returns points while the
-   environment is up.
+5. **Save & test.** Then check in **Explore**: namespace `AWS/ECS`, metric `CPUUtilization`
+   (percent), dimensions `ClusterName = ordersail` and `ServiceName = ordersail-merchant-api`.
+   It returns points whenever tasks are running. A parked environment has no tasks, so no
+   data, and that's expected.
 
 **Cost:** CloudWatch bills `GetMetricData` by metrics requested (about $0.01 per 1,000). Keep
 dashboard refresh at **1m or slower**, never 5s. While the environment is parked (OS-379),

@@ -1,22 +1,13 @@
-# Grafana Cloud reads CloudWatch metrics (OS-733) — ECS/Container Insights, ALB,
-# RDS, ElastiCache, SES — through its CloudWatch data source. Nothing is copied
-# into Grafana Cloud: every panel queries CloudWatch live, so infra metrics cost
-# none of the free tier's active series, and CloudWatch stays the one source of
-# truth for infra (the alarms read the same metrics).
+# Grafana Cloud's CloudWatch data source (OS-733) assumes this role to query
+# infra metrics live, so they cost no Mimir series and CloudWatch stays the one
+# source of truth for infra. "Grafana Assume Role": only Grafana's AWS account,
+# and only with the external ID Grafana generated for our stack, so no AWS keys
+# live in Grafana. Neither value is secret (the external ID stops a confused
+# deputy, not a guesser), so both are plain tfvars like loki_user. Off until both
+# are set.
 #
-# Auth is Grafana Cloud's "Grafana Assume Role": Grafana's own AWS account
-# assumes this role, and only when it presents the external ID that Grafana
-# generates for our stack. No AWS keys are stored in Grafana. Both values come
-# from the data source's Settings tab (Authentication provider → Grafana Assume
-# Role) and go in terraform.tfvars; see docs/observability.md → "CloudWatch
-# metrics in Grafana Cloud". The external ID isn't a secret (it stops a
-# confused deputy, not a guesser), so it's a plain variable like loki_user.
-#
-# Off until both are set, so this file changes nothing in production on its own.
-#
-# Cost: CloudWatch bills GetMetricData per metric requested (about $0.01 per
-# 1,000). Keep dashboard refresh at 1m or slower. Container Insights metrics
-# stop while the environment is parked (OS-379) — panels show a gap, not a fault.
+# Setup, cost and troubleshooting: docs/observability.md → "CloudWatch metrics
+# in Grafana Cloud".
 
 locals {
   grafana_cloudwatch_enabled = var.grafana_aws_account_id != null && var.grafana_cloudwatch_external_id != null

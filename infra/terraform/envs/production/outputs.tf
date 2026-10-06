@@ -54,6 +54,6 @@ output "app_secret_arns" {
 }
 
 output "grafana_cloudwatch_role_arn" {
-  description = "Paste into the Grafana Cloud CloudWatch data source → Assume Role ARN (OS-733). Null until grafana-cloudwatch.tf is configured."
-  value       = try(aws_iam_role.grafana_cloudwatch[0].arn, null)
+  description = "Paste into the Grafana Cloud CloudWatch data source → Assume Role ARN (OS-733). Null until grafana_aws_account_id and grafana_cloudwatch_external_id are set in terraform.tfvars."
+  value       = one(aws_iam_role.grafana_cloudwatch[*].arn)
 }
