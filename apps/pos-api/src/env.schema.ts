@@ -32,4 +32,12 @@ export const envSchema = z.object({
     emptyToUndefined,
     z.string().optional(),
   ),
+  // the standard OTel switch, read by packages/metrics: `none` keeps metrics
+  // off even with the endpoint set, so traces and metrics are turned on
+  // separately. Unset → metrics follow the endpoint. Production sets it from
+  // Terraform's metrics_export_enabled (envs/production/metrics.tf).
+  OTEL_METRICS_EXPORTER: z.preprocess(
+    emptyToUndefined,
+    z.enum(["otlp", "none"]).optional(),
+  ),
 });

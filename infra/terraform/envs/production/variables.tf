@@ -137,6 +137,12 @@ variable "grafana_cloudwatch_external_id" {
   }
 }
 
+variable "metrics_export_enabled" {
+  description = "Export the APIs' metrics (packages/metrics) to Grafana Cloud Mimir over the same OTLP endpoint and credentials as traces. false sets OTEL_METRICS_EXPORTER=none, so metrics stay off while traces are on. Has no effect while otel_exporter_otlp_endpoint is null. Turned on by OS-736. See metrics.tf."
+  type        = bool
+  default     = false
+}
+
 variable "otel_exporter_otlp_endpoint" {
   description = "Grafana Cloud OTLP gateway for the APIs' traces (merchant-api, storefront-api, pos-api) — the base URL ending in /otlp, e.g. \"https://otlp-gateway-prod-us-east-2.grafana.net/otlp\" (grafana.com → your stack → OpenTelemetry → Configure). The exporter appends /v1/traces. Null leaves trace export off. See tracing.tf."
   type        = string
