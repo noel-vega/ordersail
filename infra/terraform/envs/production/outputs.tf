@@ -52,3 +52,8 @@ output "app_secret_arns" {
   description = "Populate these via `aws secretsmanager put-secret-value` before the first deploy."
   value       = module.secrets.app_secret_arns
 }
+
+output "grafana_cloudwatch_role_arn" {
+  description = "Paste into the Grafana Cloud CloudWatch data source → Assume Role ARN (OS-733). Null until grafana-cloudwatch.tf is configured."
+  value       = try(aws_iam_role.grafana_cloudwatch[0].arn, null)
+}
