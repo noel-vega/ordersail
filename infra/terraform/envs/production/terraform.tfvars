@@ -31,6 +31,10 @@ loki_user = "1808609"
 # secret must be set first. From grafana.com → your stack → OpenTelemetry → Configure.
 otel_exporter_otlp_endpoint = "https://otlp-gateway-prod-us-east-2.grafana.net/otlp"
 
+# Metric export to Grafana Cloud Mimir (metrics.tf, OS-736). Takes effect on the
+# APIs' next deploy, so re-run CD after the apply.
+metrics_export_enabled = true
+
 # Grafana Cloud's CloudWatch data source (grafana-cloudwatch.tf, OS-733). From the
 # data source's Settings tab, Authentication provider "Grafana Assume Role". Not
 # secret. Comment both out to remove the role.

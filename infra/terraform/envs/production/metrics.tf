@@ -11,8 +11,8 @@
 # is (main.tf, inside the trace_export_enabled block), since without the
 # endpoint metrics are off anyway.
 #
-# The series budget and what to check after turning it on:
-# docs/observability.md → "App metrics (OpenTelemetry → Mimir)".
+# The series budget: docs/observability.md → "The series budget". What to check
+# after turning it on: docs/observability.md → "Metrics in production (Grafana Cloud)".
 
 locals {
   otel_metrics_exporter = var.metrics_export_enabled ? "otlp" : "none"

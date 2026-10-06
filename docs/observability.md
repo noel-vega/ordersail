@@ -22,7 +22,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md`, whose top note says whether paging is on |
 | **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api, storefront-api, pos-api (not the worker yet); off unless an OTLP endpoint is set — [Traces](#traces) |
 | **CloudWatch metrics in Grafana Cloud** | *How busy / healthy is the infrastructure?* — CPU, memory, ALB, RDS, Redis | queried live, nothing ingested — [CloudWatch metrics in Grafana Cloud](#cloudwatch-metrics-in-grafana-cloud) |
-| **OpenTelemetry metrics → Mimir** | *How is the app itself doing, over time?* — runtime health, then request and business counts | merchant-api, storefront-api, pos-api record Node runtime + process metrics (OS-735); off in production until OS-736, and off unless an OTLP endpoint is set — [App metrics](#app-metrics-opentelemetry--mimir) |
+| **OpenTelemetry metrics → Mimir** | *How is the app itself doing, over time?* — runtime health, then request and business counts | merchant-api, storefront-api, pos-api record Node runtime + process metrics (OS-735), exported to Grafana Cloud in production (OS-736); off unless an OTLP endpoint is set — [App metrics](#app-metrics-opentelemetry--mimir) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
 `correlationId` field on every log line, rides on every BullMQ job, and (later) is a Sentry tag.
@@ -634,6 +634,31 @@ component is healthy.
 
 Exemplars (a histogram point → the trace that produced it) aren't wired yet: no app records
 any, so the Prometheus data source has no Tempo link (OS-762).
+
+### Metrics in production (Grafana Cloud)
+
+The three APIs export to Grafana Cloud Mimir. They use the same OTLP gateway and token as traces
+(`infra/terraform/envs/production/metrics.tf`), switched on by `metrics_export_enabled = true` in
+`infra/terraform/envs/production/terraform.tfvars` (OS-736). Query them in Grafana Cloud →
+Explore → **`grafanacloud-ordersail-prom`**, with the same names as in
+[local Grafana](#metrics-in-local-grafana):
+
+```promql
+max by (job) (nodejs_eventloop_delay_p99_seconds)
+sum by (job) (v8js_memory_heap_used_bytes)
+```
+
+- **The token needs `metrics:write`** as well as `traces:write`. A token without it is rejected
+  with `401 … invalid scope requested`, and each API logs `metrics.export_failed` once per
+  minute. Fix it on the access policy at grafana.com → **Security → Access Policies**: tokens
+  inherit their policy's scopes, so the secret doesn't change.
+- **Switching it on or off** takes a Terraform apply *and a deploy.* CD renders the task
+  definitions from the SSM contract at deploy time, so after the apply, re-run CD (Actions → CD
+  → **Run workflow** on `main`).
+- **Usage.** After each deploy, check the stack's active series in Explore →
+  `grafanacloud-usage`: `grafanacloud_instance_active_series`. The expected count is in
+  [What's recorded](#whats-recorded), and why it briefly doubles is in
+  [The series budget](#the-series-budget).
 
 ## CloudWatch metrics in Grafana Cloud
 
