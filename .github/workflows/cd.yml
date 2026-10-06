@@ -373,34 +373,20 @@ jobs:
           aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --task-definition "$NEW_REVISION_ARN" >/dev/null
           aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
 
-  deploy-frontends:
-    # after the APIs — a frontend built against an API with 0 running tasks,
-    # or before its schema migration, is pointless (and it bakes the API URL
-    # in at build time, so it can't self-heal later).
-    # While parked deploy-services is skipped, and the frontends ship anyway:
-    # the public website doesn't depend on the APIs, and merchant-web is down
-    # with them regardless; the post-`up` CD re-run redeploys it against them.
-    needs: [guard, images-ready, verify-contracts, deploy-services]
-    if: >-
-      !cancelled() && needs.images-ready.result == 'success' &&
-      needs.verify-contracts.result == 'success' &&
-      (needs.deploy-services.result == 'success' ||
-       (needs.guard.outputs.parked == 'true' && needs.deploy-services.result == 'skipped'))
+  # Build now, publish later (OS-748): the frontends build alongside the image
+  # jobs, so the end of the pipeline is only the S3 sync + invalidation in
+  # deploy-frontends. Ungated (no `environment:`) — it touches nothing live, and
+  # VITE_STRIPE_PUBLISHABLE_KEY is a repo variable, not a production-environment
+  # one. storefront-web is not here: it's Ordersail's reference client for the
+  # public storefront-api — a merchant forks it and hosts their own shop, so it
+  # lives in its own public repo, not a first-party deploy target.
+  build-frontends:
+    needs: guard
+    if: needs.guard.outputs.proceed == 'true'
     runs-on: ubuntu-latest
-    environment: production
-    # storefront-web is not here: it's Ordersail's reference client for the
-    # public storefront-api — a merchant forks it and hosts their own shop, so
-    # it moves to its own public repo (see the "Extract storefront-web" Linear
-    # project), not a first-party deploy target.
     strategy:
       matrix:
-        include:
-          - app: merchant-web
-            ssm_prefix: merchant-web
-            site_type: spa
-          - app: website
-            ssm_prefix: website
-            site_type: astro
+        app: [merchant-web, website]
     steps:
       - uses: actions/checkout@v4
 
@@ -408,11 +394,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
 
       # honor packageManager (package.json) — node 22 ships npm 10, whose
       # `npm ci` can't reconcile this lockfile's `overrides`
@@ -435,6 +416,52 @@ jobs:
           # secret.
           VITE_STRIPE_PUBLISHABLE_KEY: ${{ vars.VITE_STRIPE_PUBLISHABLE_KEY }}
         run: npm run build --workspace=${{ matrix.app }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/dist
+          # a dotfile in public/ (e.g. .well-known/) must ship too — v4 drops
+          # hidden files by default
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-frontends:
+    # published after the APIs — a frontend live against an API with 0 running
+    # tasks, or before its schema migration, is pointless (and it bakes the API
+    # URL in at build time, so it can't self-heal later).
+    # While parked deploy-services is skipped, and the frontends ship anyway:
+    # the public website doesn't depend on the APIs, and merchant-web is down
+    # with them regardless; the post-`up` CD re-run redeploys it against them.
+    # Only publishes: build-frontends already built the dist/ it downloads.
+    needs: [guard, images-ready, verify-contracts, build-frontends, deploy-services]
+    if: >-
+      !cancelled() && needs.images-ready.result == 'success' &&
+      needs.verify-contracts.result == 'success' && needs.build-frontends.result == 'success' &&
+      (needs.deploy-services.result == 'success' ||
+       (needs.guard.outputs.parked == 'true' && needs.deploy-services.result == 'skipped'))
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      matrix:
+        include:
+          - app: merchant-web
+            ssm_prefix: merchant-web
+            site_type: spa
+          - app: website
+            ssm_prefix: website
+            site_type: astro
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/dist
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       # SPA (merchant-web): one index.html, everything else is a hashed asset.
       - name: Sync to S3 and invalidate CloudFront (SPA)
