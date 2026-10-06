@@ -338,12 +338,12 @@ tag the same in `docker-compose.yml` and the module.
 Fastify, so one instrumentation list covers them. The worker isn't traced yet (OS-704).
 
 **Off unless configured.** Nothing is registered or patched unless `OTEL_EXPORTER_OTLP_ENDPOINT`
-is set, so tests and CI run exactly as before. Local dev sets it to the local Tempo
-([Traces in local Grafana](#traces-in-local-grafana)); production sets it from Terraform
+is set, so tests and CI run exactly as before. Local dev sets it to the local Alloy, which
+forwards traces to Tempo ([Traces in local Grafana](#traces-in-local-grafana)); production sets it from Terraform
 ([Traces in production](#traces-in-production-grafana-cloud)). Set it to the base URL of any
 OTLP/HTTP receiver — the exporter appends `/v1/traces` — and, for a hosted backend, put its
 credentials in `OTEL_EXPORTER_OTLP_HEADERS`. The app only ever reads those two standard
-variables, so a local Tempo, Grafana Cloud or a collector are all just configuration.
+variables, so a local Alloy, Grafana Cloud or a collector are all just configuration.
 
 **What a request records.** One trace per request:
 
@@ -421,11 +421,14 @@ but no `pg` spans (or nothing at all), check that first.
 
 ### Traces in local Grafana
 
-`npm run up` also starts a local Tempo. Each API's `.env.example` points
-`OTEL_EXPORTER_OTLP_ENDPOINT` at it (`http://localhost:4318`); an existing `apps/<api>/.env`
-created before that line was there needs it added by hand, since `npm run setup` never
-overwrites. Under `npm run dev`, open <http://localhost:3300> → Explore → **Tempo**, then
-**Search**, or switch to **TraceQL**:
+`npm run up` also starts a local Tempo, behind a local **Alloy**. Each API's `.env.example`
+points `OTEL_EXPORTER_OTLP_ENDPOINT` at Alloy (`http://localhost:4318`). Alloy is the one OTLP
+endpoint for every signal: it sends traces on to Tempo and metrics to Prometheus
+(`docker/alloy/config.alloy`, OS-734). An existing `apps/<api>/.env` created before that line
+was there needs it added by hand, since `npm run setup` never overwrites. Alloy's UI at
+<http://localhost:12345> shows the pipeline graph and each component's health. Under
+`npm run dev`, open <http://localhost:3300> → Explore → **Tempo**, then **Search**, or switch
+to **TraceQL**:
 
 ```traceql
 { resource.service.name = "merchant-api" }                          # every trace
@@ -435,8 +438,8 @@ overwrites. Under `npm run dev`, open <http://localhost:3300> → Explore → **
 ```
 
 Traces show up a few seconds after the request (the exporter batches every 5s) and last
-until `npm run down`. If Tempo isn't running, merchant-api still starts and serves as usual;
-the spans are dropped, and stopping the service can take up to 2s longer while the exporter
+until `npm run down`. If Alloy or Tempo isn't running, merchant-api still starts and serves as
+usual; the spans are dropped, and stopping the service can take up to 2s longer while the exporter
 gives up. To turn tracing off locally, comment the line out or leave it empty
 (`OTEL_EXPORTER_OTLP_ENDPOINT=`).
 
@@ -576,6 +579,35 @@ negative value recorded on a counter) carry no signal name and log as `otel.sdk_
 ```logql
 {deployment_environment="production"} | json | event=~"metrics\\.(export_failed|sdk_errored)"
 ```
+
+### Metrics in local Grafana
+
+`npm run up` starts a local **Prometheus** (v3, `docker/prometheus/prometheus.yml`). It takes
+the place of Grafana Cloud Mimir and scrapes nothing. Metrics arrive by OTLP push through
+Alloy, the same endpoint as traces, so `startMetrics` needs no extra configuration locally.
+Open <http://localhost:3300> → Explore → **Prometheus**.
+
+The naming matches Mimir, so queries and dashboard JSON work in both places:
+
+- **Labels:** a resource's `service.name` becomes the `job` label, and `service.instance.id`
+  becomes `instance`. Other resource attributes live on the `target_info` series.
+- **Metric names:** dots become underscores, and the unit and type are added as suffixes. A
+  counter `orders.created` is `orders_created_total`, and a histogram `http.server.duration`
+  in seconds is `http_server_duration_seconds`.
+- **Histograms are native:** query them with `histogram_quantile(0.95,
+  sum(rate(x_seconds[5m])))` or `histogram_count(...)`. There are no `_bucket` series.
+
+```promql
+sum by (job) (rate(orders_created_total[5m]))         # a counter's rate per service
+count by (job) ({__name__=~".+", job!=""})            # active series per service (the budget)
+```
+
+Metrics last until `npm run down` and appear about a minute after they're recorded, since the
+export interval is 60s. Alloy's UI shows whether the `otelcol.exporter.otlphttp.prometheus`
+component is healthy.
+
+Exemplars (a histogram point → the trace that produced it) aren't wired yet: no app records
+any, so the Prometheus data source has no Tempo link (OS-762).
 
 ## CloudWatch metrics in Grafana Cloud
 

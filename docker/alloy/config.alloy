@@ -1,0 +1,45 @@
+// Local OTLP gateway for `npm run dev` (OS-734). The services export
+// everything to one endpoint (OTEL_EXPORTER_OTLP_ENDPOINT, published by
+// docker-compose.yml), and Alloy routes it by signal: traces to Tempo, metrics
+// to Prometheus. Logs don't come through here (yet): Fluent Bit ships them
+// straight to Loki (OS-738 moves them).
+//
+// Pipeline graph and live component state: Alloy's UI (ALLOY_UI_PORT).
+
+logging {
+  level = "warn"
+}
+
+otelcol.receiver.otlp "default" {
+  // what packages/tracing and packages/metrics speak: OTLP over HTTP, protobuf
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces  = [otelcol.processor.batch.default.input]
+    metrics = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    traces  = [otelcol.exporter.otlphttp.tempo.input]
+    metrics = [otelcol.exporter.otlphttp.prometheus.input]
+  }
+}
+
+// appends /v1/traces
+otelcol.exporter.otlphttp "tempo" {
+  client {
+    endpoint = "http://tempo:4318"
+  }
+}
+
+// Prometheus's native OTLP receiver; appends /v1/metrics. Exponential
+// histograms land as native histograms, the same as Grafana Cloud Mimir.
+otelcol.exporter.otlphttp "prometheus" {
+  client {
+    endpoint = "http://prometheus:9090/api/v1/otlp"
+  }
+}

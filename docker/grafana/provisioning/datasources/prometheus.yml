@@ -1,0 +1,17 @@
+# Local Grafana's metrics data source: the local Prometheus that Alloy pushes
+# `npm run dev` metrics to (docker/alloy/config.alloy). Stands in for Grafana
+# Cloud Mimir; never points at it.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    jsonData:
+      # matches the 60s export interval (packages/metrics): a step below that
+      # would draw gaps between points
+      timeInterval: 60s
+      # no exemplarTraceIdDestinations → Tempo yet: no app records exemplars
+      # (OS-762)
