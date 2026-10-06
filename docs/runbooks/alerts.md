@@ -17,7 +17,7 @@ Two SNS topics, created in `infra/terraform/envs/production/monitoring.tf`:
 
 | Topic | ARN name | Subscribers | Use for |
 |---|---|---|---|
-| **critical** | `ordersail-alerts-critical` | email (+ SMS once the sandbox is exited) | will page (OS-732) — a human needs to act now |
+| **critical** | `ordersail-alerts-critical` | email (+ SMS once the sandbox is exited) | pages — a human needs to act now |
 | **warning** | `ordersail-alerts-warning` | email | elevated but not down; look when convenient |
 
 ### Adding / changing recipients
@@ -109,8 +109,8 @@ Each row is added or removed by its issue's PR. `→` is the topic the alarm not
 
 The log-based alarms, _alert lines_ and _error lines_ (OS-99), were deleted in OS-731.
 They were CloudWatch metric filters on the service log groups, which nothing has written to
-since the move to Grafana Cloud Loki (OS-699/OS-700), so they could never fire. They come back
-as Grafana Loki alert rules before launch (OS-732).
+since the move to Grafana Cloud Loki (OS-699/OS-700), so they could never fire. Their
+replacement, Grafana Loki alert rules, is part of turning paging back on (the note at the top).
 
 ## When "order-job dead-letter" fires
 
@@ -126,15 +126,14 @@ unresolved count (`failedOrderRecorded: false` if the row write failed too).
    `OrderJobData` — it does not touch Redis/BullMQ.
 3. Cross-check the Stripe payment intent to confirm the charge before/after.
 
-The worker publishes a dead-letter straight to `ordersail-alerts-critical`, but **while paging
-is off that topic has no subscribers, so a dead-letter notifies nobody**. Check the
-failed-orders view and the `alert: true` lines below. Once paging is back on, that publish is
-the only notification; until the Loki alert rule (OS-732) exists, nothing backs it up if it fails.
+The worker publishes a dead-letter straight to `ordersail-alerts-critical`, which reaches
+someone only while paging is on (the note at the top). No log-based alert backs that publish
+up, so also check the failed-orders view and the `alert: true` lines below.
 
 ## `alert: true` lines
 
-A line with `alert: true` means a human has to act. Nothing pages on these yet (OS-732).
-Find them in Grafana Cloud Loki:
+A line with `alert: true` means a human has to act. No alert rule reads these lines (see the
+note at the top), so find them in Grafana Cloud Loki:
 
 ```logql
 {deployment_environment="production"} | json | alert="true"

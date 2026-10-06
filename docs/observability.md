@@ -17,7 +17,7 @@ NestJS service (`merchant-api`, `storefront-api`, `pos-api`, `worker`) and anyth
 | **pino → Grafana Cloud Loki** | *What happened, step by step?* — searched on demand | this doc, [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **CloudWatch Logs** | the migrator's output, Fluent Bit's own output, and service logs from before the move to Loki | [Log shipping](#log-shipping-to-grafana-cloud-loki) |
 | **Sentry** | *What broke, how often, since which release?* — alerts us | not yet integrated (OS-67–72) |
-| **CloudWatch alarms → SNS** | *Is something down / over threshold?* — will page us (OS-732) | paging **off** pre-launch (OS-731); `docs/runbooks/alerts.md` |
+| **CloudWatch alarms → SNS** | *Is something down / over threshold?* — pages us | `docs/runbooks/alerts.md`, whose top note says whether paging is on |
 | **OpenTelemetry traces** | *Where did the time go inside a request?* | merchant-api, storefront-api, pos-api (not the worker yet); off unless an OTLP endpoint is set — [Traces](#traces) |
 
 The **correlation ID** ties them together: it's the `x-request-id` response header, the
@@ -65,7 +65,7 @@ In local dev the same data is pretty-printed.
 | `event` | caller | stable dotted name, see below |
 | domain IDs | caller | `orderId`, `jobId`, `queue`, `disputeId`, `chargeId`, `stripeEventId`… — top-level, camelCase |
 | `err` | caller | the Error object; serialized to `type`, `message`, `stack` (+ safe provider fields) |
-| `alert` | caller | `true` when a human must act — the hook for the Grafana alert rule that pages (launch blocker OS-732) |
+| `alert` | caller | `true` when a human must act now — a paging decision ([Event names](#event-names)) |
 | `trace_id`, `span_id` | `mixin()` in `packages/logging`, from the active span | only while a sampled span is active — inside a traced request; absent at boot, in untraced services and in the worker (OS-95). The access line carries the HTTP server span's IDs |
 
 Request-context fields (`correlationId`, `accountId`, `userId`, …) are attached automatically
@@ -148,11 +148,9 @@ Examples: `order.created`, `order_job.dead_lettered`, `checkout.session_created`
 `alert: true` lines today: `order_job.dead_lettered` (a paid checkout with no order) and
 `dispute.opened`. Both log at `error`. Grep the code for `alert: true` for the current list.
 
-`alert: true` is a paging decision — set it only when a human must act now. **Nothing pages
-on it today.** The CloudWatch log alarms that used to (OS-99) were deleted in OS-731: since the
-move to Loki nothing writes to the service log groups, so they could never fire. They come
-back as Grafana Loki alert rules before launch (OS-732). Until then, find these lines with
-the `alert="true"` query in [Tracing a bug](#tracing-a-bug). Runbook: `docs/runbooks/alerts.md`.
+`alert: true` is a paging decision — set it only when a human must act now. What alerts on
+these lines, and whether paging is on, is in `docs/runbooks/alerts.md`. Find them with the
+`alert="true"` query in [Tracing a bug](#tracing-a-bug).
 
 ## Levels
 
@@ -288,8 +286,7 @@ app is unchanged — it still just writes JSON to stdout.
 - **When lines are missing**, read Fluent Bit's own output in the CloudWatch log group
   `/ecs/ordersail-log-router` — a rejected token or an unreachable Loki only shows up there.
 - The services no longer write to their CloudWatch log groups, so the Logs Insights saved
-  queries see no new lines, and the log-based alarms (OS-99) were deleted (OS-731). Nothing
-  pages on a log line; Grafana Loki alert rules are the replacement (OS-732, before launch).
+  queries see no new lines. The log-based alarms that read them (OS-99) were deleted in OS-731.
 
 ### Logs in local Grafana
 
