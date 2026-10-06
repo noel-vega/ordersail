@@ -56,10 +56,22 @@ jobs:
             npx nx affected -t ${{ matrix.targets }} --exclude=pos
           fi
 
+  # merchant-api's jest suite is serial by design (maxWorkers: 1 — every spec
+  # shares one Testcontainers Postgres): 63 suites / ~107s even on its own
+  # runner. So it's sharded across runners (`jest --shard`), each with its own
+  # Testcontainers DB; everything else is one leg (OS-763). All legs need Redis.
   verify-test:
+    name: verify-test (${{ matrix.leg }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
     runs-on: ubuntu-latest
     env:
       NX_NO_CLOUD: "true"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { leg: merchant-api, shard: 1/2 }
+          - { leg: merchant-api, shard: 2/2 }
+          - { leg: rest }
     services:
       # storefront-api/merchant-api/worker all connect to a real Redis for
       # BullMQ (see packages/queue's bullmqConnectionOptions) — without this,
@@ -89,17 +101,28 @@ jobs:
       # written for (OS-652 / OS-654 / OS-560). Pure fixtures — no AWS, no
       # network — so it belongs on every PR, not just in CD.
       - name: Verify the task-def contract guard still catches its regressions
+        if: matrix.leg == 'rest'
         run: node scripts/verify-taskdef-contracts.mjs --self-test
 
       - name: nx test
         # `test` boots a throwaway Postgres via Testcontainers (jest
         # globalSetup in packages/test-support) — ubuntu-latest has Docker.
         # pos-api still mocks the DB.
+        #
+        # `nx affected -t test -p merchant-api` ignores -p and runs every
+        # affected project's tests; `nx show projects --affected -p` does honour
+        # it, so the merchant-api leg asks first and then runs just that project.
         run: |
-          if [ "${{ inputs.run_all }}" = "true" ]; then
-            npx nx run-many -t test --exclude=pos
+          if [ "${{ matrix.leg }}" = "merchant-api" ]; then
+            if [ "${{ inputs.run_all }}" = "true" ] || [ "$(npx nx show projects --affected -p merchant-api --json)" != "[]" ]; then
+              npx nx run merchant-api:test -- --shard=${{ matrix.shard }}
+            else
+              echo "merchant-api not affected — nothing to test"
+            fi
+          elif [ "${{ inputs.run_all }}" = "true" ]; then
+            npx nx run-many -t test --exclude=pos,merchant-api
           else
-            npx nx affected -t test --exclude=pos
+            npx nx affected -t test --exclude=pos,merchant-api
           fi
 
   # The required check (ruleset 23005419). Explicit `always()` + result checks:
@@ -115,7 +138,7 @@ jobs:
           TEST_RESULT: ${{ needs.verify-test.result }}
         run: |
           echo "verify-nx (lint, types): $NX_RESULT"
-          echo "verify-test:             $TEST_RESULT"
+          echo "verify-test (merchant-api, rest): $TEST_RESULT"
           if [ "$NX_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ]; then
             echo "::error::a verify leg did not succeed"
             exit 1
