@@ -207,3 +207,33 @@ jobs:
           # LRU-evict main's layers, leaving CD to build cold (OS-743). Only
           # cd.yml's build-and-push, running on main, writes these scopes.
           cache-from: type=gha,scope=${{ matrix.scope }}
+
+  # The one required check for the image builds. Branch protection can't
+  # require the per-target checks: a skipped matrix never expands, so a PR
+  # that builds none (or only some) of them would wait on the rest forever.
+  # Always runs, and passes only when every selected image built, or none
+  # were selected.
+  docker-smoke-build-result:
+    needs: [affected-images, docker-smoke-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          SELECT_RESULT: ${{ needs.affected-images.result }}
+          IMAGES: ${{ needs.affected-images.outputs.images }}
+          BUILD_RESULT: ${{ needs.docker-smoke-build.result }}
+        run: |
+          set -euo pipefail
+          echo "affected-images: $SELECT_RESULT ($IMAGES)"
+          echo "docker-smoke-build: $BUILD_RESULT"
+          if [ "$SELECT_RESULT" != "success" ]; then
+            echo "::error::image selection did not succeed"
+            exit 1
+          fi
+          if [ "$IMAGES" = "[]" ] && [ "$BUILD_RESULT" = "skipped" ]; then
+            exit 0
+          fi
+          if [ "$BUILD_RESULT" != "success" ]; then
+            echo "::error::docker-smoke-build $BUILD_RESULT"
+            exit 1
+          fi
