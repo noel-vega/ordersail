@@ -22,6 +22,7 @@
   "devDependencies": {
     "@types/node": "^26.6.4",
     "logging": "*",
+    "test-support": "*",
     "typescript": "^5.9.3"
   },
   "dependencies": {

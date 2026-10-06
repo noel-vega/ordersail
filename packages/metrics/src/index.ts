@@ -58,7 +58,9 @@ export function createViews(): ViewOptions[] {
 
 // OTLP over HTTP/protobuf to <OTEL_EXPORTER_OTLP_ENDPOINT>/v1/metrics, with
 // OTEL_EXPORTER_OTLP_HEADERS — the same variables as traces, read by the
-// exporter itself. Cumulative: what Mimir's OTLP ingest expects.
+// exporter itself. The standard OTEL_EXPORTER_OTLP_METRICS_ENDPOINT, if set,
+// wins and is used as the full URL, nothing appended. Cumulative: what Mimir's
+// OTLP ingest expects.
 export function createExporter(): PushMetricExporter {
   return new OTLPMetricExporter({ temporalityPreference: AggregationTemporality.CUMULATIVE });
 }
@@ -158,6 +160,8 @@ export async function shutdownMetrics(timeoutMs = 2000): Promise<void> {
   const timeout = new Promise<void>((resolve) => {
     timer = setTimeout(resolve, timeoutMs);
   });
+  // When the timeout wins, current.shutdown() is left running in the
+  // background: the process is exiting, and the provider is already detached.
   await Promise.race([current.shutdown().catch(() => undefined), timeout]);
   clearTimeout(timer);
   metrics.disable();

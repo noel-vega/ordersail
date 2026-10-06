@@ -526,12 +526,16 @@ service calls `startMetrics` yet; the Node runtime metrics are the first (OS-735
 
 - **Off unless configured.** It starts only when `OTEL_EXPORTER_OTLP_ENDPOINT` (or
   `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`) is set. The same endpoint and `OTEL_EXPORTER_OTLP_HEADERS`
-  as traces are used, and the exporter appends `/v1/metrics`. **`OTEL_METRICS_EXPORTER=none`**
+  as traces are used, and the exporter appends `/v1/metrics`. `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`
+  overrides it and is the full URL — nothing is appended. **`OTEL_METRICS_EXPORTER=none`**
   keeps metrics off even with the endpoint set. Production already sets the endpoint for traces,
   so this is how the two are switched on separately (OS-736).
 - **Export:** OTLP over HTTP/protobuf every 60s (`OTEL_METRIC_EXPORT_INTERVAL` overrides it),
   plus a final export on shutdown, bounded so a dead backend can't hold the process.
   Temporality is cumulative.
+- **Resource:** `service.name`, `deployment.environment` (shared with traces through
+  `tracing/resource`) and a per-process `service.instance.id`. There's no `service.version` yet,
+  for traces either: nothing passes the image version to the process.
 - **Histograms are exponential.** Mimir stores them as native histograms: a few series each,
   not one per fixed bucket. A fixed-bucket histogram needs a recorded reason.
 

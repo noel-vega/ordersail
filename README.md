@@ -100,6 +100,7 @@ An Nx-managed npm workspace monorepo.
 | `packages/logging` | pino logger + correlation-ID context shared by the NestJS apps (see `docs/observability.md`) | pino |
 | `packages/errors` | The API error envelope ([ADR 0001](./docs/adr/0001-api-error-envelope.md)) — code registry, `ApiException`, `useApiErrors` (validation + the global filter every API registers), OpenAPI `ErrorResponse` | NestJS |
 | `packages/tracing` | OpenTelemetry setup — pinned instrumentations (HTTP, Fastify, pg), span-attribute allow-list, OTLP export; off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set (see `docs/observability.md`) | OpenTelemetry |
+| `packages/metrics` | OpenTelemetry metrics setup — OTLP export to Mimir, exponential histograms, attribute allow-list + per-metric series cap; off unless an OTLP endpoint is set and `OTEL_METRICS_EXPORTER` isn't `none` (see `docs/observability.md`) | OpenTelemetry |
 | `packages/seed` | Local dev seed — demo "Sneaker Depot" catalog + images | tsx |
 | `packages/ui` | Shared component library used by both React apps | React, Tailwind |
 

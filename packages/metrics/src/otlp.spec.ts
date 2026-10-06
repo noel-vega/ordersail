@@ -3,16 +3,11 @@ import { after, describe, it, type TestContext } from 'node:test';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { metrics } from '@opentelemetry/api';
+import { saveEnv } from 'test-support/env';
 import { shutdownMetrics, startMetrics } from './index.ts';
 
 const ENV_KEYS = ['OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_METRICS_EXPORTER'] as const;
-const savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
-after(() => {
-  for (const key of ENV_KEYS) {
-    if (savedEnv[key] === undefined) delete process.env[key];
-    else process.env[key] = savedEnv[key];
-  }
-});
+after(saveEnv(ENV_KEYS));
 delete process.env.OTEL_METRICS_EXPORTER;
 
 describe('export over OTLP', () => {

@@ -1,16 +1,11 @@
 import { strict as assert } from 'node:assert';
 import { after, describe, it } from 'node:test';
 import { metrics } from '@opentelemetry/api';
+import { saveEnv } from 'test-support/env';
 import { flushMetrics, shutdownMetrics, startMetrics } from './index.ts';
 
 const ENV_KEYS = ['OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_METRICS_ENDPOINT', 'OTEL_METRICS_EXPORTER'] as const;
-const savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
-after(() => {
-  for (const key of ENV_KEYS) {
-    if (savedEnv[key] === undefined) delete process.env[key];
-    else process.env[key] = savedEnv[key];
-  }
-});
+after(saveEnv(ENV_KEYS));
 
 describe('metrics off', () => {
   it('does nothing when no OTLP endpoint is set, or it is empty', async () => {

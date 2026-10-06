@@ -11,7 +11,7 @@ import { flushMetrics, shutdownMetrics, startMetrics } from './index.ts';
 
 afterEach(() => shutdownMetrics(0));
 
-function started(): InMemoryMetricExporter {
+function startedWithMemoryExporter(): InMemoryMetricExporter {
   const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
   assert.equal(startMetrics({ service: 'spec', exporter }), true);
   return exporter;
@@ -26,7 +26,7 @@ function metricNamed(batches: ResourceMetrics[], name: string) {
 
 describe('what a recorded metric becomes', () => {
   it('drops every attribute that is not on the allow-list', async () => {
-    const exporter = started();
+    const exporter = startedWithMemoryExporter();
     const requests = metrics.getMeter('spec').createCounter('spec.requests');
     requests.add(1, { accountId: 42, 'http.route': '/orders/:id' });
     requests.add(1, { accountId: 43, userId: 7 });
@@ -40,7 +40,7 @@ describe('what a recorded metric becomes', () => {
   });
 
   it('records a histogram as an exponential histogram', async () => {
-    const exporter = started();
+    const exporter = startedWithMemoryExporter();
     const latency = metrics.getMeter('spec').createHistogram('spec.duration', { unit: 's' });
     for (const seconds of [0.004, 0.02, 0.3, 1.5]) latency.record(seconds);
     await flushMetrics();
@@ -53,7 +53,7 @@ describe('what a recorded metric becomes', () => {
   });
 
   it('tags every series with the service, its environment and a per-process instance', async () => {
-    const exporter = started();
+    const exporter = startedWithMemoryExporter();
     metrics.getMeter('spec').createCounter('spec.ticks').add(1);
     await flushMetrics();
 
@@ -64,13 +64,13 @@ describe('what a recorded metric becomes', () => {
   });
 
   it('a new process gets a new instance', async () => {
-    let exporter = started();
+    let exporter = startedWithMemoryExporter();
     metrics.getMeter('spec').createCounter('spec.ticks').add(1);
     await flushMetrics();
     const first = exporter.getMetrics()[0].resource.attributes['service.instance.id'];
     await shutdownMetrics(0);
 
-    exporter = started();
+    exporter = startedWithMemoryExporter();
     metrics.getMeter('spec').createCounter('spec.ticks').add(1);
     await flushMetrics();
     assert.notEqual(exporter.getMetrics()[0].resource.attributes['service.instance.id'], first);

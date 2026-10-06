@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { metrics } from '@opentelemetry/api';
 import type { PushMetricExporter } from '@opentelemetry/sdk-metrics';
 import { captureLogs } from 'logging/test-helpers';
+import { saveEnv } from 'test-support/env';
 import { shutdownMetrics, startMetrics } from './index.ts';
 
 // Export failures reach the logs through the diag logger packages/logging
@@ -16,13 +17,7 @@ const ENV_KEYS = [
   'OTEL_EXPORTER_OTLP_HEADERS',
   'OTEL_METRICS_EXPORTER',
 ] as const;
-const savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
-after(() => {
-  for (const key of ENV_KEYS) {
-    if (savedEnv[key] === undefined) delete process.env[key];
-    else process.env[key] = savedEnv[key];
-  }
-});
+after(saveEnv(ENV_KEYS));
 process.env.OTEL_METRIC_EXPORT_INTERVAL = '50';
 delete process.env.OTEL_METRICS_EXPORTER;
 
