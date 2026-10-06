@@ -52,6 +52,40 @@
           ]
         },
         "hide": 0
+      },
+      {
+        "name": "targetgroup",
+        "label": "Target group",
+        "type": "query",
+        "datasource": {
+          "type": "cloudwatch",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "refId": "CloudWatchVariableQueryEditor-VariableQuery",
+          "queryType": "dimensionValues",
+          "region": "default",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "RequestCount",
+          "dimensionKey": "TargetGroup",
+          "dimensionFilters": {
+            "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc"
+          }
+        },
+        "regex": "/(?<value>targetgroup\\/(?:${service:regex})-tg\\/.*)/",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 1,
+        "hide": 2
       }
     ]
   },
@@ -334,9 +368,9 @@
           "metricName": "RequestCount",
           "dimensions": {
             "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
-            "TargetGroup": "*"
+            "TargetGroup": "$targetgroup"
           },
-          "matchExact": false,
+          "matchExact": true,
           "statistic": "Sum",
           "period": "",
           "id": "",
@@ -408,9 +442,9 @@
           "metricName": "TargetResponseTime",
           "dimensions": {
             "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
-            "TargetGroup": "*"
+            "TargetGroup": "$targetgroup"
           },
-          "matchExact": false,
+          "matchExact": true,
           "statistic": "p50",
           "period": "",
           "id": "",
@@ -431,9 +465,9 @@
           "metricName": "TargetResponseTime",
           "dimensions": {
             "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
-            "TargetGroup": "*"
+            "TargetGroup": "$targetgroup"
           },
-          "matchExact": false,
+          "matchExact": true,
           "statistic": "p95",
           "period": "",
           "id": "",
@@ -454,9 +488,9 @@
           "metricName": "TargetResponseTime",
           "dimensions": {
             "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
-            "TargetGroup": "*"
+            "TargetGroup": "$targetgroup"
           },
-          "matchExact": false,
+          "matchExact": true,
           "statistic": "p99",
           "period": "",
           "id": "",
@@ -528,9 +562,9 @@
           "metricName": "HealthyHostCount",
           "dimensions": {
             "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
-            "TargetGroup": "*"
+            "TargetGroup": "$targetgroup"
           },
-          "matchExact": false,
+          "matchExact": true,
           "statistic": "Minimum",
           "period": "",
           "id": "",
@@ -551,9 +585,9 @@
           "metricName": "UnHealthyHostCount",
           "dimensions": {
             "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
-            "TargetGroup": "*"
+            "TargetGroup": "$targetgroup"
           },
-          "matchExact": false,
+          "matchExact": true,
           "statistic": "Maximum",
           "period": "",
           "id": "",
@@ -625,9 +659,9 @@
           "metricName": "HTTPCode_Target_4XX_Count",
           "dimensions": {
             "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
-            "TargetGroup": "*"
+            "TargetGroup": "$targetgroup"
           },
-          "matchExact": false,
+          "matchExact": true,
           "statistic": "Sum",
           "period": "",
           "id": "",
@@ -648,9 +682,9 @@
           "metricName": "HTTPCode_Target_5XX_Count",
           "dimensions": {
             "LoadBalancer": "app/ordersail-api/2ba61b99d891c2dc",
-            "TargetGroup": "*"
+            "TargetGroup": "$targetgroup"
           },
-          "matchExact": false,
+          "matchExact": true,
           "statistic": "Sum",
           "period": "",
           "id": "",
