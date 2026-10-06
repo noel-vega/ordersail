@@ -33,8 +33,12 @@ describe('envSchema — OpenTelemetry export', () => {
   });
 
   it('takes `none` or `otlp` for OTEL_METRICS_EXPORTER, nothing else', () => {
-    expect(otel.parse({ OTEL_METRICS_EXPORTER: 'none' }).OTEL_METRICS_EXPORTER).toBe('none');
-    expect(otel.parse({ OTEL_METRICS_EXPORTER: 'otlp' }).OTEL_METRICS_EXPORTER).toBe('otlp');
+    expect(
+      otel.parse({ OTEL_METRICS_EXPORTER: 'none' }).OTEL_METRICS_EXPORTER,
+    ).toBe('none');
+    expect(
+      otel.parse({ OTEL_METRICS_EXPORTER: 'otlp' }).OTEL_METRICS_EXPORTER,
+    ).toBe('otlp');
     // a typo must not silently leave metrics on in production
     expect(() => otel.parse({ OTEL_METRICS_EXPORTER: 'off' })).toThrow();
   });
