@@ -554,6 +554,12 @@ resource (database rows, S3 objects, secrets), or change anything.
 dashboard refresh at **1m or slower**, never 5s. While the environment is parked (OS-379),
 Container Insights is off and its panels show gaps, which is expected.
 
+**Expected test result: part 1 passes, part 2 fails.** Save & test reports "1. Successfully
+queried the CloudWatch metrics API" and then "2. CloudWatch logs query failed: …
+AccessDeniedException … logs:DescribeLogGroups". That second line is the role refusing logs,
+as designed: service logs live in Loki. The data source is saved, and every metrics panel
+works. Don't add `logs:*` to make the test go green.
+
 **If the test fails:** "not authorized to perform sts:AssumeRole" means the external ID or
 account ID in tfvars doesn't match the Settings tab, or the apply hasn't run. An
 `AccessDenied` on a specific action means the panel needs a permission the role doesn't have;
