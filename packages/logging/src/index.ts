@@ -495,21 +495,36 @@ export class Logger implements LoggerService {
 //   is what marks it as `tracing.export_failed`.
 // - Any other diag.error — an instrumentation's own (HTTP, pg) — is
 //   `tracing.sdk_errored`, so it doesn't send anyone after the token.
+// - Metrics (packages/metrics) report through the same diag logger, and only
+//   the PeriodicExportingMetricReader's own wording tells them apart: a failed
+//   export reaches the handler as an Error whose message starts with
+//   METRICS_READER, and a timeout as a plain diag string with that prefix.
+//   Those become `metrics.export_failed` / `metrics.sdk_errored`, so a metrics
+//   problem never reads as "Trace export failed". The reader folds the
+//   exporter's error into its message as text, so these lines carry no
+//   separate `err.code`; the HTTP status is in `err.message`.
 //
 // Only string arguments (a component logger's namespace, then the message) and
 // an Error reach the line. Other arguments are dropped: instrumentation-pg
 // passes the query's parameter values to diag.error when it can't stringify them.
 const otelLogger = new Logger('OpenTelemetry');
 
+const METRICS_READER = 'PeriodicExportingMetricReader';
+
 const otelDiagLogger: DiagLogger = {
   error: (message, ...args) => {
     const exported = exportErrorFrom(message);
+    if (exported?.message.startsWith(`${METRICS_READER}: metrics export failed`)) {
+      otelLogger.warn({ event: 'metrics.export_failed', err: exported }, 'Metric export failed');
+      return;
+    }
     if (exported) {
       otelLogger.warn({ event: 'tracing.export_failed', err: exported }, 'Trace export failed');
       return;
     }
     const [fields, text] = diagLine(message, args);
-    otelLogger.warn({ event: 'tracing.sdk_errored', ...fields }, text);
+    const event = message.startsWith(METRICS_READER) ? 'metrics.sdk_errored' : 'tracing.sdk_errored';
+    otelLogger.warn({ event, ...fields }, text);
   },
   warn: (message, ...args) => {
     const [fields, text] = diagLine(message, args);

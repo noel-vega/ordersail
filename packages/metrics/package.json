@@ -1,0 +1,35 @@
+{
+  "name": "metrics",
+  "version": "1.0.0",
+  "description": "OpenTelemetry metrics setup shared by the NestJS services: OTLP export, exponential histograms, and the attribute allow-list. Off unless an OTLP endpoint is set.",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.spec.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "logging": "*",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-metrics-otlp-proto": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "dotenv": "^17.4.2",
+    "tracing": "*"
+  }
+}
