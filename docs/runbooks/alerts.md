@@ -3,6 +3,14 @@
 How production tells us something is wrong, and what to do when it does.
 Part of the **Observability & alerting** Linear project (M1 — "Know when it breaks").
 
+> **Paging is off pre-launch (OS-731).** `alert_paging_enabled` defaults to `false`
+> (`infra/terraform/envs/production/variables.tf`), which removes every SNS subscription, so the
+> alarms below still evaluate and publish to the topics, but nobody is notified. Their state
+> is in the CloudWatch console. With no users and the environment parked most of the time,
+> pages were noise. **Turning it back on is a launch blocker (OS-732)**: flip the default to `true`,
+> `terraform apply`, and click the SNS confirmation email again for each address. A deleted
+> subscription doesn't come back confirmed.
+
 ## Channels
 
 Two SNS topics, created in `infra/terraform/envs/production/monitoring.tf`:
@@ -39,7 +47,8 @@ aws secretsmanager put-secret-value --region us-east-1 \
   --secret-string '{"emails":["you@example.com","oncall@example.com"],"sms":[]}'
 ```
 
-Then `terraform apply` (adds/removes `aws_sns_topic_subscription.email`), and **click
+Then `terraform apply` (adds/removes `aws_sns_topic_subscription.email`; none while
+`alert_paging_enabled` is `false`), and **click
 "Confirm subscription"** in each "AWS Notification - Subscription Confirmation" email from
 `no-reply@sns.amazonaws.com`. Unconfirmed subscriptions receive nothing — and the mail
 often lands in **Spam** or Gmail's **Promotions** tab.
@@ -57,7 +66,8 @@ production access, set a spending limit, then add them to the secret's `sms` arr
 CRIT=$(terraform -chdir=infra/terraform/envs/production output -raw alerts_critical_topic_arn)
 aws sns publish --topic-arn "$CRIT" --subject "test" --message "alert channel test $(date)"
 ```
-The confirmed email addresses should receive it within a minute.
+The confirmed email addresses should receive it within a minute. While paging is off, the
+topics have no subscribers and the publish goes nowhere.
 
 ## Silencing during maintenance
 
@@ -78,7 +88,7 @@ aws cloudwatch set-alarm-state --alarm-name ordersail-<name> --state-value OK \
 
 ## Alarm inventory
 
-Each row is added by its issue's PR. `→` is the topic the alarm notifies.
+Each row is added or removed by its issue's PR. `→` is the topic the alarm notifies.
 
 | Alarm | Source | Fires when | → |
 |---|---|---|---|
@@ -94,10 +104,13 @@ Each row is added by its issue's PR. `→` is the topic the alarm notifies.
 | _ElastiCache evictions_ | OS-79 | `Evictions` > 0 for 5 min | critical |
 | _ElastiCache CPU / swap / connections_ | OS-79 | sustained high | warning |
 | _Order-job dead-letter_ | OS-73 `apps/worker` | an `orders` job exhausts all 8 attempts | critical |
-| _Alert lines_ | OS-99 `modules/ecs-service` | the service logs any `alert: true` line (≥1 in 5 min) | critical |
-| _Error lines_ | OS-99 `modules/ecs-service` | > 10 `error`/`fatal` lines in 5 min (per service, `alarm_error_lines_threshold`) | warning |
 | _SES bounce rate_ | OS-659 `envs/production/ses.tf` | account `Reputation.BounceRate` > 2% (warning) / > 4% (critical) | warning / critical |
 | _SES complaint rate_ | OS-659 `envs/production/ses.tf` | account `Reputation.ComplaintRate` > 0.05% (warning) / > 0.08% (critical) | warning / critical |
+
+The log-based alarms, _alert lines_ and _error lines_ (OS-99), were deleted in OS-731.
+They were CloudWatch metric filters on the service log groups, which nothing has written to
+since the move to Grafana Cloud Loki (OS-699/OS-700), so they could never fire. Their
+replacement, Grafana Loki alert rules, is part of turning paging back on (the note at the top).
 
 ## When "order-job dead-letter" fires
 
@@ -113,40 +126,26 @@ unresolved count (`failedOrderRecorded: false` if the row write failed too).
    `OrderJobData` — it does not touch Redis/BullMQ.
 3. Cross-check the Stripe payment intent to confirm the charge before/after.
 
-A dead-letter also trips **alert lines** on the worker (`ordersail-worker-alert-lines`), so
-it arrives twice: the worker's direct SNS page with the details, and the alarm. The alarm is
-the backstop for when the worker's own SNS publish fails.
+The worker publishes a dead-letter straight to `ordersail-alerts-critical`, which reaches
+someone only while paging is on (the note at the top). No log-based alert backs that publish
+up, so also check the failed-orders view and the `alert: true` lines below.
 
-## When "alert lines" fires
+## `alert: true` lines
 
-Alarm `ordersail-<service>-alert-lines`. The service logged a line with `alert: true` — a
-human has to act. Find it with the saved Logs Insights query **`ordersail/Alerts`** (see
-[Tracing a bug](../observability.md#tracing-a-bug)); the `service` column shows which one.
+A line with `alert: true` means a human has to act. No alert rule reads these lines (see the
+note at the top), so find them in Grafana Cloud Loki:
 
+```logql
+{deployment_environment="production"} | json | alert="true"
+```
+
+`service_name` shows which service logged it ([Tracing a bug](../observability.md#tracing-a-bug)).
 Then follow the `event`:
 
 | `event` | Service | Runbook |
 |---|---|---|
 | `order_job.dead_lettered` | worker | [When "order-job dead-letter" fires](#when-order-job-dead-letter-fires) above |
 | `dispute.opened` | merchant-api | `docs/runbooks/refunds-disputes.md` |
-
-The alarm returns to OK after a 5-minute window with no `alert: true` lines, so an OK
-notification doesn't mean the problem is fixed — only that no new line was logged.
-
-## When "error lines" fires
-
-Alarm `ordersail-<service>-error-lines`, warning topic. More than 10 error-level lines in 5
-minutes — something is failing repeatedly, but nothing asked for a page. Group them with the
-saved query **`ordersail/Errors by service`**.
-
-Take one line's `correlationId` and pull the whole request with **`ordersail/Request
-timeline`**. If a service is legitimately noisy, raise its
-`alarm_error_lines_threshold` on the `ecs_service_*` module call in
-`infra/terraform/envs/production/main.tf` rather than silencing the alarm.
-
-Both log alarms treat missing data as OK, so a service with no log lines — including one
-parked by the environment on/off switch (OS-380) — never fires them. They don't need
-disarming in `environment.yml`.
 
 ## When "SES bounce/complaint rate" fires
 
@@ -192,9 +191,8 @@ calls the **SES API with its ECS task role** (no SMTP, no credentials, OS-658). 
 > OS-61). Only verified addresses receive mail. See
 > [Adding a test inbox](#while-in-the-sandbox-adding-a-test-inbox).
 
-A failing email is quiet: two `email_job.*` lines per email don't reach the
-[error lines](#when-error-lines-fires) threshold, and no alarm watches email failures yet
-(OS-87). On 2026-09-27 a lapsed identity verification silently stopped all prod email. Start
+A failing email is quiet: nothing alerts on error lines, and no alarm watches email
+failures yet (OS-87). On 2026-09-27 a lapsed identity verification silently stopped all prod email. Start
 here when someone says an email never arrived.
 
 ### 1. Did the worker send it?

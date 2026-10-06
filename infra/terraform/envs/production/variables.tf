@@ -65,6 +65,12 @@ variable "environment_on" {
 # alerts-recipients.tf. A *.auto.tfvars only loads from the directory `terraform`
 # runs in, so an apply from a fresh checkout silently created zero subscriptions.
 
+variable "alert_paging_enabled" {
+  description = "Subscribe the alert recipients to the SNS topics (alerts-recipients.tf). false (the default, pre-launch — OS-731) keeps every alarm and both topics but removes the subscriptions, so nothing pages anyone. Flipping the default to true is the launch blocker OS-732; each email address must click the SNS confirmation link again."
+  type        = bool
+  default     = false
+}
+
 variable "google_site_verification" {
   description = "Google Workspace domain-verification TXT value, e.g. \"google-site-verification=…\" (OS-665). Public; from the Workspace admin console."
   type        = string
