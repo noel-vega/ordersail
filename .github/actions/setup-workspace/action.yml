@@ -37,10 +37,14 @@ runs:
         key: node-modules-${{ runner.os }}-${{ runner.arch }}-node22-npm11-${{ hashFiles('package-lock.json', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
 
     # honor packageManager (package.json) — node 22 ships npm 10, whose
-    # `npm ci` can't reconcile this lockfile's `overrides`
+    # `npm ci` can't reconcile this lockfile's `overrides`. Installed on a hit
+    # too, so later steps see the same npm whether the cache was warm or cold.
+    - shell: bash
+      run: npm install -g npm@11
+
     - if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
-      run: npm install -g npm@11 && npm ci
+      run: npm ci
 
     - if: steps.restore.outputs.cache-hit != 'true' && inputs.save == 'true'
       uses: actions/cache/save@v4

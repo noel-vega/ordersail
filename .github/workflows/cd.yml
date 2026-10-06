@@ -392,7 +392,10 @@ jobs:
 
       - uses: ./.github/actions/setup-workspace
         with:
-          save: "true"   # main-scoped node_modules cache every PR restores (OS-749)
+          # main-scoped node_modules cache every PR restores (OS-749). One leg
+          # saves: both legs share the key, so a second save only races and
+          # fails to reserve it.
+          save: ${{ matrix.app == 'merchant-web' }}
 
       - name: Build shared packages this frontend needs
         run: npm run build --workspace=merchant-sdk --if-present
